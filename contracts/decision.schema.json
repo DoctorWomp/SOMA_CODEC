@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://soma-range.invalid/contracts/decision.schema.json",
+  "title": "Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "trace_id",
+    "tick",
+    "actor_id",
+    "observation_trace_id",
+    "action",
+    "target_id",
+    "horizon_arm"
+  ],
+  "properties": {
+    "protocol": {
+      "const": "soma-range/1"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "\\S"
+    },
+    "tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "actor_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "\\S"
+    },
+    "observation_trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "\\S"
+    },
+    "action": {
+      "enum": [
+        "acknowledge",
+        "wait"
+      ]
+    },
+    "target_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "horizon_arm": {
+      "enum": [
+        "A",
+        "B"
+      ]
+    }
+  }
+}

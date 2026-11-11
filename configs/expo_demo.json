@@ -1,0 +1,16 @@
+{
+  "scenario_id": "expo-001",
+  "seed": 4201,
+  "world": "expo-one-room-planned",
+  "mode": "spectator",
+  "model": "offline-stub-v1",
+  "prompt_revision": "none",
+  "observations": [
+    {"protocol": "soma-range/1", "trace_id": "expo-001:1:hello", "tick": 1,
+     "recipient_id": "robot-r", "source_id": "visitor-x", "channel": "speech",
+     "visibility": "public", "content": "Hello Robot R"},
+    {"protocol": "soma-range/1", "trace_id": "expo-001:2:gesture", "tick": 2,
+     "recipient_id": "visitor-x", "source_id": null, "channel": "gesture",
+     "visibility": "private", "content": "Unattributed gesture fixture"}
+  ]
+}

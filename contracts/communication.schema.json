@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://soma-range.invalid/contracts/communication.schema.json",
+  "title": "Communication",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "trace_id",
+    "tick",
+    "recipient_id",
+    "channel",
+    "visibility",
+    "content",
+    "sender_id"
+  ],
+  "properties": {
+    "protocol": {
+      "const": "soma-range/1"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "\\S"
+    },
+    "tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "recipient_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "channel": {
+      "enum": [
+        "speech",
+        "gesture"
+      ]
+    },
+    "visibility": {
+      "enum": [
+        "public",
+        "private"
+      ]
+    },
+    "content": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "sender_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "\\S"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "visibility": {
+            "const": "private"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "recipient_id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}
