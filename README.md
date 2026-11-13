@@ -11,6 +11,7 @@
 - [RANGE v0 scope](docs/RANGE_V0_SCOPE.md): what is being built first, and in what order
 - [Decisions](docs/DECISIONS.md): settled answers to conflicts across the design documents
 - [Source index](docs/SOURCES.md): all design documents with dates, status and precedence
+- [Inference strategy](docs/INFERENCE_STRATEGY.md): how local models stay fast enough for live interaction
 - [Concept art](docs/concept-art/)
 
 HORIZON is research, not a validated emotion-recognition or safety system. Physical safety always belongs to the robot host.

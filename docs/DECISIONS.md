@@ -30,6 +30,7 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-20 | Model shortlist and bake-off | PROPOSED |
 | D-21 | Inference engine and standalone packaging | PROPOSED |
 | D-22 | Languages and what each one does | PROPOSED |
+| D-23 | Inference strategy: residency, caching, tiers | PROPOSED |
 
 ---
 
@@ -281,4 +282,9 @@ Candidates as of November 2026. Both families are reported as Apache 2.0; confir
 | C++ (not written by us) | `llama-server`, prebuilt | Fast GPU inference |
 
 Escalation path only if profiling demands it: NumPy for Python hot paths; a C++ GDExtension for heavy Godot work such as many raycasts. No C# in v0 (it adds a .NET dependency for little gain here).
+
+## D-23 — Inference strategy: residency, caching, tiers
+**Status:** PROPOSED
+
+Adopt [INFERENCE_STRATEGY.md](INFERENCE_STRATEGY.md): models stay resident for the whole run; prompts use a stable-prefix layout from day one; focal agents get a dedicated server with pinned slots and top priority; non-focal NPCs move between C0 (no model), C1 (templates, cache, tiny model) and C2 (shared NPC server with persona snapshots and pre-warming). Target configuration is Option C (two servers). Optional techniques (KV quantization, speculative decoding, CPU tier, response cache) are experiments kept only if measurements show a benefit; the response cache is never used for focal agents in trials.
 
