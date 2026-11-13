@@ -34,6 +34,7 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-24 | Context and memory strategy | PROPOSED |
 | D-25 | Interaction modes and awareness protocols | PROPOSED |
 | D-26 | Art direction, rendering budget and environment-as-variable | PROPOSED |
+| D-27 | Contract format and validation | PROPOSED |
 
 ---
 
@@ -95,8 +96,8 @@ Loopback **WebSocket** with versioned JSON envelopes and a launch-time session t
 
 - **Development machine:** Windows 11 Pro, AMD Ryzen 9 9950X (16 cores / 32 threads), 96 GB RAM, **NVIDIA RTX 4070 Ti Super, 16 GB VRAM**.
 - **Model sizing for that GPU (estimates to verify at G3):** one small/medium (~4B-class) model shared by 3–5 agents fits comfortably; one ~9–12B-class model at 4-bit quantization fits alongside Godot with moderate context; two large models loaded at once is tight. The Runtime v0.2 doc's Q4 load estimates (E4B ≈ 4.5 GB, 12B ≈ 6.7 GB) exclude KV cache and parallel slots. LLM-policy ablation sweeps will be limited by GPU throughput; scripted-policy sweeps by CPU.
-- **Python:** 3.12 (Blueprint). Pin exact dependency versions in a lockfile after a tested install.
-- **Godot:** the latest *verified stable* 4.x release, chosen and pinned at G1. Sources disagree (Blueprint says 4.7.2, PR #1 used 4.5.1); verify what exists before pinning.
+- **Python:** 3.12 baseline (Blueprint); CI also tests 3.13. Environments and the lockfile are managed with **uv**.
+- **Godot:** **4.7.2 stable** (standard build, GDScript, no .NET), released 2026-08-18 and verified on the official download archive on 2026-11-13. Re-check for a newer stable patch at G1; do not move to a new minor version (e.g. 4.8) mid-build without a decision.
 - **Models:** see D-20 (shortlist and bake-off) and D-21 (engine and packaging). Never downloaded automatically.
 
 ## D-07 — Venue announcement channel name
@@ -305,4 +306,9 @@ Adopt [INTERACTION_MODES.md](INTERACTION_MODES.md). One world; Spectator, Direct
 **Status:** PROPOSED
 
 Adopt [ART_DIRECTION.md](ART_DIRECTION.md). Low-poly diorama style with one shared palette texture, baked lighting, one shadowed light and a capped frame rate. Fidelity climbs a ladder (V0 greybox → V1 low-poly diorama → V2 atmosphere → V3 polish), each step allowed only if rendering costs ≤ ~10% of focal-model throughput in a measured "render tax" test. Robot body colors are matte identity trim with a number badge and pattern; Beacon state is emissive on the visor and light strip only, so identity colors are never read as Beacon signals; robots under A/B comparison look identical. Lighting, haze and noise are declared per zone in the map file and drive both the renderer and the simulated senses, so what the spectator sees and what agents perceive always agree; sensors never read rendered pixels.
+
+## D-27 — Contract format and validation
+**Status:** PROPOSED
+
+Hand-written **JSON Schema** files in `contracts/` are the single source of truth for every message and config format. Python validates with the `jsonschema` library; Godot validates the same schemas (or a generated equivalent) at G1–G2. Each schema ships with valid and invalid example files that tests run on every check. Agent-facing schemas forbid evaluator-only fields, so private goals and scenario labels cannot reach an agent through a valid message.
 

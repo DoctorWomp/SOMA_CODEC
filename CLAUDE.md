@@ -16,7 +16,7 @@ Main specs: the [Master Build Blueprint](docs/sources/range/SOMA_RANGE_Master_Bu
 
 ## Status
 
-Documentation only. No code yet. Next gate: **G0** (repo skeleton, contracts, headless test world, tests, CI). Update this section when a gate completes.
+Planning complete; no code yet. Next gate: **G0**, see [docs/gates/G0_PLAN.md](docs/gates/G0_PLAN.md). G0 runs entirely in a cloud session. Owner PC setup for G1 onward: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
 
 ## Rules that never bend
 

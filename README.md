@@ -15,6 +15,8 @@
 - [Interaction modes](docs/INTERACTION_MODES.md): Spectator, Director (Creative Mode) and Participant, with awareness protocols
 - [Context & memory strategy](docs/CONTEXT_MEMORY_STRATEGY.md): long memory without long prompts, so runs don't slow down
 - [Art direction](docs/ART_DIRECTION.md): low-poly look, rendering budget, environment that affects perception
+- [G0 plan](docs/gates/G0_PLAN.md): the first build gate
+- [Windows setup](docs/OWNER_SETUP_WINDOWS.md): what to install on the development PC, and when
 - [Concept art](docs/concept-art/)
 
 HORIZON is research, not a validated emotion-recognition or safety system. Physical safety always belongs to the robot host.

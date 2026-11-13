@@ -179,6 +179,6 @@ Multi-floor maps · real audio, vision or depth models · BET hardware and MIDI 
 ## 7. Open items
 
 - ~~GPU model~~: resolved, RTX 4070 Ti Super 16 GB (D-06).
-- **Godot version** to pin at G1 (D-06).
+- ~~Godot version~~: resolved, 4.7.2 stable (D-06).
 - **Model choice** verified at G3.
 - Owner review of all PROPOSED decisions in [DECISIONS.md](DECISIONS.md).
