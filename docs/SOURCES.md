@@ -110,6 +110,10 @@ Illustrations only. **Numbers shown in the art (confidence scores, rates, percen
 | [range_expo_hall_v0.1_top_down](concept-art/range_expo_hall_v0.1_top_down.webp) | **Reference layout for Expo Hall A** (48 × 32 m, booths A–F, matches Blueprint §5) |
 | [range_expo_robot_r_concept](concept-art/range_expo_robot_r_concept.webp) | Visual target and prop categories for the expo |
 | [range_expo_multi_floor_variant](concept-art/range_expo_multi_floor_variant.webp) | Future multi-floor map (deferred) |
+| [robot_avatar_lowpoly_concept](concept-art/robot_avatar_lowpoly_concept.jpg) | **Baseline robot avatar**: faceted humanoid, black visor (Beacon face), colored identity variants (see ART_DIRECTION §2.1) |
+| [reference_lighting_language_atlas](concept-art/reference_lighting_language_atlas.webp) | Style reference: lighting styles → lighting presets |
+| [reference_atmosphere_environment_atlas](concept-art/reference_atmosphere_environment_atlas.webp) | Style reference: atmosphere and particles → atmosphere presets |
+| [reference_visual_styles_atlas](concept-art/reference_visual_styles_atlas.webp) | Style reference: target is style 5, low-poly 3D diorama |
 
 ## Referenced but not in the repository
 

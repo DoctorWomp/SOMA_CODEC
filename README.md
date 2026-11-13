@@ -14,6 +14,7 @@
 - [Inference strategy](docs/INFERENCE_STRATEGY.md): how local models stay fast enough for live interaction
 - [Interaction modes](docs/INTERACTION_MODES.md): Spectator, Director (Creative Mode) and Participant, with awareness protocols
 - [Context & memory strategy](docs/CONTEXT_MEMORY_STRATEGY.md): long memory without long prompts, so runs don't slow down
+- [Art direction](docs/ART_DIRECTION.md): low-poly look, rendering budget, environment that affects perception
 - [Concept art](docs/concept-art/)
 
 HORIZON is research, not a validated emotion-recognition or safety system. Physical safety always belongs to the robot host.

@@ -33,6 +33,7 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-23 | Inference strategy: residency, caching, tiers | PROPOSED |
 | D-24 | Context and memory strategy | PROPOSED |
 | D-25 | Interaction modes and awareness protocols | PROPOSED |
+| D-26 | Art direction, rendering budget and environment-as-variable | PROPOSED |
 
 ---
 
@@ -299,4 +300,9 @@ Adopt [CONTEXT_MEMORY_STRATEGY.md](CONTEXT_MEMORY_STRATEGY.md). Agents never car
 **Status:** PROPOSED
 
 Adopt [INTERACTION_MODES.md](INTERACTION_MODES.md). One world; Spectator, Director (Creative Mode, a toggle on Spectator) and Participant are seats with different permissions, enforced by the world dispatcher. Every avatar is a body plus a swappable controller (`SCRIPTED`, `LLM_AGENT`, `HUMAN_INPUT`, `REPLAY_TAPE`). The human avatar has the same body limits, senses, COMMS rules and action gate as NPC visitors. Awareness protocols: P1 Declared, P2 Incognito, P3 Reveal, P4 Possession, P5 Confederate replay; live human sessions are exploratory, P5 tapes bring human behavior into controlled trials. Director interventions are typed (directive edit, world change, environmental influence, social influence), journaled, and saveable as recipes. Opening evaluator truth while participating taints the run. Microphone input comes after typed chat.
+
+## D-26 — Art direction, rendering budget and environment-as-variable
+**Status:** PROPOSED
+
+Adopt [ART_DIRECTION.md](ART_DIRECTION.md). Low-poly diorama style with one shared palette texture, baked lighting, one shadowed light and a capped frame rate. Fidelity climbs a ladder (V0 greybox → V1 low-poly diorama → V2 atmosphere → V3 polish), each step allowed only if rendering costs ≤ ~10% of focal-model throughput in a measured "render tax" test. Robot body colors are matte identity trim with a number badge and pattern; Beacon state is emissive on the visor and light strip only, so identity colors are never read as Beacon signals; robots under A/B comparison look identical. Lighting, haze and noise are declared per zone in the map file and drive both the renderer and the simulated senses, so what the spectator sees and what agents perceive always agree; sensors never read rendered pixels.
 
