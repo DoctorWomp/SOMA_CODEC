@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/action_result.schema.json",
+  "title": "Action result",
+  "description": "The host's machine-readable answer to an action request (Blueprint §12.3). Returned to the requesting agent.",
+  "x-audience": "agent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "action_request_id", "agent_id", "accepted", "executed",
+    "reason_code", "resulting_event_ids", "resolved_at_tick_id"
+  ],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "action_request_id": { "$ref": "common.schema.json#/$defs/id" },
+    "agent_id": { "$ref": "common.schema.json#/$defs/id" },
+    "accepted": { "type": "boolean" },
+    "executed": { "type": "boolean" },
+    "reason_code": {
+      "enum": [
+        "OK", "INVALID_SCHEMA", "CAPABILITY_DENIED", "TARGET_UNKNOWN", "STALE_OBSERVATION",
+        "WORLD_COLLISION", "GROUP_NOT_MEMBER", "PA_UNAUTHORIZED", "PRIVACY_SCOPE_DENIED", "RATE_LIMITED"
+      ]
+    },
+    "resulting_event_ids": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "common.schema.json#/$defs/id" }
+    },
+    "resolved_at_tick_id": { "$ref": "common.schema.json#/$defs/tick" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "accepted": { "const": true } } },
+      "then": { "properties": { "reason_code": { "const": "OK" } } },
+      "else": {
+        "properties": {
+          "reason_code": { "not": { "const": "OK" } },
+          "executed": { "const": false },
+          "resulting_event_ids": { "maxItems": 0 }
+        }
+      }
+    }
+  ]
+}

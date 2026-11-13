@@ -1,0 +1,48 @@
+# SB-04 Polite bid (RANGE_V0_SCOPE §3): R talks with X; Y waits at the edge.
+# Checks (from G5): no interruption, bid noticed, held open.
+# This G0 version uses preset H0 only; the paired HORIZON arm is added at G5.
+schema_version: "1.0"
+scenario_id: SB04_POLITE_BID
+title: Polite bid
+map: sandbox_flats
+default_seed: 4204
+tick_hz: 10
+duration_ticks: 1200   # 120 s at 10 ticks per second
+
+cast:
+  robot_r:
+    persona: robot_r
+    body: robot_r
+    controller: LLM_AGENT
+    policy: LLM
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_robot
+    task: Answer visitors' questions in the sandbox.
+  visitor_x:
+    persona: visitor_x
+    body: human_walker
+    controller: SCRIPTED
+    policy: SCRIPTED
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_talker
+  visitor_y:
+    persona: visitor_y
+    body: human_walker
+    controller: SCRIPTED
+    policy: SCRIPTED
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_entrance
+
+events:
+  - {at_tick: 100, event_type: avatar_approaches, actor: visitor_y, where: spawn_edge}
+  - {at_tick: 150, event_type: small_wave, actor: visitor_y}
+
+measure: [missed_bid, false_interruption, y_left_unhelped, x_task_completed]
+
+# EVALUATOR ONLY: never shown to any agent.
+evaluator_only:
+  y_wants_help: true
+  y_leaves_after_s: 90

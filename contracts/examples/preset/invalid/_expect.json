@@ -1,0 +1,6 @@
+{
+  "l0_bypassed": "const",
+  "missing_layer": "required",
+  "oracle_preset": "not",
+  "unknown_layer": "additionalProperties"
+}

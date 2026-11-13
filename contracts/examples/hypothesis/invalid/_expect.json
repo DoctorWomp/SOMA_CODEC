@@ -1,0 +1,11 @@
+{
+  "bad_read_label": "enum",
+  "calibrated_without_ref": "type",
+  "deception_label": "not",
+  "emotion_label": "not",
+  "missing_required": "required",
+  "negative_time": "minimum",
+  "threat_label": "not",
+  "uncalibrated_probability": "type",
+  "unknown_field": "additionalProperties"
+}

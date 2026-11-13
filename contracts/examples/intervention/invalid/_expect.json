@@ -1,0 +1,9 @@
+{
+  "bad_type": "enum",
+  "directive_edit_without_before": "type",
+  "missing_required": "required",
+  "negative_tick": "minimum",
+  "nested_args": "oneOf",
+  "unknown_field": "additionalProperties",
+  "untainted_live_intervention": "const"
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "intervention_id": "dir_032",
+  "tick_id": 400,
+  "sim_time_ms": 40000,
+  "operator": "local_human",
+  "intervention_type": "DIRECTIVE_EDIT",
+  "operation": "EDIT_DIRECTIVE",
+  "target_id": "visitor_x",
+  "args": {},
+  "before": "Ask about the Booth C demo.",
+  "after": "Ask about the Booth C demo, then head to the cafe.",
+  "pre_scheduled": true,
+  "trial_tainted": false
+}

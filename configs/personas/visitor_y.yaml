@@ -1,0 +1,25 @@
+# Visitor Y: reserved and polite (Blueprint §17 visitor_reserved).
+# private_goal is EVALUATOR / OWN AGENT ONLY: it never reaches Robot R except
+# through what R can observe (D-13).
+schema_version: "1.0"
+persona_id: visitor_y
+display_name: Visitor Y
+role: expo_visitor
+public_goal: Find the cafe.
+private_goal: Will not interrupt; waits at the edge and leaves after 90 s if not helped.
+knows: []
+does_not_know:
+  - Where the cafe is.
+style:
+  sociability: 30
+  assertiveness: 20
+  politeness: 85
+  expressivity: 35
+  playfulness: 25
+  patience: 85
+  skepticism: 45
+  situational_attention: 65
+  adaptability: 60
+default_body: human_walker
+cognition_level: C2
+allowed_actions: [MOVE_TO, LOOK_AT, SPEAK, GESTURE, WAIT, YIELD, INTERACT, REQUEST_CLARIFICATION]

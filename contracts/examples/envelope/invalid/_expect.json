@@ -1,0 +1,9 @@
+{
+  "evaluator_field_in_payload": "additionalProperties",
+  "missing_required": "required",
+  "negative_tick": "minimum",
+  "payload_mismatch": "required",
+  "unknown_field": "additionalProperties",
+  "unknown_type": "enum",
+  "wrong_version": "const"
+}

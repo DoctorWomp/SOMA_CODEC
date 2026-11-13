@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "memory_id": "mem_12",
+  "owner_id": "robot_r",
+  "store": "COMMITMENTS_AND_REFUSALS",
+  "status": "OBSERVED",
+  "source_class": "SELF",
+  "source_event_id": "evt_640",
+  "observed_at_ms": 30000,
+  "expires_at_ms": null,
+  "scope": "ONE_TO_ONE",
+  "audience_present": [
+    "anon_4f2a91c0"
+  ],
+  "importance": "HIGH",
+  "version": 1,
+  "supersedes": null,
+  "content": {
+    "text": "Told the waiting visitor: I'll help you after this conversation.",
+    "untrusted_text": false,
+    "commitment_state": "OPEN"
+  }
+}

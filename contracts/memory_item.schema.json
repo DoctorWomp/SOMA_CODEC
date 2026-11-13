@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/memory_item.schema.json",
+  "title": "Memory item",
+  "description": "One item in an agent's own memory stores (CONTEXT_MEMORY_STRATEGY §3). Keeps source, audience present and scope (D-12). Never holds trust scores, sincerity, threat or personality labels about people (D-13). Overheard content is never stored as told.",
+  "x-audience": "agent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "memory_id", "owner_id", "store", "status", "source_class",
+    "source_event_id", "observed_at_ms", "expires_at_ms", "scope", "audience_present",
+    "importance", "version", "supersedes", "content"
+  ],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "memory_id": { "$ref": "common.schema.json#/$defs/id" },
+    "owner_id": {
+      "description": "The agent whose memory this is.",
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "store": {
+      "enum": [
+        "IDENTITY_ANCHOR", "COMMITMENTS_AND_REFUSALS", "WORKING_SET",
+        "EPISODIC_LEDGER", "RELATIONAL_LEDGER", "WORLD_KNOWLEDGE", "TRAIL_BUFFER"
+      ]
+    },
+    "status": {
+      "description": "Lifecycle. INFERRED can never be upgraded to OBSERVED by compaction.",
+      "enum": ["OBSERVED", "REPORTED", "INFERRED", "CONTRADICTED", "EXPIRED"]
+    },
+    "source_class": {
+      "description": "How the agent came to know this, ranked OBSERVED > REPORTED > INFERRED (D-13). SELF is the agent's own action or utterance. There is no OVERHEARD class: overheard content is not stored (D-12).",
+      "enum": ["OBSERVED", "REPORTED", "INFERRED", "SELF"]
+    },
+    "source_event_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
+    "observed_at_ms": { "$ref": "common.schema.json#/$defs/time_ms" },
+    "expires_at_ms": { "$ref": "common.schema.json#/$defs/nullable_time_ms" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "audience_present": {
+      "description": "Who could perceive the exchange when it happened (as known to this agent).",
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 64,
+      "items": { "$ref": "common.schema.json#/$defs/id" }
+    },
+    "importance": { "enum": ["LOW", "NORMAL", "HIGH", "CRITICAL"] },
+    "version": { "type": "integer", "minimum": 1 },
+    "supersedes": { "$ref": "common.schema.json#/$defs/nullable_id" },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "untrusted_text"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "untrusted_text": {
+          "description": "True when the text came from a sign, speech, message or another agent. Kept through every compaction step (D-09).",
+          "type": "boolean"
+        },
+        "commitment_state": {
+          "description": "Only for COMMITMENTS_AND_REFUSALS items.",
+          "enum": ["OPEN", "FULFILLED", "RELEASED", "DECLINED", "EXPIRED"]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "store": { "const": "COMMITMENTS_AND_REFUSALS" } } },
+      "then": { "properties": { "content": { "required": ["commitment_state"] } } },
+      "else": { "properties": { "content": { "not": { "required": ["commitment_state"] } } } }
+    },
+    {
+      "description": "Inferred items keep their inferred origin.",
+      "if": { "properties": { "source_class": { "const": "INFERRED" } } },
+      "then": { "properties": { "status": { "enum": ["INFERRED", "CONTRADICTED", "EXPIRED"] } } }
+    }
+  ]
+}

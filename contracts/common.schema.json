@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/common.schema.json",
+  "title": "Shared definitions (contracts v1)",
+  "description": "Building blocks referenced by every other contract. Not a message on its own.",
+  "x-audience": "shared",
+  "$defs": {
+    "schema_version": {
+      "description": "Contract version. Incompatible changes bump it (CLAUDE.md).",
+      "const": "1.0"
+    },
+    "id": {
+      "description": "Stable identifier: letters, digits, '_', '-', '.', ':'.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+    },
+    "nullable_id": {
+      "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }]
+    },
+    "track_id": {
+      "description": "Anonymous track ID, scoped to one recipient and one session. Never derived reversibly from the true entity ID.",
+      "type": "string",
+      "pattern": "^anon_[a-z0-9]{4,32}$"
+    },
+    "tick": {
+      "description": "Simulation tick. Non-negative integer.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "time_ms": {
+      "description": "Simulation time in milliseconds. Non-negative integer.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "nullable_time_ms": {
+      "oneOf": [{ "$ref": "#/$defs/time_ms" }, { "type": "null" }]
+    },
+    "unit_interval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "validity": {
+      "description": "Measurement status (Addendum v0.2 §2). Missing or stale evidence is never reported as 0 or calm.",
+      "enum": ["OBSERVED", "DEGRADED", "OCCLUDED", "MISSING", "EXPIRED", "UNKNOWN_SOURCE"]
+    },
+    "read_label": {
+      "description": "Qualitative read on an interpretation (D-10). Not a probability.",
+      "enum": ["COMMIT", "LEAN", "HELD_OPEN", "UNKNOWN"]
+    },
+    "scope": {
+      "description": "Disclosure scope (D-12).",
+      "enum": ["PUBLIC", "GROUP", "ONE_TO_ONE", "SEALED"]
+    },
+    "channel": {
+      "description": "COMMS channel (D-07).",
+      "enum": ["GESTURE", "LOCAL", "GROUP", "PA"]
+    },
+    "baseline_scope": {
+      "description": "Where a ΔP baseline comes from (Addendum v0.2 §2). NONE means no baseline exists.",
+      "enum": ["ENVIRONMENT", "SESSION", "SOURCE", "NONE"]
+    },
+    "action_name": {
+      "description": "Structured action vocabulary (Blueprint §10.3).",
+      "enum": [
+        "MOVE_TO", "LOOK_AT", "TURN_TO", "SPEAK", "GESTURE", "WAIT", "YIELD", "INTERACT",
+        "JOIN_QUEUE", "REQUEST_CLARIFICATION", "CREATE_GROUP", "INVITE_GROUP",
+        "ACCEPT_GROUP", "DECLINE_GROUP", "LEAVE_GROUP", "NO_OP"
+      ]
+    },
+    "layer_mask": {
+      "description": "Perception mask: which HORIZON layers are active (D-03). L0 cannot be bypassed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["L0", "L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8"],
+      "properties": {
+        "L0": { "const": true },
+        "L1": { "type": "boolean" },
+        "L2": { "type": "boolean" },
+        "L3": { "type": "boolean" },
+        "L4": { "type": "boolean" },
+        "L5": { "type": "boolean" },
+        "L6": { "type": "boolean" },
+        "L7": { "type": "boolean" },
+        "L8": { "type": "boolean" }
+      }
+    },
+    "point3": {
+      "description": "World position in meters, Godot convention: x and z on the floor, y up (D-29).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "point2": {
+      "description": "Floor position in meters (x, z), Godot convention (D-29).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "pose": {
+      "description": "Floor pose. yaw_rad is Godot's rotation.y: 0 faces -z, positive turns left (D-29).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z", "yaw_rad"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "yaw_rad": { "type": "number", "minimum": -6.283185307179586, "maximum": 6.283185307179586 }
+      }
+    },
+    "short_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "evaluator_only_field": {
+      "description": "Field names that exist only on the evaluator side (D-13, Atlas §7). No agent-facing contract may declare or accept them. Godot uses this same list.",
+      "enum": [
+        "evaluator_only",
+        "evaluator_truth",
+        "oracle",
+        "ground_truth",
+        "private_goal",
+        "private_goals",
+        "private_scenario_state",
+        "private_notes",
+        "hidden_goal",
+        "hidden_objective",
+        "actual_goal",
+        "true_intent",
+        "true_identity",
+        "true_entity_id",
+        "wants_robot_help",
+        "scenario_label",
+        "scenario_labels",
+        "persona",
+        "style",
+        "delivered_to",
+        "not_delivered_to"
+      ]
+    }
+  }
+}

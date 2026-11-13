@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "map_id": "tiny_room",
+  "version": 1,
+  "name": "Tiny room",
+  "bounds": {
+    "width_m": 0,
+    "depth_m": 8
+  },
+  "zones": [
+    {
+      "zone_id": "floor",
+      "area": {
+        "x_min": 0,
+        "z_min": 0,
+        "x_max": 10,
+        "z_max": 8
+      },
+      "environment": {
+        "light_level": 0.9,
+        "visual_range_factor": 1.0,
+        "noise_floor_db": 40
+      }
+    }
+  ],
+  "walls": [
+    {
+      "wall_id": "partition_1",
+      "a": {
+        "x": 5,
+        "z": 2
+      },
+      "b": {
+        "x": 5,
+        "z": 6
+      },
+      "height_m": 2.0,
+      "blocks_sight": true,
+      "blocks_sound": false
+    }
+  ],
+  "spawn_points": [
+    {
+      "spawn_id": "spawn_a",
+      "position": {
+        "x": 2,
+        "z": 4
+      },
+      "yaw_rad": 0.0
+    }
+  ]
+}

@@ -36,6 +36,7 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-26 | Art direction, rendering budget and environment-as-variable | APPROVED (owner, 2026-11-13) |
 | D-27 | Contract format and validation | APPROVED (owner, 2026-11-13) |
 | D-28 | License | APPROVED (owner, 2026-11-13) |
+| D-29 | Contract v1 conventions | PROPOSED (G0, 2026-11-13) |
 
 ---
 
@@ -318,3 +319,18 @@ Hand-written **JSON Schema** files in `contracts/` are the single source of trut
 
 No license for now: the repository is public, but all rights are reserved. A license can be added later; one cannot be withdrawn once granted, which matters if BET becomes a product. Third-party assets and model weights keep their own licenses, recorded in `THIRD_PARTY_LICENSES` when added.
 
+## D-29 — Contract v1 conventions
+**Status:** PROPOSED (G0, 2026-11-13) — awaiting owner review
+
+Choices made while writing contracts v1 that the source documents left open:
+
+- **Coordinate frame = Godot's.** Positions are meters with the floor on x/z and y up. `yaw_rad` is Godot's `rotation.y`: 0 faces −z, positive turns left. `bearing_rad` is measured from the observer's forward direction, positive to the left, in (−π, π]. The Python test world uses the same frame, so G1 needs no conversion.
+- **Audience tag.** Each schema carries `x-audience` (`agent`, `evaluator`, `config`, `transport`, `shared`). Agent-facing schemas may never declare or accept the evaluator-only field names listed once in `common.schema.json`.
+- **Naming.** Enum values are `UPPER_SNAKE`; envelope `type` values are dotted lowercase as in Blueprint §12; config ids in `configs/` must match their file names.
+- **Memory status in upper case.** CONTEXT_MEMORY_STRATEGY §3's `observed/reported/inferred/contradicted/expired` become `OBSERVED/REPORTED/INFERRED/CONTRADICTED/EXPIRED`. A separate `source_class` (D-13 ranking) has no "overheard" value, so overheard content cannot be stored as told.
+- **Hypotheses are separate messages.** Blueprint §12.2 nested hypotheses inside a delta feature; v1 makes `hypothesis` its own contract that cites evidence ids, so one reading can rest on several features and observations.
+- **Banned person-verdict labels.** Hypothesis labels naming emotion, sincerity, deception, threat, trust or personality verdicts are rejected by pattern (D-13). This is a coarse guard, not a complete filter.
+- **Session token stays out of envelopes.** It is checked once at WebSocket connection time (D-05), so it never lands in a journal or log.
+- **Seeds ≤ 2^53−1**, so Godot's float64 JSON numbers read them exactly.
+- **Extra contract `journal_entry`** for the event journal, so the test world's output is checkable now and Godot's journal at G2 has a target format.
+- **Extra intervention types** `LAYER_BYPASS` (a mid-run bypass, D-03) and `EVALUATOR_TRUTH_OPENED` (D-25), both journaled and tainting.

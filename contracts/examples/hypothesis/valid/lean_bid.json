@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "hypothesis_id": "hyp_77",
+  "label": "POSSIBLE_BID",
+  "subject_track_id": "anon_4f2a91c0",
+  "read": "LEAN",
+  "supporting_evidence": [
+    "obs_908",
+    "delta_41"
+  ],
+  "alternatives": [
+    "hyp_78"
+  ],
+  "calibrated": false,
+  "probability": null,
+  "calibration_ref": null,
+  "formed_at_ms": 4200,
+  "expires_at_ms": 9200
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "comms_id": "comms_130",
+  "channel": "LOCAL",
+  "sender_id": "visitor_y",
+  "addressee_id": "robot_r",
+  "text": "Excuse me, is this the way to the cafe?",
+  "emitted_at_tick": 315,
+  "emitted_at_ms": 31500,
+  "modality": "SIMULATED_TEXT_SPEECH",
+  "delivery_scope": "ACOUSTIC_AREA",
+  "group_id": "grp_devs",
+  "delivered_to": [
+    "robot_r",
+    "visitor_x"
+  ],
+  "not_delivered_to": [
+    "guard_01"
+  ],
+  "source_event_id": "evt_799"
+}

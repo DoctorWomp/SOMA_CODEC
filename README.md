@@ -4,7 +4,7 @@
 
 **SOMA RANGE** is the simulated environment (Godot + Python) where HORIZON is being built and A/B tested, with a layer-by-layer viewer so people can see what the agent perceives and why it acts.
 
-**Status:** design and planning. No code yet.
+**Status:** G0 (repository, message contracts, headless test world, ΔP math, one check command) is built and in review. Nothing visible yet: the Godot world starts at G1. See [Build and run](docs/BUILD_AND_RUN.md).
 
 ## Start here
 

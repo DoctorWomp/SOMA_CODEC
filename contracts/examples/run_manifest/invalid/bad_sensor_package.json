@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0",
+  "run_id": "run_sb04_0001",
+  "app_version": "0.1.0",
+  "git_commit": null,
+  "contracts_version": "1.0",
+  "seed": 4204,
+  "scenario_id": "SB04_POLITE_BID",
+  "map_id": "sandbox_flats",
+  "map_version": 1,
+  "simulation": {
+    "tick_hz": 10,
+    "mode": "STEPPED",
+    "world_authority": "TESTWORLD"
+  },
+  "avatars": [
+    {
+      "avatar_id": "robot_r",
+      "controller": "LLM_AGENT",
+      "policy": "LLM",
+      "cognition_level": "C2",
+      "persona_id": "robot_r",
+      "body_id": "robot_r",
+      "perception_preset": "H0",
+      "perception_mask": {
+        "L0": true,
+        "L1": false,
+        "L2": false,
+        "L3": false,
+        "L4": false,
+        "L5": false,
+        "L6": false,
+        "L7": false,
+        "L8": false
+      },
+      "sensor_package": "XRAY",
+      "model": {
+        "model_id": null,
+        "model_hash": null
+      },
+      "capability_card": "[robot_r | LLM: none (demo) | HORIZON: H0 | memory: RCC | sensors: STANDARD | actions: v1]"
+    },
+    {
+      "avatar_id": "visitor_y",
+      "controller": "SCRIPTED",
+      "policy": "SCRIPTED",
+      "cognition_level": "C0",
+      "persona_id": "visitor_y",
+      "body_id": "human_walker",
+      "perception_preset": "H0",
+      "perception_mask": {
+        "L0": true,
+        "L1": false,
+        "L2": false,
+        "L3": false,
+        "L4": false,
+        "L5": false,
+        "L6": false,
+        "L7": false,
+        "L8": false
+      },
+      "sensor_package": "STANDARD",
+      "model": {
+        "model_id": null,
+        "model_hash": null
+      },
+      "capability_card": "[visitor_y | SCRIPTED | HORIZON: H0 | sensors: STANDARD | actions: v1]"
+    }
+  ],
+  "resolved_settings": {
+    "density_slider": 0,
+    "spontaneity": 0,
+    "speed": 1.0
+  },
+  "tainted": false,
+  "taint_reasons": []
+}

@@ -1,0 +1,11 @@
+{
+  "bad_baseline_scope": "enum",
+  "computed_without_baseline": "type",
+  "missing_as_zero": "type",
+  "missing_required": "required",
+  "negative_time": "minimum",
+  "null_without_reason": "not",
+  "number_with_reason": "type",
+  "pressure_channel_lowercase": "pattern",
+  "unknown_field": "additionalProperties"
+}

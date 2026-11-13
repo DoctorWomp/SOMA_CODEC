@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/action_request.schema.json",
+  "title": "Action request",
+  "description": "A high-level action an agent proposes (Blueprint §10.3, §12.3). The host's action gate validates and may reject it; agents never execute anything directly. Unknown actions are rejected, never ignored.",
+  "x-audience": "agent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "action_request_id", "agent_id", "based_on_tick_id", "action", "args"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "action_request_id": { "$ref": "common.schema.json#/$defs/id" },
+    "agent_id": { "$ref": "common.schema.json#/$defs/id" },
+    "based_on_tick_id": { "$ref": "common.schema.json#/$defs/tick" },
+    "action": { "$ref": "common.schema.json#/$defs/action_name" },
+    "args": {
+      "description": "Action-specific arguments. Closed per action by the allOf rules below.",
+      "type": "object",
+      "x-closed-by": "action"
+    },
+    "reason_summary": {
+      "description": "Optional model-supplied explanation. Not a faithful transcript of cognition, and never fed back to the agent as evidence (CONTEXT_MEMORY_STRATEGY §6).",
+      "type": "string",
+      "maxLength": 300
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "action": { "const": "MOVE_TO" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_move_to" } } } },
+    { "if": { "properties": { "action": { "const": "LOOK_AT" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_target_or_point" } } } },
+    { "if": { "properties": { "action": { "const": "TURN_TO" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_turn_to" } } } },
+    { "if": { "properties": { "action": { "const": "SPEAK" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_speak" } } } },
+    { "if": { "properties": { "action": { "const": "GESTURE" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_gesture" } } } },
+    { "if": { "properties": { "action": { "const": "WAIT" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_wait" } } } },
+    { "if": { "properties": { "action": { "const": "YIELD" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_yield" } } } },
+    { "if": { "properties": { "action": { "const": "INTERACT" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_interact" } } } },
+    { "if": { "properties": { "action": { "const": "JOIN_QUEUE" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_join_queue" } } } },
+    { "if": { "properties": { "action": { "const": "REQUEST_CLARIFICATION" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_clarify" } } } },
+    { "if": { "properties": { "action": { "const": "CREATE_GROUP" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_create_group" } } } },
+    { "if": { "properties": { "action": { "const": "INVITE_GROUP" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_invite_group" } } } },
+    { "if": { "properties": { "action": { "enum": ["ACCEPT_GROUP", "DECLINE_GROUP", "LEAVE_GROUP"] } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_group_only" } } } },
+    { "if": { "properties": { "action": { "const": "NO_OP" } } }, "then": { "properties": { "args": { "$ref": "#/$defs/args_empty" } } } }
+  ],
+  "$defs": {
+    "target_ref": {
+      "description": "A track ID the agent has observed, or an entity ID it legitimately knows (map object, introduced person).",
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "args_empty": { "type": "object", "additionalProperties": false, "properties": {} },
+    "args_move_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "destination": { "$ref": "common.schema.json#/$defs/point2" },
+        "target_id": { "$ref": "#/$defs/target_ref" }
+      },
+      "oneOf": [{ "required": ["destination"] }, { "required": ["target_id"] }]
+    },
+    "args_target_or_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "point": { "$ref": "common.schema.json#/$defs/point3" },
+        "target_id": { "$ref": "#/$defs/target_ref" }
+      },
+      "oneOf": [{ "required": ["point"] }, { "required": ["target_id"] }]
+    },
+    "args_turn_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "yaw_rad": { "type": "number", "minimum": -6.283185307179586, "maximum": 6.283185307179586 },
+        "target_id": { "$ref": "#/$defs/target_ref" }
+      },
+      "oneOf": [{ "required": ["yaw_rad"] }, { "required": ["target_id"] }]
+    },
+    "args_speak": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "text"],
+      "properties": {
+        "channel": { "enum": ["LOCAL", "GROUP", "PA"] },
+        "text": { "$ref": "common.schema.json#/$defs/short_text" },
+        "addressee_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
+        "group_id": { "$ref": "common.schema.json#/$defs/id" }
+      },
+      "if": { "properties": { "channel": { "const": "GROUP" } } },
+      "then": { "required": ["group_id"] },
+      "else": { "not": { "required": ["group_id"] } }
+    },
+    "args_gesture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gesture"],
+      "properties": {
+        "gesture": { "enum": ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD", "OPEN_PALM", "BOW"] },
+        "target_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
+        "sign_text": { "type": "string", "minLength": 1, "maxLength": 160 }
+      }
+    },
+    "args_wait": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration_ms"],
+      "properties": {
+        "duration_ms": { "type": "integer", "minimum": 0, "maximum": 60000 }
+      }
+    },
+    "args_yield": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "to_id": { "$ref": "common.schema.json#/$defs/nullable_id" }
+      }
+    },
+    "args_interact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_id", "affordance"],
+      "properties": {
+        "object_id": { "$ref": "common.schema.json#/$defs/id" },
+        "affordance": { "enum": ["SIT", "QUEUE", "READ", "PUSH", "USE"] }
+      }
+    },
+    "args_join_queue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["queue_id"],
+      "properties": {
+        "queue_id": { "$ref": "common.schema.json#/$defs/id" }
+      }
+    },
+    "args_clarify": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "$ref": "common.schema.json#/$defs/short_text" },
+        "addressee_id": { "$ref": "common.schema.json#/$defs/nullable_id" }
+      }
+    },
+    "args_create_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group_name"],
+      "properties": {
+        "group_name": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    },
+    "args_invite_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group_id", "invitee_id"],
+      "properties": {
+        "group_id": { "$ref": "common.schema.json#/$defs/id" },
+        "invitee_id": { "$ref": "common.schema.json#/$defs/id" }
+      }
+    },
+    "args_group_only": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group_id"],
+      "properties": {
+        "group_id": { "$ref": "common.schema.json#/$defs/id" }
+      }
+    }
+  }
+}

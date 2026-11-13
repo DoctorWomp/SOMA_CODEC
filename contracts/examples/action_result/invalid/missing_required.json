@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "action_request_id": "act_702",
+  "agent_id": "robot_r",
+  "executed": true,
+  "reason_code": "OK",
+  "resulting_event_ids": [
+    "evt_611"
+  ],
+  "resolved_at_tick_id": 258
+}

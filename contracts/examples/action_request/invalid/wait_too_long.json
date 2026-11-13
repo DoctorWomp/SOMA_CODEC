@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "action_request_id": "act_704",
+  "agent_id": "robot_r",
+  "based_on_tick_id": 261,
+  "action": "WAIT",
+  "args": {
+    "duration_ms": 600000
+  }
+}

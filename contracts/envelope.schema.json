@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/envelope.schema.json",
+  "title": "Transport envelope",
+  "description": "Wrapper for every message on the Godot ↔ Python WebSocket (D-05, Blueprint §12). The payload is validated against the schema its type names. The session token is checked at connection time and never appears in envelopes, so it never reaches a journal (D-29).",
+  "x-audience": "transport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "message_id", "type", "tick_id", "sim_time_ms", "source", "payload"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "message_id": { "$ref": "common.schema.json#/$defs/id" },
+    "type": {
+      "enum": [
+        "world.observation",
+        "horizon.delta_feature",
+        "horizon.hypothesis",
+        "agent.action_request",
+        "world.action_result",
+        "comms.event",
+        "director.intervention"
+      ]
+    },
+    "tick_id": { "$ref": "common.schema.json#/$defs/tick" },
+    "sim_time_ms": { "$ref": "common.schema.json#/$defs/time_ms" },
+    "source": { "enum": ["godot_world", "range_service", "testworld", "operator_ui"] },
+    "payload": {
+      "description": "Closed by the schema named in type.",
+      "type": "object",
+      "x-closed-by": "type"
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "world.observation" } } }, "then": { "properties": { "payload": { "$ref": "observation.schema.json" } } } },
+    { "if": { "properties": { "type": { "const": "horizon.delta_feature" } } }, "then": { "properties": { "payload": { "$ref": "delta_feature.schema.json" } } } },
+    { "if": { "properties": { "type": { "const": "horizon.hypothesis" } } }, "then": { "properties": { "payload": { "$ref": "hypothesis.schema.json" } } } },
+    { "if": { "properties": { "type": { "const": "agent.action_request" } } }, "then": { "properties": { "payload": { "$ref": "action_request.schema.json" } } } },
+    { "if": { "properties": { "type": { "const": "world.action_result" } } }, "then": { "properties": { "payload": { "$ref": "action_result.schema.json" } } } },
+    { "if": { "properties": { "type": { "const": "comms.event" } } }, "then": { "properties": { "payload": { "$ref": "comms_event.schema.json" } } } },
+    { "if": { "properties": { "type": { "const": "director.intervention" } } }, "then": { "properties": { "payload": { "$ref": "intervention.schema.json" } } } }
+  ]
+}

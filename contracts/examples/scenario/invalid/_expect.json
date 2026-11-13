@@ -1,0 +1,7 @@
+{
+  "missing_required": "required",
+  "negative_event_tick": "minimum",
+  "nested_evaluator_value": "oneOf",
+  "policy_mismatch": "const",
+  "unknown_field": "additionalProperties"
+}

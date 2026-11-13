@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "message_id": "msg_000042",
+  "type": "world.observation",
+  "tick_id": 251,
+  "sim_time_ms": 25100,
+  "source": "godot_world"
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "scenario_id": "TEST_SCENARIO",
+  "title": "Test",
+  "map": "tiny_room",
+  "default_seed": 1,
+  "tick_hz": 10,
+  "duration_ticks": 100,
+  "cast": {
+    "robot_r": {
+      "persona": "robot_r",
+      "body": "robot_r",
+      "controller": "LLM_AGENT",
+      "policy": "LLM",
+      "preset": "H0",
+      "sensor_package": "STANDARD",
+      "spawn": "spawn_a"
+    }
+  },
+  "events": [
+    {
+      "at_tick": 20,
+      "event_type": "demo_starts",
+      "where": "floor"
+    }
+  ],
+  "measure": [
+    "missed_bid"
+  ],
+  "evaluator_only": {
+    "y_wants_help": true,
+    "labels": {
+      "a": 1
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "missing_required": "required",
+  "negative_seq": "minimum",
+  "negative_tick": "minimum",
+  "payload_mismatch": "required",
+  "unknown_field": "additionalProperties",
+  "unknown_kind": "enum"
+}

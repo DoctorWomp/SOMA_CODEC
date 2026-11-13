@@ -1,0 +1,7 @@
+{
+  "bad_nav_link_kind": "enum",
+  "light_out_of_range": "maximum",
+  "missing_required": "required",
+  "unknown_field": "additionalProperties",
+  "zero_width": "exclusiveMinimum"
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/hypothesis.schema.json",
+  "title": "Interpretation hypothesis",
+  "description": "One candidate reading of observed evidence, with a read label instead of a number (D-10). Never a verdict about a person's emotion, sincerity, deception, threat, trustworthiness or personality (D-13). Hypotheses are inferences and never become observations.",
+  "x-audience": "agent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "hypothesis_id", "label", "subject_track_id", "read",
+    "supporting_evidence", "alternatives", "calibrated", "probability",
+    "calibration_ref", "formed_at_ms", "expires_at_ms"
+  ],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "hypothesis_id": { "$ref": "common.schema.json#/$defs/id" },
+    "label": {
+      "description": "UPPER_SNAKE reading such as POSSIBLE_BID. Labels naming a banned person verdict (D-13) are rejected. This is a coarse guard, not a complete filter. Use physical terms such as COLLISION_RISK instead of DANGEROUS.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,47}$",
+      "not": {
+        "pattern": "(^|_)(EMOTION|EMOTIONAL|ANGRY|ANGER|SAD|HAPPY|AFRAID|FEAR|SINCERE|SINCERITY|INSINCERE|DECEPTION|DECEPTIVE|DECEIT|LIAR|DISHONEST|THREAT|THREATENING|HOSTILE|HOSTILITY|DANGEROUS|TRUST|TRUSTWORTHY|UNTRUSTWORTHY|PERSONALITY|NARCISSIST|NARCISSISTIC|PSYCHOPATH|SOCIOPATH|MANIPULATIVE|TOXIC|ALIGNMENT|EVIL|GOOD_PERSON|BAD_PERSON)(_|$)"
+      }
+    },
+    "subject_track_id": {
+      "oneOf": [{ "$ref": "common.schema.json#/$defs/track_id" }, { "type": "null" }]
+    },
+    "read": { "$ref": "common.schema.json#/$defs/read_label" },
+    "supporting_evidence": {
+      "description": "IDs of observations or delta features this reading rests on.",
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/id" }
+    },
+    "alternatives": {
+      "description": "IDs of competing hypotheses held at the same time.",
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/id" }
+    },
+    "calibrated": { "type": "boolean" },
+    "probability": {
+      "description": "Allowed only when calibrated is true and calibration_ref names the validation data (D-10).",
+      "oneOf": [{ "$ref": "common.schema.json#/$defs/unit_interval" }, { "type": "null" }]
+    },
+    "calibration_ref": {
+      "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 200 }, { "type": "null" }]
+    },
+    "formed_at_ms": { "$ref": "common.schema.json#/$defs/time_ms" },
+    "expires_at_ms": { "$ref": "common.schema.json#/$defs/time_ms" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "calibrated": { "const": false } } },
+      "then": {
+        "properties": {
+          "probability": { "type": "null" },
+          "calibration_ref": { "type": "null" }
+        }
+      },
+      "else": {
+        "properties": {
+          "probability": { "type": "number" },
+          "calibration_ref": { "type": "string" }
+        }
+      }
+    }
+  ]
+}

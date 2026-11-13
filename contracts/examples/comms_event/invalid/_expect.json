@@ -1,0 +1,9 @@
+{
+  "bad_channel": "enum",
+  "gesture_text_too_long": "maxLength",
+  "group_without_group_id": "type",
+  "local_with_group_id": "type",
+  "missing_required": "required",
+  "negative_tick": "minimum",
+  "unknown_field": "additionalProperties"
+}

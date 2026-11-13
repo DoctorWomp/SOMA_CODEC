@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/intervention.schema.json",
+  "title": "Director intervention",
+  "description": "A journaled operator action (INTERACTION_MODES §5, Blueprint §12.4). Any intervention during a run taints it unless it was pre-scheduled as a recipe. A mid-run layer bypass is an intervention (D-03).",
+  "x-audience": "evaluator",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "intervention_id", "tick_id", "sim_time_ms", "operator",
+    "intervention_type", "operation", "target_id", "args", "before", "after",
+    "pre_scheduled", "trial_tainted"
+  ],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "intervention_id": { "$ref": "common.schema.json#/$defs/id" },
+    "tick_id": { "$ref": "common.schema.json#/$defs/tick" },
+    "sim_time_ms": { "$ref": "common.schema.json#/$defs/time_ms" },
+    "operator": { "$ref": "common.schema.json#/$defs/id" },
+    "intervention_type": {
+      "enum": [
+        "DIRECTIVE_EDIT", "WORLD_CHANGE", "EVENT_TRIGGER", "ENVIRONMENTAL_INFLUENCE",
+        "SOCIAL_INFLUENCE", "POSSESS", "LAYER_BYPASS", "EVALUATOR_TRUTH_OPENED"
+      ]
+    },
+    "operation": {
+      "description": "Specific operation, UPPER_SNAKE (e.g. PLACE_PROP, BYPASS_LAYER).",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,47}$"
+    },
+    "target_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
+    "args": {
+      "description": "Flat operation arguments: snake_case keys, scalar values.",
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,47}$" },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "maxLength": 500 },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" }
+        ]
+      }
+    },
+    "before": { "oneOf": [{ "type": "string", "maxLength": 4000 }, { "type": "null" }] },
+    "after": { "oneOf": [{ "type": "string", "maxLength": 4000 }, { "type": "null" }] },
+    "pre_scheduled": {
+      "description": "True when this came from a saved recipe declared before the run.",
+      "type": "boolean"
+    },
+    "trial_tainted": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "pre_scheduled": { "const": false } } },
+      "then": { "properties": { "trial_tainted": { "const": true } } }
+    },
+    {
+      "description": "Directive edits keep both versions (Blueprint T07).",
+      "if": { "properties": { "intervention_type": { "const": "DIRECTIVE_EDIT" } } },
+      "then": { "properties": { "before": { "type": "string" }, "after": { "type": "string" } } }
+    },
+    {
+      "description": "Opening evaluator truth while participating always taints the run (D-25).",
+      "if": { "properties": { "intervention_type": { "const": "EVALUATOR_TRUTH_OPENED" } } },
+      "then": { "properties": { "trial_tainted": { "const": true } } }
+    }
+  ]
+}

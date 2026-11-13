@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "action_request_id": "act_703",
+  "agent_id": "robot_r",
+  "based_on_tick_id": 260,
+  "action": "MOVE_TO",
+  "args": {
+    "destination": {
+      "x": 12.0,
+      "z": 8.5
+    }
+  }
+}

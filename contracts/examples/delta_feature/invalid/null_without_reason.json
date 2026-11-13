@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "feature_id": "delta_42",
+  "channel": "VOCAL_INTENSITY",
+  "track_id": "anon_4f2a91c0",
+  "value": null,
+  "units": "db_spl",
+  "baseline": null,
+  "baseline_scope": "NONE",
+  "scale": null,
+  "normalized_delta": null,
+  "null_reason": null,
+  "quality": null,
+  "validity": "MISSING",
+  "observed_at_ms": 4140,
+  "expires_at_ms": 6000,
+  "provenance": "synthetic_visual_fov_los_v1",
+  "config_version": "deltap.v1"
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/delta_feature.schema.json",
+  "title": "HORIZON ΔP delta feature",
+  "description": "One typed, per-channel normalized deviation (D-11, Addendum v0.2 §2): normalized_delta = clip((value - baseline) / max(scale, epsilon), -clip, +clip). Missing or unsupported inputs give normalized_delta = null with a null_reason, never 0. Quality is a separate field and is never multiplied in.",
+  "x-audience": "agent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "feature_id", "channel", "track_id", "value", "units",
+    "baseline", "baseline_scope", "scale", "normalized_delta", "null_reason",
+    "quality", "validity", "observed_at_ms", "expires_at_ms", "provenance", "config_version"
+  ],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "feature_id": { "$ref": "common.schema.json#/$defs/id" },
+    "channel": {
+      "description": "Numeric feature channel name, UPPER_SNAKE (e.g. GESTURE_RATE).",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,47}$"
+    },
+    "track_id": {
+      "oneOf": [{ "$ref": "common.schema.json#/$defs/track_id" }, { "type": "null" }]
+    },
+    "value": { "oneOf": [{ "type": "number" }, { "type": "null" }] },
+    "units": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "baseline": { "oneOf": [{ "type": "number" }, { "type": "null" }] },
+    "baseline_scope": { "$ref": "common.schema.json#/$defs/baseline_scope" },
+    "scale": { "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+    "normalized_delta": { "oneOf": [{ "type": "number" }, { "type": "null" }] },
+    "null_reason": {
+      "description": "Why normalized_delta is null. Required exactly when it is null.",
+      "oneOf": [
+        {
+          "enum": [
+            "MISSING_VALUE", "NOT_OBSERVED", "EXPIRED", "UNKNOWN_SOURCE",
+            "DEGRADED_WITHOUT_QUALITY", "NO_BASELINE", "NO_SCALE", "INVALID_SCALE",
+            "NON_FINITE_INPUT", "CATEGORICAL_INPUT"
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "quality": {
+      "oneOf": [{ "$ref": "common.schema.json#/$defs/unit_interval" }, { "type": "null" }]
+    },
+    "validity": { "$ref": "common.schema.json#/$defs/validity" },
+    "observed_at_ms": { "$ref": "common.schema.json#/$defs/time_ms" },
+    "expires_at_ms": { "$ref": "common.schema.json#/$defs/time_ms" },
+    "provenance": { "type": "string", "pattern": "^[a-z0-9_]{3,64}$" },
+    "config_version": {
+      "description": "Versioned feature configuration (Addendum §3, §13).",
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]{1,48}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "normalized_delta": { "type": "null" } } },
+      "then": { "properties": { "null_reason": { "not": { "type": "null" } } } },
+      "else": { "properties": { "null_reason": { "type": "null" } } }
+    },
+    {
+      "description": "Missing, expired, occluded or unattributed evidence never carries a number.",
+      "if": { "properties": { "validity": { "enum": ["MISSING", "EXPIRED", "OCCLUDED", "UNKNOWN_SOURCE"] } } },
+      "then": { "properties": { "normalized_delta": { "type": "null" } } }
+    },
+    {
+      "description": "A computed delta needs every input it was computed from.",
+      "if": { "properties": { "normalized_delta": { "type": "number" } } },
+      "then": {
+        "properties": {
+          "value": { "type": "number" },
+          "baseline": { "type": "number" },
+          "scale": { "type": "number" },
+          "quality": { "type": "number" },
+          "baseline_scope": { "not": { "const": "NONE" } }
+        }
+      }
+    }
+  ]
+}

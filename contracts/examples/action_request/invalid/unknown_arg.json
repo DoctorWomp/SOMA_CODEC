@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "action_request_id": "act_702",
+  "agent_id": "robot_r",
+  "based_on_tick_id": 251,
+  "action": "SPEAK",
+  "args": {
+    "channel": "LOCAL",
+    "addressee_id": "anon_4f2a91c0",
+    "text": "I can help once we finish this conversation, if you need anything.",
+    "volume": 11
+  },
+  "reason_summary": "Person nearby might be waiting to speak; acknowledge without breaking current turn."
+}
