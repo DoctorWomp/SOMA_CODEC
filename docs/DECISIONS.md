@@ -27,6 +27,9 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-17 | Proxemic distances | PROPOSED |
 | D-18 | PR #1 | APPROVED (owner, 2026-11-13) |
 | D-19 | Hardware track parked for RANGE v0 | PROPOSED |
+| D-20 | Model shortlist and bake-off | PROPOSED |
+| D-21 | Inference engine and standalone packaging | PROPOSED |
+| D-22 | Languages and what each one does | PROPOSED |
 
 ---
 
@@ -90,7 +93,7 @@ Loopback **WebSocket** with versioned JSON envelopes and a launch-time session t
 - **Model sizing for that GPU (estimates to verify at G3):** one small/medium (~4B-class) model shared by 3–5 agents fits comfortably; one ~9–12B-class model at 4-bit quantization fits alongside Godot with moderate context; two large models loaded at once is tight. The Runtime v0.2 doc's Q4 load estimates (E4B ≈ 4.5 GB, 12B ≈ 6.7 GB) exclude KV cache and parallel slots. LLM-policy ablation sweeps will be limited by GPU throughput; scripted-policy sweeps by CPU.
 - **Python:** 3.12 (Blueprint). Pin exact dependency versions in a lockfile after a tested install.
 - **Godot:** the latest *verified stable* 4.x release, chosen and pinned at G1. Sources disagree (Blueprint says 4.7.2, PR #1 used 4.5.1); verify what exists before pinning.
-- **Models:** none bundled or downloaded automatically. Backend: llama.cpp server or Ollama. Candidate model families (Blueprint §3.2) are verified at G3 against the actual GPU.
+- **Models:** see D-20 (shortlist and bake-off) and D-21 (engine and packaging). Never downloaded automatically.
 
 ## D-07 — Venue announcement channel name
 **Status:** PROPOSED
@@ -235,3 +238,47 @@ Its HTTP transport, message shapes and folder layout are not carried forward. Cl
 **Status:** PROPOSED
 
 Not in RANGE v0: physical BET module, MIDI adapter, real audio capture, buffer sizes, sample rate (48 kHz preferred when the time comes, per BET Atlas), real cameras or depth sensors. In RANGE v0, Beacon is a typed control output rendered in Godot as a face glyph, a light color and a text bubble, using the D-14 palette.
+
+## D-20 — Model shortlist and bake-off
+**Status:** PROPOSED
+
+Candidates as of November 2026. Both families are reported as Apache 2.0; confirm on the official model cards before bundling. VRAM figures are rough 4-bit estimates for the weights only, to be measured.
+
+| Role | Cognition level | Candidates | Approx. VRAM |
+|---|---|---|---|
+| **Robot R** (the tested agent) | C2 | Qwen3.5-9B · Gemma 4 12B · fallback Gemma 4 E4B | ~6–7 GB |
+| **Active NPCs** (visitor X/Y, skeptic, exhibitor) | C2 | Gemma 4 E4B · Qwen3.5-4B | ~3–4.5 GB |
+| **Reactive NPCs** (staff when addressed, guard) | C1 | Qwen3.5-2B · Gemma 4 E2B, or templates | ~1.5–3 GB |
+| **Ambient crowd** | C0 | **No model.** Scripted routines only | 0 |
+
+- One model can serve several agents with separate contexts. Default: one NPC model shared by all C1/C2 NPCs, plus one model for Robot R.
+- Example budget on 16 GB: Robot R ~9–12B (~7 GB) + shared NPC ~4B (~3 GB) + context caches for ~6 parallel requests (~2 GB) + Godot (~1–2 GB) ≈ 13–14 GB.
+- **Paired A/B trials always use the same Robot R model in both arms.** Different models are separate experiments.
+- **Bake-off at G3:** every candidate runs the same small test set and is scored on action-JSON validity, valid-action rate, p50/p95 latency, scenario quality on SB-04 and S001, and VRAM. Pick by results, not reputation.
+- If a model offers a "thinking" mode, test with it off by default for latency, and measure it on as a separate condition.
+- Research question for later: does a smaller model *with* HORIZON match a larger model *without* it?
+
+## D-21 — Inference engine and standalone packaging
+**Status:** PROPOSED
+
+- **Default engine:** a bundled **llama.cpp `llama-server`** (MIT) running as a background child process, loading GGUF model files from a `models/` folder. It supports parallel request slots with batching (several agents at once), prompt caching, an OpenAI-compatible API, and JSON-schema-constrained output, so action JSON is valid by construction. Built for NVIDIA CUDA, with a Vulkan build as fallback.
+- **Ollama** (MIT) is supported as an alternative backend through the same provider-neutral gateway, for users who already run it. It is not bundled.
+- **Not chosen for v0:** running the model *inside* Godot via a GDExtension such as NobodyWho. The agent and HORIZON logic live in Python, and a model crash or VRAM spike would take down the world process.
+- **Standalone feel:** one double-click starts everything. The Godot app (or a thin launcher) starts the Python sidecar and `llama-server`, waits for health checks, shows clear errors, and shuts down only the processes it started.
+- **Model weights:** may ship in an optional "model pack" if the license allows (record the license file with it). Never downloaded silently. Demo Mode always works with no model.
+
+## D-22 — Languages and what each one does
+**Status:** PROPOSED
+
+| Language / format | Owns | Why |
+|---|---|---|
+| **GDScript** (Godot) | World, physics, navigation, line of sight, observer filter, avatars, cameras, UI, HUD, layer viewer rendering, process launching | Native to Godot, simple syntax, fast to iterate |
+| **Python 3.12** | HORIZON L4–L8 and ΔP, agent runtime and memory, scheduler, comms and disclosure gate, model gateway, evaluator, replay, ablation runner, headless test world | Best ecosystem for math, testing, LLM tooling and data analysis |
+| **JSON Schema** | The contract between Godot and Python (and the model's action format) | One definition validated on both sides |
+| **YAML** | Content catalogs: maps, props, bodies, personas, activities, events, scenarios, presets | Human-editable by the owner without code |
+| **SQLite + JSONL** | Run logs, event journal, metrics | Simple, local, replayable |
+| **PowerShell** | Windows build and smoke-test scripts | Native to Windows |
+| C++ (not written by us) | `llama-server`, prebuilt | Fast GPU inference |
+
+Escalation path only if profiling demands it: NumPy for Python hot paths; a C++ GDExtension for heavy Godot work such as many raycasts. No C# in v0 (it adds a .NET dependency for little gain here).
+
