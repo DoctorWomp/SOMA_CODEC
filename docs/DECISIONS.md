@@ -86,7 +86,8 @@ Loopback **WebSocket** with versioned JSON envelopes and a launch-time session t
 ## D-06 — Versions, machine and models
 **Status:** PROPOSED
 
-- **Development machine:** Windows 11 Pro, AMD Ryzen 9 9950X (16 cores / 32 threads), 96 GB RAM. **GPU: to be confirmed.**
+- **Development machine:** Windows 11 Pro, AMD Ryzen 9 9950X (16 cores / 32 threads), 96 GB RAM, **NVIDIA RTX 4070 Ti Super, 16 GB VRAM**.
+- **Model sizing for that GPU (estimates to verify at G3):** one small/medium (~4B-class) model shared by 3–5 agents fits comfortably; one ~9–12B-class model at 4-bit quantization fits alongside Godot with moderate context; two large models loaded at once is tight. The Runtime v0.2 doc's Q4 load estimates (E4B ≈ 4.5 GB, 12B ≈ 6.7 GB) exclude KV cache and parallel slots. LLM-policy ablation sweeps will be limited by GPU throughput; scripted-policy sweeps by CPU.
 - **Python:** 3.12 (Blueprint). Pin exact dependency versions in a lockfile after a tested install.
 - **Godot:** the latest *verified stable* 4.x release, chosen and pinned at G1. Sources disagree (Blueprint says 4.7.2, PR #1 used 4.5.1); verify what exists before pinning.
 - **Models:** none bundled or downloaded automatically. Backend: llama.cpp server or Ollama. Candidate model families (Blueprint §3.2) are verified at G3 against the actual GPU.
@@ -108,6 +109,7 @@ Use **`PA`** (Blueprint). Retire `SERVER` (Runtime v0.2). Channels are `GESTURE`
 | **A0, A1…** | Three different arm numberings | Retired; see D-03. |
 | **Halo** | Layer L1 · the whole HUD visualization | **Halo (L1)** vs **Halo HUD**. |
 | **T01–T30** | Blueprint acceptance tests vs T-prefixed modes above | Tests keep **T01–T30**; nothing else uses a bare `T`. |
+| **Ledger** | *Relational Ledger* (information about others, with scopes) · *Covenant Ledger* (PAE Part 8: an agent's own commitments and refusals) | Keep both names; they are different stores. In RANGE the Covenant idea becomes the agent's **commitments and refusals** record (see D-13). |
 
 ## D-09 — CDC modes in RANGE
 **Status:** PROPOSED
@@ -165,6 +167,10 @@ The robot may keep: what a person explicitly shared, its scope and consent state
 The robot may **never infer or store**: trust scores, sincerity, deception, alignment (D&D or otherwise), personality-pattern labels, threat scores, power deltas or conflict counts. The ten "toxic personality" patterns are used only as **moves in the moment** with matching de-escalation responses (Situational Protocols), never as labels.
 
 NPC personas in RANGE do have authored traits and private goals. Those exist for the NPC's own agent and the evaluator, and never reach Robot R except through observable behavior.
+
+**Trust attaches to evidence, not people.** Evidence carries a source class, ranked: `OBSERVED` > `REPORTED` (someone told the agent) > `INFERRED`. Overheard content is excluded from use (D-12). This replaces person-level trust scores.
+
+**Commitments and refusals survive compaction.** Each agent keeps a small record of what it promised ("I'll be with you after this") and what it declined, separate from decaying history (after the Covenant Ledger, PAE Part 8). Memory compaction may drop history but never these.
 
 ## D-14 — Public expression palette and light safety
 **Status:** PROPOSED

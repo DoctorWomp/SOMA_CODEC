@@ -88,6 +88,13 @@ Use for ideas and vocabulary only. **Do not implement the listed superseded part
 | [MVSB_CORE_PROMPT_COMPACT_v1.4](sources/reference/MVSB_CORE_PROMPT_COMPACT_v1.4.md) | A test-environment prompt to help an AI reason conversationally. Origin of the forgetting kernel, Atonement Vector (→ repair protocol), A vs B constraints, Pedestrian Permission. Its "Delta P" is a different quantity from HORIZON ΔP (D-08). |
 | [The Soul Accord](https://doctorwomp.com/soul_accord) | Author's independent philosophical research. Lateral, not focal for this build. |
 | [PAE — Perception Attribution Error](https://doctorwomp.com/pae) | Author's research series. Close in spirit to HORIZON's source-attribution and uncertainty work (Echo, Haze). Uses "CDC" to mean *Context Differentiation Capacity* (D-08). |
+| [PAE Part 2 — Fictional AI case studies](https://doctorwomp.com/pae_part_2/) | "Graceful error" (error ≠ existential threat) → repair protocol; "does my response create the threat?" → measuring robot-caused escalation (RANGE_V0_SCOPE §5.1). |
+| [PAE Part 3 — Formal definition](https://doctorwomp.com/pae_part_3/) | PAE = correct perception assigned to the wrong context; context spillover; the "person on the ground" three-context example → scenario S011. |
+| [PAE Part 4 — Three Doors](https://doctorwomp.com/pae_part_4/) | Same signal, different containers. Three outcomes: low, high and **inverted** (confidently wrong) context differentiation → S011 scoring. Context Inversion Pressure (exploiting empathy to bypass protections) → S012. |
+| [PAE Part 6 — Contextual Superposition Defense](https://doctorwomp.com/pae_part_6/) | Holding several readings open instead of collapsing early → Prism `HELD_OPEN`, premature-collapse metric. Containment below the "doxing line" → private escalation, never public exposure (D-12). |
+| [PAE Part 7 — Humor as a CDC metric](https://doctorwomp.com/pae_part_7/) | Benign violation needs correct context; metrics: humor not flagged as attack, urgency not always read as emergency, repair after a missed joke. Clinical sections are not ported (no pathologizing, D-13). |
+| [PAE Part 8 — Covenant Ledger](https://doctorwomp.com/pae_part_8/) | Commitments + refusals + source trust hierarchy + compression policy → commitments survive memory compaction; trust attaches to evidence, not people (D-13); promise follow-through → S013. |
+| [PAE Part 10 — Sigil Protocol](https://doctorwomp.com/pae_part_10/) | One-line capability disclosure ("declare the spectrometer") → each avatar's **capability card** in the viewer and run manifest (RANGE_V0_SCOPE §2.4). |
 
 ## Concept art
 
