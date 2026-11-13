@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# Godot (keep project files and *.import files; ignore the editor cache)
+godot_app/.godot/
+
+# Runtime data, logs and builds (never committed)
+user_data/
+runs/
+results/
+releases/
+
+# Model weights (large; distributed separately, D-21)
+models/*
+!models/README.md
+*.gguf
+
+# Secrets and local config
+.env
+*.local.yaml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
