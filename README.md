@@ -12,6 +12,7 @@
 - [Decisions](docs/DECISIONS.md): settled answers to conflicts across the design documents
 - [Source index](docs/SOURCES.md): all design documents with dates, status and precedence
 - [Inference strategy](docs/INFERENCE_STRATEGY.md): how local models stay fast enough for live interaction
+- [Context & memory strategy](docs/CONTEXT_MEMORY_STRATEGY.md): long memory without long prompts, so runs don't slow down
 - [Concept art](docs/concept-art/)
 
 HORIZON is research, not a validated emotion-recognition or safety system. Physical safety always belongs to the robot host.

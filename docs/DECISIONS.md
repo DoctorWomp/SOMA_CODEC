@@ -31,6 +31,7 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-21 | Inference engine and standalone packaging | PROPOSED |
 | D-22 | Languages and what each one does | PROPOSED |
 | D-23 | Inference strategy: residency, caching, tiers | PROPOSED |
+| D-24 | Context and memory strategy | PROPOSED |
 
 ---
 
@@ -287,4 +288,9 @@ Escalation path only if profiling demands it: NumPy for Python hot paths; a C++ 
 **Status:** PROPOSED
 
 Adopt [INFERENCE_STRATEGY.md](INFERENCE_STRATEGY.md): models stay resident for the whole run; prompts use a stable-prefix layout from day one; focal agents get a dedicated server with pinned slots and top priority; non-focal NPCs move between C0 (no model), C1 (templates, cache, tiny model) and C2 (shared NPC server with persona snapshots and pre-warming). Target configuration is Option C (two servers). Optional techniques (KV quantization, speculative decoding, CPU tier, response cache) are experiments kept only if measurements show a benefit; the response cache is never used for focal agents in trials.
+
+## D-24 — Context and memory strategy
+**Status:** PROPOSED
+
+Adopt [CONTEXT_MEMORY_STRATEGY.md](CONTEXT_MEMORY_STRATEGY.md). Agents never carry a growing transcript: every decision gets a freshly assembled prompt from per-agent memory stores, ordered stable-to-volatile, within a fixed per-tier budget. Compression is a ladder (deduplicate → expire → episode cards → rank and select → optional model summary → section cut). Guardrails, identity, open commitments, the latest conversational turn and the decision prompt are never cut. Corrections supersede, inferences never become observations, the agent's own reasoning text is never fed back as evidence, and scopes survive every compression step. Prompt size and latency must stay flat over a 2-hour soak test.
 
