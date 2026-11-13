@@ -181,4 +181,4 @@ Multi-floor maps · real audio, vision or depth models · BET hardware and MIDI 
 - ~~GPU model~~: resolved, RTX 4070 Ti Super 16 GB (D-06).
 - ~~Godot version~~: resolved, 4.7.2 stable (D-06).
 - **Model choice** verified at G3.
-- Owner review of all PROPOSED decisions in [DECISIONS.md](DECISIONS.md).
+- ~~Owner review of decisions~~: resolved, all approved 2026-11-13 ([DECISIONS.md](DECISIONS.md)).
