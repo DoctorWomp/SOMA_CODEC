@@ -1,0 +1,7 @@
+{
+  "dropout_over_one": "maximum",
+  "fov_too_wide": "maximum",
+  "missing_capability": "required",
+  "unknown_capability": "additionalProperties",
+  "unknown_field": "additionalProperties"
+}

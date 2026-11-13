@@ -16,7 +16,8 @@ Main specs: the [Master Build Blueprint](docs/sources/range/SOMA_RANGE_Master_Bu
 
 ## Status
 
-Planning complete; no code yet. Next gate: **G0**, see [docs/gates/G0_PLAN.md](docs/gates/G0_PLAN.md). G0 runs entirely in a cloud session. Owner PC setup for G1 onward: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
+**G0 built, in review** (draft PR; not merged until the owner approves): contracts v1, headless test world, ΔP module, config validator, one check command, CI. See [CHANGELOG.md](CHANGELOG.md). Decision D-29 (contract conventions) is PROPOSED and awaits owner review.
+Next gate after merge: **G1** (Sandbox Flats in Godot) on the owner's PC. Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
 
 ## Rules that never bend
 
@@ -41,6 +42,13 @@ Planning complete; no code yet. Next gate: **G0**, see [docs/gates/G0_PLAN.md](d
 
 ## Commands
 
-None yet. Added at G0.
+Full details: [docs/BUILD_AND_RUN.md](docs/BUILD_AND_RUN.md).
+
+- `uv sync --locked`: install the exact locked dependencies.
+- `uv run python tools/check.py`: **run every check** (contracts, configs, tests). Must pass before finishing any task.
+- `uv run python tools/validate_configs.py`: check only the YAML files in `configs/`.
+- `uv run pytest`: run only the tests.
+
+Layout: contracts in `contracts/` (see [contracts/README.md](contracts/README.md)), Python in `range_service/`, content in `configs/`, tests in `tests/`, scripts in `tools/`.
 
 These working rules adapt the `AGENTS.md` rules from the earlier scaffold in DoctorWomp/SOMA_CODEC#1 (D-18).

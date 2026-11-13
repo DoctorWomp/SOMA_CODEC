@@ -1,0 +1,9 @@
+{
+  "accepted_with_error": "const",
+  "bad_reason_code": "enum",
+  "missing_required": "required",
+  "negative_tick": "minimum",
+  "rejected_but_executed": "const",
+  "rejected_but_ok": "not",
+  "unknown_field": "additionalProperties"
+}

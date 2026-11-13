@@ -1,0 +1,7 @@
+{
+  "missing_required": "required",
+  "slider_out_of_range": "maximum",
+  "unknown_action": "enum",
+  "unknown_field": "additionalProperties",
+  "unknown_slider": "additionalProperties"
+}

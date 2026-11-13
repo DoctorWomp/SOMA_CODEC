@@ -1,0 +1,10 @@
+{
+  "bad_scope": "enum",
+  "commitment_without_state": "required",
+  "inferred_upgraded_to_observed": "enum",
+  "missing_required": "required",
+  "negative_time": "minimum",
+  "overheard_class": "enum",
+  "personality_label": "additionalProperties",
+  "unknown_field": "additionalProperties"
+}

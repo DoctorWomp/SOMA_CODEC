@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "observer_id": "robot_r",
+  "based_on_tick_id": 251,
+  "sim_time_ms": 25100,
+  "coordinate_frame": "world_meters_xyz",
+  "observer_pose": {
+    "x": 10.0,
+    "y": 0.0,
+    "z": 12.0,
+    "yaw_rad": 0.0
+  },
+  "observations": [
+    {
+      "observation_id": "obs_909",
+      "kind": "AUDIO_SPEECH",
+      "track_id": null,
+      "source_entity_id": null,
+      "position_estimate": null,
+      "bearing_rad": null,
+      "range_m": null,
+      "value": {
+        "channel": "LOCAL",
+        "text": "Excuse me, is this the way to the cafe?",
+        "addressed_to_observer": null
+      },
+      "observed_at_ms": 25080,
+      "expires_at_ms": 27080,
+      "validity": "UNKNOWN_SOURCE",
+      "quality": 0.6,
+      "provenance": "synthetic_acoustic_v1"
+    }
+  ]
+}

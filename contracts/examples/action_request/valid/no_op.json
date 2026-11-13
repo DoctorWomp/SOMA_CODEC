@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "action_request_id": "act_705",
+  "agent_id": "robot_r",
+  "based_on_tick_id": 262,
+  "action": "NO_OP",
+  "args": {}
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "preset_id": "NO_HAZE",
+  "question": "What changes without Haze?",
+  "layers": {
+    "L0": false,
+    "L1": true,
+    "L2": true,
+    "L3": true,
+    "L4": true,
+    "L5": true,
+    "L6": true,
+    "L7": false,
+    "L8": true
+  }
+}

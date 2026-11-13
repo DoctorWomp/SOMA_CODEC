@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/body.schema.json",
+  "title": "Body config",
+  "description": "configs/bodies/*.yaml. Physical limits, hard capability flags and senses (Blueprint §6.2). The world enforces these; no persona slider can bypass a missing capability.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "body_id", "kind", "dimensions", "motion", "reach_m", "capabilities", "sensors"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "body_id": { "$ref": "common.schema.json#/$defs/id" },
+    "kind": { "enum": ["HUMAN_WALKER", "HUMANOID_ROBOT", "WHEELED_ROBOT", "SCRIPTED_CROWD"] },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["radius_m", "height_m"],
+      "properties": {
+        "radius_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2 },
+        "height_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 3 }
+      }
+    },
+    "motion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_speed_m_s", "max_accel_m_s2", "max_turn_rate_rad_s"],
+      "properties": {
+        "max_speed_m_s": { "type": "number", "exclusiveMinimum": 0, "maximum": 10 },
+        "max_accel_m_s2": { "type": "number", "exclusiveMinimum": 0, "maximum": 20 },
+        "max_turn_rate_rad_s": { "type": "number", "exclusiveMinimum": 0, "maximum": 20 }
+      }
+    },
+    "reach_m": { "type": "number", "minimum": 0, "maximum": 3 },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "can_walk", "can_use_stairs", "can_use_ramp", "can_use_elevator", "can_speak",
+        "can_gesture", "can_grab", "can_sit", "can_access_staff_areas", "can_use_pa"
+      ],
+      "properties": {
+        "can_walk": { "type": "boolean" },
+        "can_use_stairs": { "type": "boolean" },
+        "can_use_ramp": { "type": "boolean" },
+        "can_use_elevator": { "type": "boolean" },
+        "can_speak": { "type": "boolean" },
+        "can_gesture": { "type": "boolean" },
+        "can_grab": { "type": "boolean" },
+        "can_sit": { "type": "boolean" },
+        "can_access_staff_areas": { "type": "boolean" },
+        "can_use_pa": { "type": "boolean" }
+      }
+    },
+    "sensors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fov_deg", "visual_range_m", "acoustic_range_m", "cadence_hz", "dropout_rate"],
+      "properties": {
+        "fov_deg": { "type": "number", "exclusiveMinimum": 0, "maximum": 360 },
+        "visual_range_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 200 },
+        "acoustic_range_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 200 },
+        "cadence_hz": { "type": "number", "exclusiveMinimum": 0, "maximum": 120 },
+        "dropout_rate": { "$ref": "common.schema.json#/$defs/unit_interval" }
+      }
+    }
+  }
+}

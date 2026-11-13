@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "seq": 7,
+  "tick_id": 3,
+  "sim_time_ms": 300,
+  "kind": "OBSERVATION_DROPPED",
+  "actor_id": "robot_r",
+  "payload": {
+    "observer_id": "robot_r",
+    "target_id": "visitor_y",
+    "reason": "SENSOR_DROPOUT"
+  }
+}

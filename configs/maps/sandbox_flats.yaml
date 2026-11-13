@@ -1,0 +1,68 @@
+# Sandbox Flats (RANGE_V0_SCOPE §2.1): a flat 30 x 20 m test floor for proving
+# one interaction at a time. Units are meters. Floor axes follow Godot:
+# x runs left to right, z runs top to bottom on a top-down view, y is up (D-29).
+# Environment values drive both what the renderer shows and what simulated
+# senses perceive (ART_DIRECTION §5). Exact geometry is refined at G1.
+schema_version: "1.0"
+map_id: sandbox_flats
+version: 1
+name: Sandbox Flats
+
+bounds:
+  width_m: 30
+  depth_m: 20
+
+zones:
+  - zone_id: main_floor
+    area: {x_min: 0, z_min: 0, x_max: 30, z_max: 20}
+    environment:
+      light_level: 0.9
+      visual_range_factor: 1.0
+      noise_floor_db: 45
+      light_preset: day_expo
+      atmosphere_preset: clear_air
+  - zone_id: platform_top
+    area: {x_min: 22, z_min: 0, x_max: 30, z_max: 8}
+    environment:
+      light_level: 0.9
+      visual_range_factor: 1.0
+      noise_floor_db: 45
+  - zone_id: chair_corner
+    area: {x_min: 2, z_min: 14, x_max: 9, z_max: 19}
+    environment:
+      light_level: 0.6
+      visual_range_factor: 1.0
+      noise_floor_db: 40
+      light_preset: warm_practical
+
+walls:
+  # Outer walls. The west wall is the acoustically reflective one (SB-03).
+  - {wall_id: wall_north, a: {x: 0, z: 0}, b: {x: 30, z: 0}, height_m: 4.0, blocks_sight: true, blocks_sound: true}
+  - {wall_id: wall_south, a: {x: 0, z: 20}, b: {x: 30, z: 20}, height_m: 4.0, blocks_sight: true, blocks_sound: true}
+  - {wall_id: wall_east, a: {x: 30, z: 0}, b: {x: 30, z: 20}, height_m: 4.0, blocks_sight: true, blocks_sound: true}
+  - {wall_id: wall_west, a: {x: 0, z: 0}, b: {x: 0, z: 20}, height_m: 4.0, blocks_sight: true, blocks_sound: true, acoustically_reflective: true}
+  # Movable partitions (SB-02 blocked view).
+  - {wall_id: partition_a, a: {x: 10, z: 6}, b: {x: 10, z: 12}, height_m: 2.0, blocks_sight: true, blocks_sound: false, movable: true}
+  - {wall_id: partition_b, a: {x: 17, z: 13}, b: {x: 21, z: 13}, height_m: 2.0, blocks_sight: true, blocks_sound: false, movable: true}
+
+platforms:
+  - platform_id: raised_platform
+    area: {x_min: 22, z_min: 0, x_max: 30, z_max: 8}
+    height_m: 0.6
+
+nav_links:
+  # Both reach the platform. Wheeled bodies must take the ramp (SB-05).
+  - {link_id: platform_stairs, kind: STAIRS, from: {x: 20.5, z: 2}, to: {x: 22, z: 2}, required_capability: can_use_stairs}
+  - {link_id: platform_ramp, kind: RAMP, from: {x: 14.8, z: 7}, to: {x: 22, z: 7}, required_capability: can_use_ramp}
+
+props:
+  - {prop_id: pa_speaker_1, prop_type: PA_SPEAKER, position: {x: 1, z: 10}, yaw_rad: -1.5708}
+  - {prop_id: chair_1, prop_type: CHAIR, position: {x: 4, z: 16}}
+  - {prop_id: chair_2, prop_type: CHAIR, position: {x: 5, z: 17}}
+  - {prop_id: chair_3, prop_type: CHAIR, position: {x: 6, z: 16}}
+
+spawn_points:
+  - {spawn_id: spawn_robot, position: {x: 15, z: 10}, yaw_rad: 0.0}
+  - {spawn_id: spawn_talker, position: {x: 15, z: 8.5}, yaw_rad: 3.1416}
+  - {spawn_id: spawn_edge, position: {x: 17.5, z: 9.0}, yaw_rad: 1.5708}
+  - {spawn_id: spawn_entrance, position: {x: 15, z: 19}, yaw_rad: 0.0}

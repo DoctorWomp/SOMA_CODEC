@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "feature_id": "delta_41",
+  "channel": "pressure",
+  "track_id": "anon_4f2a91c0",
+  "value": 2.0,
+  "units": "events_per_10_s",
+  "baseline": 0.5,
+  "baseline_scope": "SESSION",
+  "scale": 1.0,
+  "normalized_delta": 1.5,
+  "null_reason": null,
+  "quality": 0.8,
+  "validity": "OBSERVED",
+  "observed_at_ms": 4140,
+  "expires_at_ms": 6000,
+  "provenance": "synthetic_visual_fov_los_v1",
+  "config_version": "deltap.v1"
+}

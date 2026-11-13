@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/run_manifest.schema.json",
+  "title": "Run manifest",
+  "description": "Immutable record of how a run was set up (Blueprint §13.3, D-03): versions, seed, scenario, and per avatar the policy, perception mask, sensor package and capability card, plus resolved settings.",
+  "x-audience": "evaluator",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "run_id", "app_version", "git_commit", "contracts_version", "seed",
+    "scenario_id", "map_id", "map_version", "simulation", "avatars", "resolved_settings",
+    "tainted", "taint_reasons"
+  ],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "run_id": { "$ref": "common.schema.json#/$defs/id" },
+    "app_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.]+)?$" },
+    "git_commit": {
+      "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{7,40}$" }, { "type": "null" }]
+    },
+    "contracts_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "seed": {
+      "description": "Capped at 2^53-1 so Godot (float64 JSON numbers) reads it exactly.",
+      "type": "integer", "minimum": 0, "maximum": 9007199254740991
+    },
+    "scenario_id": { "$ref": "common.schema.json#/$defs/id" },
+    "map_id": { "$ref": "common.schema.json#/$defs/id" },
+    "map_version": { "type": "integer", "minimum": 1 },
+    "simulation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tick_hz", "mode", "world_authority"],
+      "properties": {
+        "tick_hz": { "type": "integer", "minimum": 1, "maximum": 240 },
+        "mode": { "enum": ["LIVE", "STEPPED", "PLAYBACK", "RERUN"] },
+        "world_authority": {
+          "description": "Godot in the app; the Python test world only in tests (D-04).",
+          "enum": ["GODOT", "TESTWORLD"]
+        }
+      }
+    },
+    "avatars": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/avatar_entry" }
+    },
+    "resolved_settings": {
+      "description": "Every slider and setting after resolution: snake_case keys, scalar values.",
+      "type": "object",
+      "maxProperties": 256,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_.]{0,63}$" },
+      "additionalProperties": {
+        "oneOf": [{ "type": "string", "maxLength": 200 }, { "type": "number" }, { "type": "boolean" }, { "type": "null" }]
+      }
+    },
+    "tainted": { "type": "boolean" },
+    "taint_reasons": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "enum": ["MID_RUN_INTERVENTION", "MID_RUN_BYPASS", "EVALUATOR_TRUTH_OPENED", "OTHER"] }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "tainted": { "const": false } } },
+      "then": { "properties": { "taint_reasons": { "maxItems": 0 } } },
+      "else": { "properties": { "taint_reasons": { "minItems": 1 } } }
+    }
+  ],
+  "$defs": {
+    "avatar_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "avatar_id", "controller", "policy", "cognition_level", "persona_id", "body_id",
+        "perception_preset", "perception_mask", "sensor_package", "model", "capability_card"
+      ],
+      "properties": {
+        "avatar_id": { "$ref": "common.schema.json#/$defs/id" },
+        "controller": { "enum": ["SCRIPTED", "LLM_AGENT", "HUMAN_INPUT", "REPLAY_TAPE"] },
+        "policy": {
+          "description": "D-03 policy axis. Null for human input and replay tapes.",
+          "oneOf": [{ "enum": ["SCRIPTED", "LLM"] }, { "type": "null" }]
+        },
+        "cognition_level": { "enum": ["C0", "C1", "C2"] },
+        "persona_id": { "$ref": "common.schema.json#/$defs/id" },
+        "body_id": { "$ref": "common.schema.json#/$defs/id" },
+        "perception_preset": { "$ref": "common.schema.json#/$defs/id" },
+        "perception_mask": { "$ref": "common.schema.json#/$defs/layer_mask" },
+        "sensor_package": { "enum": ["STANDARD", "ENHANCED"] },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model_id", "model_hash"],
+          "properties": {
+            "model_id": { "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 128 }, { "type": "null" }] },
+            "model_hash": { "oneOf": [{ "type": "string", "pattern": "^[0-9a-f]{8,128}$" }, { "type": "null" }] }
+          }
+        },
+        "capability_card": {
+          "description": "One-line summary shown in the viewer (RANGE_V0_SCOPE §2.4), e.g. [robot_r | LLM: 4B-class | HORIZON: H4 | memory: RCC | sensors: STANDARD | actions: v1].",
+          "type": "string",
+          "pattern": "^\\[.{1,300}\\]$"
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "controller": { "const": "SCRIPTED" } } }, "then": { "properties": { "policy": { "const": "SCRIPTED" } } } },
+        { "if": { "properties": { "controller": { "const": "LLM_AGENT" } } }, "then": { "properties": { "policy": { "const": "LLM" } } } },
+        { "if": { "properties": { "controller": { "enum": ["HUMAN_INPUT", "REPLAY_TAPE"] } } }, "then": { "properties": { "policy": { "type": "null" } } } }
+      ]
+    }
+  }
+}

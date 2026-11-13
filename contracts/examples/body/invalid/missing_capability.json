@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "body_id": "test_walker",
+  "kind": "HUMAN_WALKER",
+  "dimensions": {
+    "radius_m": 0.25,
+    "height_m": 1.7
+  },
+  "motion": {
+    "max_speed_m_s": 1.4,
+    "max_accel_m_s2": 1.5,
+    "max_turn_rate_rad_s": 3.0
+  },
+  "reach_m": 0.7,
+  "capabilities": {
+    "can_walk": true,
+    "can_use_ramp": true,
+    "can_use_elevator": true,
+    "can_speak": true,
+    "can_gesture": true,
+    "can_grab": true,
+    "can_sit": true,
+    "can_access_staff_areas": false,
+    "can_use_pa": false
+  },
+  "sensors": {
+    "fov_deg": 180,
+    "visual_range_m": 25,
+    "acoustic_range_m": 12,
+    "cadence_hz": 10,
+    "dropout_rate": 0.0
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "message_id": "msg_000042",
+  "type": "world.observation",
+  "tick_id": 251,
+  "sim_time_ms": 25100,
+  "source": "godot_world",
+  "payload": {
+    "schema_version": "1.0",
+    "observer_id": "robot_r",
+    "based_on_tick_id": 251,
+    "sim_time_ms": 25100,
+    "coordinate_frame": "world_meters_xyz",
+    "observer_pose": {
+      "x": 10.0,
+      "y": 0.0,
+      "z": 12.0,
+      "yaw_rad": 0.0
+    },
+    "observations": [
+      {
+        "observation_id": "obs_908",
+        "event_id": "evt_610",
+        "kind": "VISUAL_GESTURE",
+        "track_id": "anon_4f2a91c0",
+        "source_entity_id": null,
+        "position_estimate": {
+          "x": 11.3,
+          "y": 0.0,
+          "z": 9.0
+        },
+        "bearing_rad": -0.4086,
+        "range_m": 3.2757,
+        "value": {
+          "gesture": "SMALL_WAVE",
+          "direction": "TOWARD_OBSERVER"
+        },
+        "observed_at_ms": 25050,
+        "expires_at_ms": 26050,
+        "validity": "OBSERVED",
+        "quality": 0.8,
+        "provenance": "synthetic_visual_fov_los_v1"
+      }
+    ]
+  },
+  "session_token": "abc123"
+}

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/journal_entry.schema.json",
+  "title": "Event journal entry",
+  "description": "One line of the JSONL event journal (Blueprint §13.3). Evaluator-side: may contain world truth. G0 covers the kinds the headless test world writes; G2 extends it.",
+  "x-audience": "evaluator",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "seq", "tick_id", "sim_time_ms", "kind", "actor_id", "payload"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "seq": {
+      "description": "Order within the journal, starting at 0.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "tick_id": { "$ref": "common.schema.json#/$defs/tick" },
+    "sim_time_ms": { "$ref": "common.schema.json#/$defs/time_ms" },
+    "kind": { "enum": ["RUN_STARTED", "COMMAND_APPLIED", "OBSERVATION_DELIVERED", "OBSERVATION_DROPPED", "RUN_ENDED"] },
+    "actor_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
+    "payload": {
+      "description": "Closed per kind by the allOf rules below.",
+      "type": "object",
+      "x-closed-by": "kind"
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "kind": { "const": "RUN_STARTED" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/run_started" } } } },
+    { "if": { "properties": { "kind": { "const": "COMMAND_APPLIED" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/command_applied" } } } },
+    { "if": { "properties": { "kind": { "const": "OBSERVATION_DELIVERED" } } }, "then": { "properties": { "payload": { "$ref": "observation.schema.json" } } } },
+    { "if": { "properties": { "kind": { "const": "OBSERVATION_DROPPED" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/observation_dropped" } } } },
+    { "if": { "properties": { "kind": { "const": "RUN_ENDED" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/run_ended" } } } }
+  ],
+  "$defs": {
+    "avatar_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["avatar_id", "x", "z", "yaw_rad"],
+      "properties": {
+        "avatar_id": { "$ref": "common.schema.json#/$defs/id" },
+        "x": { "type": "number" },
+        "z": { "type": "number" },
+        "yaw_rad": { "type": "number" }
+      }
+    },
+    "run_started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seed", "map_id", "tick_hz", "avatars"],
+      "properties": {
+        "seed": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "map_id": { "$ref": "common.schema.json#/$defs/id" },
+        "tick_hz": { "type": "integer", "minimum": 1, "maximum": 240 },
+        "avatars": { "type": "array", "items": { "$ref": "#/$defs/avatar_state" } }
+      }
+    },
+    "command_applied": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "avatar_id", "result"],
+      "properties": {
+        "op": { "enum": ["SET_POSE", "MOVE_BY", "TURN_BY"] },
+        "avatar_id": { "$ref": "common.schema.json#/$defs/id" },
+        "dx": { "type": "number" },
+        "dz": { "type": "number" },
+        "dyaw_rad": { "type": "number" },
+        "x": { "type": "number" },
+        "z": { "type": "number" },
+        "yaw_rad": { "type": "number" },
+        "result": { "$ref": "#/$defs/avatar_state" }
+      }
+    },
+    "observation_dropped": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observer_id", "target_id", "reason"],
+      "properties": {
+        "observer_id": { "$ref": "common.schema.json#/$defs/id" },
+        "target_id": { "$ref": "common.schema.json#/$defs/id" },
+        "reason": { "enum": ["SENSOR_DROPOUT"] }
+      }
+    },
+    "run_ended": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticks_run"],
+      "properties": {
+        "ticks_run": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

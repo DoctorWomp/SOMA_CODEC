@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "persona_id": "visitor_test",
+  "display_name": "Test visitor",
+  "role": "expo_visitor",
+  "public_goal": "Look around the hall.",
+  "private_goal": "Leave after 2 minutes if nobody helps.",
+  "knows": [],
+  "does_not_know": [
+    "where the cafe is"
+  ],
+  "style": {
+    "sociability": 50,
+    "assertiveness": 50,
+    "politeness": 50,
+    "expressivity": 50,
+    "playfulness": 50,
+    "patience": 50,
+    "skepticism": 50,
+    "situational_attention": 50,
+    "adaptability": 50
+  },
+  "default_body": "human_walker",
+  "cognition_level": "C1",
+  "allowed_actions": [
+    "MOVE_TO",
+    "FLY"
+  ]
+}

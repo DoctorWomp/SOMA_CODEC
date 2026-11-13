@@ -1,0 +1,13 @@
+{
+  "evaluator_field_in_args": "additionalProperties",
+  "group_speak_without_group": "required",
+  "missing_required": "required",
+  "move_with_both_targets": "oneOf",
+  "negative_tick": "minimum",
+  "noop_with_args": "additionalProperties",
+  "text_too_long": "maxLength",
+  "unknown_action": "enum",
+  "unknown_arg": "additionalProperties",
+  "unknown_field": "additionalProperties",
+  "wait_too_long": "maximum"
+}

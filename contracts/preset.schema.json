@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/preset.schema.json",
+  "title": "Perception preset config",
+  "description": "configs/presets/*.yaml. A named perception mask, like a mixer snapshot (D-03, RANGE_V0_SCOPE §2.5). L0 cannot be bypassed.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "preset_id", "question", "layers"],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "preset_id": {
+      "description": "Atlas ladder names H0-H6 or another named mask such as NO_HAZE. ORACLE is evaluator-only and never a preset.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,31}$",
+      "not": { "const": "ORACLE" }
+    },
+    "question": { "$ref": "common.schema.json#/$defs/short_text" },
+    "layers": { "$ref": "common.schema.json#/$defs/layer_mask" }
+  }
+}

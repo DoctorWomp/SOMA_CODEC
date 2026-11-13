@@ -1,0 +1,14 @@
+{
+  "bad_validity": "enum",
+  "delivered_to_in_item": "additionalProperties",
+  "fractional_tick": "type",
+  "missing_required": "required",
+  "missing_with_quality": "type",
+  "negative_tick": "minimum",
+  "non_anonymous_track": "pattern",
+  "private_goal_in_packet": "additionalProperties",
+  "private_goal_in_value": "additionalProperties",
+  "unknown_field": "additionalProperties",
+  "wrong_frame": "const",
+  "wrong_value_for_kind": "additionalProperties"
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "intervention_id": "dir_031",
+  "tick_id": 366,
+  "sim_time_ms": 36600,
+  "operator": "local_human",
+  "intervention_type": "ENVIRONMENTAL_INFLUENCE",
+  "operation": "PLACE_PROP",
+  "target_id": null,
+  "args": {
+    "prop_type": "NOTE",
+    "x": 14.2,
+    "z": 9.5,
+    "text": "Demo moved to Booth C"
+  },
+  "before": null,
+  "after": null,
+  "pre_scheduled": false,
+  "trial_tainted": false
+}

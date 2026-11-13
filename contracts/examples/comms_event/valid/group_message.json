@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "comms_id": "comms_131",
+  "channel": "GROUP",
+  "sender_id": "visitor_y",
+  "addressee_id": null,
+  "text": "Booth C demo moved to 3pm",
+  "emitted_at_tick": 315,
+  "emitted_at_ms": 31500,
+  "modality": "DEVICE_MESSAGE",
+  "delivery_scope": "GROUP_MEMBERS",
+  "group_id": "grp_devs",
+  "delivered_to": [
+    "dev_01",
+    "robot_r"
+  ],
+  "not_delivered_to": [
+    "visitor_x"
+  ],
+  "source_event_id": null
+}

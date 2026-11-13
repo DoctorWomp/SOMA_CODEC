@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "memory_id": "mem_13",
+  "owner_id": "robot_r",
+  "store": "WORLD_KNOWLEDGE",
+  "status": "OBSERVED",
+  "source_class": "INFERRED",
+  "source_event_id": "evt_700",
+  "observed_at_ms": 36700,
+  "expires_at_ms": 600000,
+  "scope": "PUBLIC",
+  "audience_present": [],
+  "importance": "NORMAL",
+  "version": 1,
+  "supersedes": null,
+  "content": {
+    "text": "Sign near booth B reads: Demo moved to Booth C",
+    "untrusted_text": true
+  }
+}

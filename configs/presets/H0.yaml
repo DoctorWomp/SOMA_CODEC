@@ -1,0 +1,6 @@
+# H0: HORIZON off. The agent gets the same observer-filtered evidence as a flat
+# list. L0 Anchor cannot be bypassed (D-03). The H1-H6 ladder ships at G5.
+schema_version: "1.0"
+preset_id: H0
+question: What can the baseline do with flat observer-filtered evidence?
+layers: {L0: true, L1: false, L2: false, L3: false, L4: false, L5: false, L6: false, L7: false, L8: false}

@@ -1,0 +1,10 @@
+{
+  "bad_sensor_package": "enum",
+  "l0_bypassed": "const",
+  "missing_required": "required",
+  "oracle_preset_field": "additionalProperties",
+  "policy_controller_mismatch": "const",
+  "seed_too_large": "maximum",
+  "tainted_without_reason": "minItems",
+  "unknown_field": "additionalProperties"
+}

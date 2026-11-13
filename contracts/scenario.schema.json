@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/scenario.schema.json",
+  "title": "Scenario config",
+  "description": "configs/scenarios/*.yaml. Map + cast + exogenous events + what is measured + evaluator-only labels (RANGE_V0_SCOPE §2.6). evaluator_only never reaches any agent prompt.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "scenario_id", "title", "map", "default_seed", "tick_hz",
+    "duration_ticks", "cast", "events", "measure", "evaluator_only"
+  ],
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "scenario_id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,47}$"
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "map": { "$ref": "common.schema.json#/$defs/id" },
+    "default_seed": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "tick_hz": { "type": "integer", "minimum": 1, "maximum": 240 },
+    "duration_ticks": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "cast": {
+      "description": "avatar_id -> cast entry.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 64,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,47}$" },
+      "additionalProperties": { "$ref": "#/$defs/cast_entry" }
+    },
+    "events": {
+      "description": "Authored exogenous event tape (Blueprint §13.1).",
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/event" }
+    },
+    "measure": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$" }
+    },
+    "evaluator_only": {
+      "description": "EVALUATOR ONLY. Labels and expected conditions; never shown to any agent.",
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,47}$" },
+      "additionalProperties": {
+        "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "number" }, { "type": "boolean" }]
+      }
+    }
+  },
+  "$defs": {
+    "cast_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["persona", "body", "controller", "policy", "preset", "sensor_package", "spawn"],
+      "properties": {
+        "persona": { "$ref": "common.schema.json#/$defs/id" },
+        "body": { "$ref": "common.schema.json#/$defs/id" },
+        "controller": { "enum": ["SCRIPTED", "LLM_AGENT", "HUMAN_INPUT", "REPLAY_TAPE"] },
+        "policy": { "oneOf": [{ "enum": ["SCRIPTED", "LLM"] }, { "type": "null" }] },
+        "preset": { "$ref": "common.schema.json#/$defs/id" },
+        "sensor_package": { "enum": ["STANDARD", "ENHANCED"] },
+        "spawn": { "$ref": "common.schema.json#/$defs/id" },
+        "task": { "$ref": "common.schema.json#/$defs/short_text" }
+      },
+      "allOf": [
+        { "if": { "properties": { "controller": { "const": "SCRIPTED" } } }, "then": { "properties": { "policy": { "const": "SCRIPTED" } } } },
+        { "if": { "properties": { "controller": { "const": "LLM_AGENT" } } }, "then": { "properties": { "policy": { "const": "LLM" } } } },
+        { "if": { "properties": { "controller": { "enum": ["HUMAN_INPUT", "REPLAY_TAPE"] } } }, "then": { "properties": { "policy": { "type": "null" } } } }
+      ]
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at_tick", "event_type"],
+      "properties": {
+        "at_tick": { "$ref": "common.schema.json#/$defs/tick" },
+        "event_type": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$" },
+        "actor": { "$ref": "common.schema.json#/$defs/id" },
+        "where": { "$ref": "common.schema.json#/$defs/id" },
+        "args": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,47}$" },
+          "additionalProperties": {
+            "oneOf": [{ "type": "string", "maxLength": 300 }, { "type": "number" }, { "type": "boolean" }]
+          }
+        }
+      }
+    }
+  }
+}
