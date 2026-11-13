@@ -1,6 +1,6 @@
 # Interaction Modes — Spectator, Director, Participant
 
-**Status:** PROPOSED (owner review pending) · 2026-11-13
+**Status:** APPROVED (owner, 2026-11-13)
 **Builds on:** Blueprint §4 (launch menu), §7 (modes), §8 (COMMS), §11 (memory), tests T06–T12 · [DECISIONS.md](DECISIONS.md) D-03, D-09, D-12, D-25 · [RANGE_V0_SCOPE.md](RANGE_V0_SCOPE.md) gate G4
 
 How a person uses RANGE: as an observer, as an experiment designer, or as a participant inside the expo, without changing the simulation underneath.

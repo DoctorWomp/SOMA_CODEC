@@ -1,6 +1,6 @@
 # Context & Memory Strategy — bounded prompts, adaptive compression, no rot
 
-**Status:** PROPOSED (owner review pending) · 2026-11-13
+**Status:** APPROVED (owner, 2026-11-13)
 **Related:** [INFERENCE_STRATEGY.md](INFERENCE_STRATEGY.md) (caching, slots, tiers) · [DECISIONS.md](DECISIONS.md) D-12, D-13, D-24 · Blueprint §11 (RCC) · Runtime v0.2 §9 · CDC v0.1 (bounded interaction window) · PAE Part 8 (Covenant Ledger)
 
 How every agent in RANGE keeps a long memory without carrying a long prompt, so runs can last hours without slowing down (**bloat**) or getting confused by stale, contradictory or self-generated material (**rot**).

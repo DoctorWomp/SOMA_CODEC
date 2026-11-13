@@ -1,6 +1,6 @@
 # SOMA RANGE v0 — Scope
 
-**Status:** PROPOSED (owner review pending) · 2026-11-13
+**Status:** APPROVED (owner, 2026-11-13)
 **Builds on:** [Master Build Blueprint v1.0](sources/range/SOMA_RANGE_Master_Build_Blueprint_v1.0.md), [HORIZON Operational Atlas v0.2](sources/horizon/SOMA_HORIZON_Sensory_Layer_Operational_Atlas_v0.2.md), [ΔP Math Addendum v0.2](sources/horizon/SOMA_HORIZON_DeltaP_Math_Control_Addendum_v0.2.md), and [DECISIONS.md](DECISIONS.md).
 Where this document is more specific than the Blueprint, this document applies.
 
@@ -124,7 +124,7 @@ evaluator_only:
 
 ### 3.1 Proposed scenario families from the PAE series
 
-Status: PROPOSED. Scheduled after the Blueprint minimum set.
+Status: APPROVED. Scheduled after the Blueprint minimum set.
 
 | ID | Setup | Passes when |
 |---|---|---|
@@ -158,7 +158,7 @@ Each gate ends with its tests passing and a short report: what works, commands r
 - All privacy, disclosure and no-leak tests pass (Blueprint T13–T17, T19, T24).
 - Results are reported honestly, including null results.
 
-### 5.1 Additional metrics (PROPOSED, from the PAE series)
+### 5.1 Additional metrics (from the PAE series)
 
 Alongside the Blueprint §13.2 metrics:
 

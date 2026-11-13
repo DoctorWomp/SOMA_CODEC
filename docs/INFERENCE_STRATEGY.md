@@ -1,6 +1,6 @@
 # Inference Strategy — model residency, caching and scheduling
 
-**Status:** PROPOSED (owner review pending) · 2026-11-13
+**Status:** APPROVED (owner, 2026-11-13)
 **Related:** [DECISIONS.md](DECISIONS.md) D-20 (models), D-21 (engine), D-23 (this strategy) · [RANGE_V0_SCOPE.md](RANGE_V0_SCOPE.md) gate G3
 
 How RANGE keeps local models fast enough for live social interaction on one 16 GB GPU, and how that differs for **focal** avatars (the ones being tested) and **non-focal** avatars (crowd, staff, supporting NPCs).

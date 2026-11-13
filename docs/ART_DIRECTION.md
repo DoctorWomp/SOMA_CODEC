@@ -1,6 +1,6 @@
 # Art Direction & Rendering Budget
 
-**Status:** PROPOSED (owner review pending) · 2026-11-13
+**Status:** APPROVED (owner, 2026-11-13)
 **Related:** [RANGE_V0_SCOPE.md](RANGE_V0_SCOPE.md) · [INFERENCE_STRATEGY.md](INFERENCE_STRATEGY.md) (VRAM budget) · [DECISIONS.md](DECISIONS.md) D-14 (palettes, light safety), D-26 · Avatar Foundry v0.1 §3, §5 · Blueprint §5.2, §14
 
 How RANGE should look, how much GPU it may spend on looks, and how lighting and atmosphere become part of what avatars perceive rather than decoration.

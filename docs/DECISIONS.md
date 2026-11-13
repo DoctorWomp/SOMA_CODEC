@@ -8,50 +8,51 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 
 | ID | Topic | Status |
 |---|---|---|
-| D-01 | Document precedence | PROPOSED |
-| D-02 | One gate numbering | PROPOSED |
-| D-03 | Experiment axes, layer masks and presets | PROPOSED |
-| D-04 | World authority | PROPOSED |
-| D-05 | Godot ↔ Python transport | PROPOSED |
-| D-06 | Versions, machine and models | PROPOSED |
-| D-07 | Venue announcement channel name | PROPOSED |
-| D-08 | Naming collisions | PROPOSED |
-| D-09 | CDC modes in RANGE | PROPOSED |
-| D-10 | How confidence is represented | PROPOSED |
-| D-11 | ΔP formula | PROPOSED |
-| D-12 | Disclosure scopes and gate | PROPOSED |
-| D-13 | What may be inferred or stored about a person | PROPOSED |
-| D-14 | Public expression palette and light safety | PROPOSED |
-| D-15 | Repository layout | PROPOSED |
-| D-16 | Which layers are simulated vs implemented | PROPOSED |
-| D-17 | Proxemic distances | PROPOSED |
+| D-01 | Document precedence | APPROVED (owner, 2026-11-13) |
+| D-02 | One gate numbering | APPROVED (owner, 2026-11-13) |
+| D-03 | Experiment axes, layer masks and presets | APPROVED (owner, 2026-11-13) |
+| D-04 | World authority | APPROVED (owner, 2026-11-13) |
+| D-05 | Godot ↔ Python transport | APPROVED (owner, 2026-11-13) |
+| D-06 | Versions, machine and models | APPROVED (owner, 2026-11-13) |
+| D-07 | Venue announcement channel name | APPROVED (owner, 2026-11-13) |
+| D-08 | Naming collisions | APPROVED (owner, 2026-11-13) |
+| D-09 | CDC modes in RANGE | APPROVED (owner, 2026-11-13) |
+| D-10 | How confidence is represented | APPROVED (owner, 2026-11-13) |
+| D-11 | ΔP formula | APPROVED (owner, 2026-11-13) |
+| D-12 | Disclosure scopes and gate | APPROVED (owner, 2026-11-13) |
+| D-13 | What may be inferred or stored about a person | APPROVED (owner, 2026-11-13) |
+| D-14 | Public expression palette and light safety | APPROVED (owner, 2026-11-13) |
+| D-15 | Repository layout | APPROVED (owner, 2026-11-13) |
+| D-16 | Which layers are simulated vs implemented | APPROVED (owner, 2026-11-13) |
+| D-17 | Proxemic distances | APPROVED (owner, 2026-11-13) |
 | D-18 | PR #1 | APPROVED (owner, 2026-11-13) |
-| D-19 | Hardware track parked for RANGE v0 | PROPOSED |
-| D-20 | Model shortlist and bake-off | PROPOSED |
-| D-21 | Inference engine and standalone packaging | PROPOSED |
-| D-22 | Languages and what each one does | PROPOSED |
-| D-23 | Inference strategy: residency, caching, tiers | PROPOSED |
-| D-24 | Context and memory strategy | PROPOSED |
-| D-25 | Interaction modes and awareness protocols | PROPOSED |
-| D-26 | Art direction, rendering budget and environment-as-variable | PROPOSED |
-| D-27 | Contract format and validation | PROPOSED |
+| D-19 | Hardware track parked for RANGE v0 | APPROVED (owner, 2026-11-13) |
+| D-20 | Model shortlist and bake-off | APPROVED (owner, 2026-11-13) |
+| D-21 | Inference engine and standalone packaging | APPROVED (owner, 2026-11-13) |
+| D-22 | Languages and what each one does | APPROVED (owner, 2026-11-13) |
+| D-23 | Inference strategy: residency, caching, tiers | APPROVED (owner, 2026-11-13) |
+| D-24 | Context and memory strategy | APPROVED (owner, 2026-11-13) |
+| D-25 | Interaction modes and awareness protocols | APPROVED (owner, 2026-11-13) |
+| D-26 | Art direction, rendering budget and environment-as-variable | APPROVED (owner, 2026-11-13) |
+| D-27 | Contract format and validation | APPROVED (owner, 2026-11-13) |
+| D-28 | License | APPROVED (owner, 2026-11-13) |
 
 ---
 
 ## D-01 — Document precedence
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Precedence, highest first: non-negotiable safety/privacy/honesty rules → this file → CANON → SUPPORTING → SEED → REFERENCE. Within a status, newer wins. Full rules and the status of every document are in [SOURCES.md](SOURCES.md).
 
 CANON: Master Build Blueprint v1.0, HORIZON Sensory Layer Operational Atlas v0.2, ΔP Math & Control Addendum v0.2.
 
 ## D-02 — One gate numbering
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Use the Blueprint's **G0–G7** gates as the only build plan. Retire: Assessment clusters RG-01..10, PR #1 milestones M0–M6, Runtime v0.2 Gates A–D, HORIZON v0.1 phases 0–6, Addendum P0–P3. Their content is folded into G0–G7 in [RANGE_V0_SCOPE.md](RANGE_V0_SCOPE.md).
 
 ## D-03 — Experiment axes, layer masks and presets
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Three documents number the comparison arms differently, and "A1" means something different in each. Replace all arm labels with **three independent axes**, recorded in every run manifest:
 
@@ -80,19 +81,19 @@ Bypass rules: L0 cannot be bypassed. Bypassing a layer removes its output from t
 Old labels → new: Blueprint A0 → `SCRIPTED`; Blueprint A1 → `LLM` + `H0`; Blueprint A2 → `LLM` + `H4`/full; Blueprint A3 → sensor `ENHANCED`; Blueprint A4 → named masks; Addendum A1–A7 and Atlas A0–A6 → `H0`–`H6`.
 
 ## D-04 — World authority
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 **Godot is the only world authority** in the application: positions, physics, navigation, line of sight, delivery eligibility, action execution, simulation clock (`tick_id`).
 
 A small **Python headless test world** (2D, no graphics) implements the same contracts so comms, privacy, ΔP and gate logic can be tested without Godot. It is a test double, not a second authority, and never runs alongside Godot.
 
 ## D-05 — Godot ↔ Python transport
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Loopback **WebSocket** with versioned JSON envelopes and a launch-time session token, bound to `127.0.0.1` only (Blueprint §12). PR #1's HTTP harness is not carried forward.
 
 ## D-06 — Versions, machine and models
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 - **Development machine:** Windows 11 Pro, AMD Ryzen 9 9950X (16 cores / 32 threads), 96 GB RAM, **NVIDIA RTX 4070 Ti Super, 16 GB VRAM**.
 - **Model sizing for that GPU (estimates to verify at G3):** one small/medium (~4B-class) model shared by 3–5 agents fits comfortably; one ~9–12B-class model at 4-bit quantization fits alongside Godot with moderate context; two large models loaded at once is tight. The Runtime v0.2 doc's Q4 load estimates (E4B ≈ 4.5 GB, 12B ≈ 6.7 GB) exclude KV cache and parallel slots. LLM-policy ablation sweeps will be limited by GPU throughput; scripted-policy sweeps by CPU.
@@ -101,12 +102,12 @@ Loopback **WebSocket** with versioned JSON envelopes and a launch-time session t
 - **Models:** see D-20 (shortlist and bake-off) and D-21 (engine and packaging). Never downloaded automatically.
 
 ## D-07 — Venue announcement channel name
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Use **`PA`** (Blueprint). Retire `SERVER` (Runtime v0.2). Channels are `GESTURE`, `LOCAL`, `GROUP`, `PA`.
 
 ## D-08 — Naming collisions
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 | Term | Collision | Decision |
 |---|---|---|
@@ -120,7 +121,7 @@ Use **`PA`** (Blueprint). Retire `SERVER` (Runtime v0.2). Channels are `GESTURE`
 | **Ledger** | *Relational Ledger* (information about others, with scopes) · *Covenant Ledger* (PAE Part 8: an agent's own commitments and refusals) | Keep both names; they are different stores. In RANGE the Covenant idea becomes the agent's **commitments and refusals** record (see D-13). |
 
 ## D-09 — CDC modes in RANGE
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 CDC is a **compute and attention scheduler**, not a safety controller. RANGE uses five modes, with a mapping to the historical templates:
 
@@ -137,7 +138,7 @@ CDC is a **compute and attention scheduler**, not a safety controller. RANGE use
 Transitions use entry/exit thresholds, minimum dwell time and cooldown for non-critical changes (Addendum §6). Physical emergency handling never waits for CDC, HORIZON or an LLM.
 
 ## D-10 — How confidence is represented
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Interpretations carry a **read label**, not a number: `COMMIT` · `LEAN` · `HELD_OPEN` · `UNKNOWN`. Numeric probabilities are allowed only with `calibrated: true` and a reference to validation data.
 
@@ -153,13 +154,13 @@ The concept art's confidence-band table becomes an action policy keyed by label:
 Stakes raise the bar (Chatbot spec A6.4): the more consequential the action, the stronger the read required.
 
 ## D-11 — ΔP formula
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Use the Addendum v0.2 / Operational Atlas v0.2 formula:
 `z = clip((x − b) / max(s, ε), −M, +M)`, with quality `q`, `validity`, baseline scope, provenance and timestamps kept as **separate fields**. Missing or unsupported values are `z = null` with a reason, **never 0**. Categorical events stay events. Retire the v0.1 form that multiplies by `q`. The salience summary `S` and coverage `Q` are optional and used for attention scheduling only.
 
 ## D-12 — Disclosure scopes and gate
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 - **Scopes** (Situational Protocols): `PUBLIC` · `GROUP` · `ONE_TO_ONE` · `SEALED`. Every remembered item keeps its source, audience present and scope.
 - **Earshot rule:** what the robot says is limited by the least-trusted person who can hear it.
@@ -168,7 +169,7 @@ Use the Addendum v0.2 / Operational Atlas v0.2 formula:
 - **One pre-declared override:** prevention of real, imminent harm to a person. In RANGE, any use of it is logged.
 
 ## D-13 — What may be inferred or stored about a person
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 The robot may keep: what a person explicitly shared, its scope and consent state, and explicitly stated preferences. Public tracks are anonymous and short-lived. Conversational reads (register, pace) decay within the conversation.
 
@@ -181,7 +182,7 @@ NPC personas in RANGE do have authored traits and private goals. Those exist for
 **Commitments and refusals survive compaction.** Each agent keeps a small record of what it promised ("I'll be with you after this") and what it declined, separate from decaying history (after the Covenant Ledger, PAE Part 8). Memory compaction may drop history but never these.
 
 ## D-14 — Public expression palette and light safety
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 - **Public Beacon palette:** the Chatbot spec's six states, always paired with words: 🟡 warm/playful · 🔵 calm/listening · 🟣 considered/respectful · 🟠 caution/effort · 🔴 stop/firm boundary · ⚪ neutral/processing.
 - **Operator HUD palette:** Operational Atlas §9. It never drives the public Beacon automatically.
@@ -191,7 +192,7 @@ NPC personas in RANGE do have authored traits and private goals. Those exist for
 - **Concept-art label fixes:** "Speaker ID" → *speaker candidate*; "face/identity" → *face orientation*; "emotional tone" → *prosody features*; "intent" (Wake) → *trajectory*; reflex loop and motor controller are drawn **outside** BET; CDC Emergency **reduces** BET compute.
 
 ## D-15 — Repository layout
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 ```text
 CLAUDE.md                 short guide for Claude Code sessions
@@ -215,7 +216,7 @@ tools/
 ```
 
 ## D-16 — Which layers are simulated vs implemented
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 - **L0 Anchor, L1 Halo:** derived directly from Godot's world, physics and navigation.
 - **L2 Echo, L3 Wake:** **synthetic** observations generated from world state through the observer filter, with configurable noise, dropout, latency, occlusion and source ambiguity. No real audio or vision models in v0.
@@ -224,7 +225,7 @@ tools/
 Sensor realism is a dial, not a goal: start idealized, then add noise and check whether results hold.
 
 ## D-17 — Proxemic distances
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 The SGE's intimate / personal / social / public distances (0.5 / 1.2 / 3.5 m) are **starting parameters for soft social costs only**: configurable per embodiment and context, logged per run, never rules. Physical clearance is separate and owned by the host.
 
@@ -240,12 +241,12 @@ The SGE's intimate / personal / social / public distances (0.5 / 1.2 / 3.5 m) ar
 Its HTTP transport, message shapes and folder layout are not carried forward. Closing the PR is the owner's call.
 
 ## D-19 — Hardware track parked for RANGE v0
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Not in RANGE v0: physical BET module, MIDI adapter, real audio capture, buffer sizes, sample rate (48 kHz preferred when the time comes, per BET Atlas), real cameras or depth sensors. In RANGE v0, Beacon is a typed control output rendered in Godot as a face glyph, a light color and a text bubble, using the D-14 palette.
 
 ## D-20 — Model shortlist and bake-off
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Candidates as of November 2026. Both families are reported as Apache 2.0; confirm on the official model cards before bundling. VRAM figures are rough 4-bit estimates for the weights only, to be measured.
 
@@ -264,7 +265,7 @@ Candidates as of November 2026. Both families are reported as Apache 2.0; confir
 - Research question for later: does a smaller model *with* HORIZON match a larger model *without* it?
 
 ## D-21 — Inference engine and standalone packaging
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 - **Default engine:** a bundled **llama.cpp `llama-server`** (MIT) running as a background child process, loading GGUF model files from a `models/` folder. It supports parallel request slots with batching (several agents at once), prompt caching, an OpenAI-compatible API, and JSON-schema-constrained output, so action JSON is valid by construction. Built for NVIDIA CUDA, with a Vulkan build as fallback.
 - **Ollama** (MIT) is supported as an alternative backend through the same provider-neutral gateway, for users who already run it. It is not bundled.
@@ -273,7 +274,7 @@ Candidates as of November 2026. Both families are reported as Apache 2.0; confir
 - **Model weights:** may ship in an optional "model pack" if the license allows (record the license file with it). Never downloaded silently. Demo Mode always works with no model.
 
 ## D-22 — Languages and what each one does
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 | Language / format | Owns | Why |
 |---|---|---|
@@ -288,27 +289,32 @@ Candidates as of November 2026. Both families are reported as Apache 2.0; confir
 Escalation path only if profiling demands it: NumPy for Python hot paths; a C++ GDExtension for heavy Godot work such as many raycasts. No C# in v0 (it adds a .NET dependency for little gain here).
 
 ## D-23 — Inference strategy: residency, caching, tiers
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Adopt [INFERENCE_STRATEGY.md](INFERENCE_STRATEGY.md): models stay resident for the whole run; prompts use a stable-prefix layout from day one; focal agents get a dedicated server with pinned slots and top priority; non-focal NPCs move between C0 (no model), C1 (templates, cache, tiny model) and C2 (shared NPC server with persona snapshots and pre-warming). Target configuration is Option C (two servers). Optional techniques (KV quantization, speculative decoding, CPU tier, response cache) are experiments kept only if measurements show a benefit; the response cache is never used for focal agents in trials.
 
 ## D-24 — Context and memory strategy
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Adopt [CONTEXT_MEMORY_STRATEGY.md](CONTEXT_MEMORY_STRATEGY.md). Agents never carry a growing transcript: every decision gets a freshly assembled prompt from per-agent memory stores, ordered stable-to-volatile, within a fixed per-tier budget. Compression is a ladder (deduplicate → expire → episode cards → rank and select → optional model summary → section cut). Guardrails, identity, open commitments, the latest conversational turn and the decision prompt are never cut. Corrections supersede, inferences never become observations, the agent's own reasoning text is never fed back as evidence, and scopes survive every compression step. Prompt size and latency must stay flat over a 2-hour soak test.
 
 ## D-25 — Interaction modes and awareness protocols
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Adopt [INTERACTION_MODES.md](INTERACTION_MODES.md). One world; Spectator, Director (Creative Mode, a toggle on Spectator) and Participant are seats with different permissions, enforced by the world dispatcher. Every avatar is a body plus a swappable controller (`SCRIPTED`, `LLM_AGENT`, `HUMAN_INPUT`, `REPLAY_TAPE`). The human avatar has the same body limits, senses, COMMS rules and action gate as NPC visitors. Awareness protocols: P1 Declared, P2 Incognito, P3 Reveal, P4 Possession, P5 Confederate replay; live human sessions are exploratory, P5 tapes bring human behavior into controlled trials. Director interventions are typed (directive edit, world change, environmental influence, social influence), journaled, and saveable as recipes. Opening evaluator truth while participating taints the run. Microphone input comes after typed chat.
 
 ## D-26 — Art direction, rendering budget and environment-as-variable
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Adopt [ART_DIRECTION.md](ART_DIRECTION.md). Low-poly diorama style with one shared palette texture, baked lighting, one shadowed light and a capped frame rate. Fidelity climbs a ladder (V0 greybox → V1 low-poly diorama → V2 atmosphere → V3 polish), each step allowed only if rendering costs ≤ ~10% of focal-model throughput in a measured "render tax" test. Robot body colors are matte identity trim with a number badge and pattern; Beacon state is emissive on the visor and light strip only, so identity colors are never read as Beacon signals; robots under A/B comparison look identical. Lighting, haze and noise are declared per zone in the map file and drive both the renderer and the simulated senses, so what the spectator sees and what agents perceive always agree; sensors never read rendered pixels.
 
 ## D-27 — Contract format and validation
-**Status:** PROPOSED
+**Status:** APPROVED (owner, 2026-11-13)
 
 Hand-written **JSON Schema** files in `contracts/` are the single source of truth for every message and config format. Python validates with the `jsonschema` library; Godot validates the same schemas (or a generated equivalent) at G1–G2. Each schema ships with valid and invalid example files that tests run on every check. Agent-facing schemas forbid evaluator-only fields, so private goals and scenario labels cannot reach an agent through a valid message.
+
+## D-28 — License
+**Status:** APPROVED (owner, 2026-11-13)
+
+No license for now: the repository is public, but all rights are reserved. A license can be added later; one cannot be withdrawn once granted, which matters if BET becomes a product. Third-party assets and model weights keep their own licenses, recorded in `THIRD_PARTY_LICENSES` when added.
 

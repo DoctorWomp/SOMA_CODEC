@@ -20,3 +20,7 @@
 - [Concept art](docs/concept-art/)
 
 HORIZON is research, not a validated emotion-recognition or safety system. Physical safety always belongs to the robot host.
+
+## License
+
+No license has been chosen yet: the code and documents are public to read, but all rights are reserved (D-28).
