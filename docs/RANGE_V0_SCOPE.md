@@ -143,7 +143,7 @@ Gates follow the Blueprint (D-02). One deliberate change: **G1 builds Sandbox Fl
 | **G1** | Sandbox Flats in Godot: capsules, platform, stairs, ramp, partitions, cameras | Owner's PC |
 | **G2** | Observer filter, COMMS channels, group permissions, disclosure gate, event journal | Cloud (tests) + PC |
 | **G3** | Agent runtime: scripted policy first, then one local LLM agent; action gate; scheduler | PC for the model |
-| **G4** | Spectator cameras, Director basics, Participant basics, **layer viewer v1 (2D)** | PC |
+| **G4** | Spectator cameras, Director basics, Participant basics ([INTERACTION_MODES.md](INTERACTION_MODES.md) §10), **layer viewer v1 (2D)** | PC |
 | **G5** | HORIZON L4–L8, ΔP, masks, presets, bypass, **ablation runner**; sandbox SB-01…SB-06 pass | Cloud + PC |
 | **G6** | Expo Hall A, expo scenarios, paired runner, replay, metrics export | PC |
 | **G7** | Windows release folder, launcher, docs, smoke test | PC |

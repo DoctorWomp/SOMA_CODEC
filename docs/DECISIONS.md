@@ -32,6 +32,7 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-22 | Languages and what each one does | PROPOSED |
 | D-23 | Inference strategy: residency, caching, tiers | PROPOSED |
 | D-24 | Context and memory strategy | PROPOSED |
+| D-25 | Interaction modes and awareness protocols | PROPOSED |
 
 ---
 
@@ -293,4 +294,9 @@ Adopt [INFERENCE_STRATEGY.md](INFERENCE_STRATEGY.md): models stay resident for t
 **Status:** PROPOSED
 
 Adopt [CONTEXT_MEMORY_STRATEGY.md](CONTEXT_MEMORY_STRATEGY.md). Agents never carry a growing transcript: every decision gets a freshly assembled prompt from per-agent memory stores, ordered stable-to-volatile, within a fixed per-tier budget. Compression is a ladder (deduplicate → expire → episode cards → rank and select → optional model summary → section cut). Guardrails, identity, open commitments, the latest conversational turn and the decision prompt are never cut. Corrections supersede, inferences never become observations, the agent's own reasoning text is never fed back as evidence, and scopes survive every compression step. Prompt size and latency must stay flat over a 2-hour soak test.
+
+## D-25 — Interaction modes and awareness protocols
+**Status:** PROPOSED
+
+Adopt [INTERACTION_MODES.md](INTERACTION_MODES.md). One world; Spectator, Director (Creative Mode, a toggle on Spectator) and Participant are seats with different permissions, enforced by the world dispatcher. Every avatar is a body plus a swappable controller (`SCRIPTED`, `LLM_AGENT`, `HUMAN_INPUT`, `REPLAY_TAPE`). The human avatar has the same body limits, senses, COMMS rules and action gate as NPC visitors. Awareness protocols: P1 Declared, P2 Incognito, P3 Reveal, P4 Possession, P5 Confederate replay; live human sessions are exploratory, P5 tapes bring human behavior into controlled trials. Director interventions are typed (directive edit, world change, environmental influence, social influence), journaled, and saveable as recipes. Opening evaluator truth while participating taints the run. Microphone input comes after typed chat.
 
