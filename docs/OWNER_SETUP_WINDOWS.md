@@ -1,18 +1,21 @@
 # Owner setup — Windows PC
 
-Checklist for the development PC (Windows 11 Pro, Ryzen 9 9950X, 96 GB RAM, RTX 4070 Ti Super). **Not needed until G1.** G0 runs entirely in the cloud.
+Checklist for the development PC (Windows 11 Pro, Ryzen 9 9950X, 96 GB RAM, RTX 4070 Ti Super).
 
-## Before G1 (Godot world)
+## For G1 (Godot world)
 
-- [ ] **GitHub Desktop** — https://desktop.github.com — sign in, then *Clone repository* → `DoctorWomp/SOMA_CODEC` into a folder without spaces, e.g. `C:\dev\SOMA_CODEC`.
-- [ ] **Godot 4.7.2 (standard, not .NET), Windows 64-bit** — https://godotengine.org/download/archive/4.7.2-stable/ — unzip to e.g. `C:\tools\godot\`. Keep both the normal and the `_console` executable; the console one is used for automated checks.
-- [ ] **uv** (manages Python and dependencies) — in PowerShell:
+- [x] **GitHub Desktop** with the repository cloned (yours is at `G:\SOMA_CODEC`).
+- [x] **Godot 4.7.2 (standard, not .NET), Windows 64-bit**, unzipped (yours is at `G:\Godot`). The folder should hold two files: `Godot_v4.7.2-stable_win64.exe` (the editor you open) and `Godot_v4.7.2-stable_win64_console.exe` (used by the automated checks).
+- [x] **uv**. Your uv picked Python 3.14, and the project now asks for 3.14 too (`.python-version`, D-35).
+- [ ] **Tell the checks where Godot is** (once). In PowerShell:
   ```powershell
-  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+  setx GODOT_BIN "G:\Godot\Godot_v4.7.2-stable_win64_console.exe"
   ```
-  uv installs the right Python version for the project by itself.
+  Close PowerShell and open a new window so the setting takes effect.
+- [ ] **Check:** in a new PowerShell window, in `G:\SOMA_CODEC`, run `uv run python tools/check.py`. The summary should list five PASS lines, including **Godot**. If it says **SKIP Godot**, the `GODOT_BIN` step did not take effect.
 - [ ] **VS Code** (optional) with the *Claude Code* and *godot-tools* extensions.
-- [ ] Check: in the repo folder, `uv run python tools/check.py` passes (available after G0 merges).
+
+What to look at once it runs: [docs/gates/G1_OWNER_CHECKLIST.md](gates/G1_OWNER_CHECKLIST.md).
 
 ## Before G3 (local models)
 

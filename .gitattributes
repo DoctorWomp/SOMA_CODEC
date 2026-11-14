@@ -6,6 +6,7 @@
 *.tscn   text eol=lf
 *.tres   text eol=lf
 *.godot  text eol=lf
+*.uid    text eol=lf
 *.json   text eol=lf
 *.yaml   text eol=lf
 *.yml    text eol=lf

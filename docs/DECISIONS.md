@@ -36,7 +36,13 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-26 | Art direction, rendering budget and environment-as-variable | APPROVED (owner, 2026-11-13) |
 | D-27 | Contract format and validation | APPROVED (owner, 2026-11-13) |
 | D-28 | License | APPROVED (owner, 2026-11-13) |
-| D-29 | Contract v1 conventions | PROPOSED (G0, 2026-11-13) |
+| D-29 | Contract v1 conventions | APPROVED (owner, 2026-11-14) |
+| D-30 | How Godot reads configs | PROPOSED (G1, 2026-11-14) |
+| D-31 | Ramp, stairs and capability gating in the world | PROPOSED (G1, 2026-11-14) |
+| D-32 | Robot R greybox body | PROPOSED (G1, 2026-11-14) |
+| D-33 | Godot project settings and the world tick | PROPOSED (G1, 2026-11-14) |
+| D-34 | Godot checks in tools/check.py and CI | PROPOSED (G1, 2026-11-14) |
+| D-35 | Python version on the PC and in CI | PROPOSED (G1, 2026-11-14; requested by the owner) |
 
 ---
 
@@ -99,7 +105,9 @@ Loopback **WebSocket** with versioned JSON envelopes and a launch-time session t
 - **Development machine:** Windows 11 Pro, AMD Ryzen 9 9950X (16 cores / 32 threads), 96 GB RAM, **NVIDIA RTX 4070 Ti Super, 16 GB VRAM**.
 - **Model sizing for that GPU (estimates to verify at G3):** one small/medium (~4B-class) model shared by 3–5 agents fits comfortably; one ~9–12B-class model at 4-bit quantization fits alongside Godot with moderate context; two large models loaded at once is tight. The Runtime v0.2 doc's Q4 load estimates (E4B ≈ 4.5 GB, 12B ≈ 6.7 GB) exclude KV cache and parallel slots. LLM-policy ablation sweeps will be limited by GPU throughput; scripted-policy sweeps by CPU.
 - **Python:** 3.12 baseline (Blueprint); CI also tests 3.13. Environments and the lockfile are managed with **uv**.
+  *Amended 2026-11-14 (G1): the local default is now 3.14 and CI also tests 3.14; 3.12 stays the minimum. See D-35.*
 - **Godot:** **4.7.2 stable** (standard build, GDScript, no .NET), released 2026-08-18 and verified on the official download archive on 2026-11-13. Re-check for a newer stable patch at G1; do not move to a new minor version (e.g. 4.8) mid-build without a decision.
+  *Re-checked 2026-11-14 (G1): 4.7.2-stable is still the newest 4.7 release (4.8 is in beta). Staying on 4.7.2.*
 - **Models:** see D-20 (shortlist and bake-off) and D-21 (engine and packaging). Never downloaded automatically.
 
 ## D-07 — Venue announcement channel name
@@ -320,7 +328,7 @@ Hand-written **JSON Schema** files in `contracts/` are the single source of trut
 No license for now: the repository is public, but all rights are reserved. A license can be added later; one cannot be withdrawn once granted, which matters if BET becomes a product. Third-party assets and model weights keep their own licenses, recorded in `THIRD_PARTY_LICENSES` when added.
 
 ## D-29 — Contract v1 conventions
-**Status:** PROPOSED (G0, 2026-11-13) — awaiting owner review
+**Status:** APPROVED (owner, 2026-11-14). Proposed at G0 on 2026-11-13.
 
 Choices made while writing contracts v1 that the source documents left open:
 
@@ -334,3 +342,60 @@ Choices made while writing contracts v1 that the source documents left open:
 - **Seeds ≤ 2^53−1**, so Godot's float64 JSON numbers read them exactly.
 - **Extra contract `journal_entry`** for the event journal, so the test world's output is checkable now and Godot's journal at G2 has a target format.
 - **Extra intervention types** `LAYER_BYPASS` (a mid-run bypass, D-03) and `EVALUATOR_TRUTH_OPENED` (D-25), both journaled and tainting.
+
+## D-30 — How Godot reads configs
+**Status:** PROPOSED (G1, 2026-11-14)
+
+Godot has no YAML reader. `tools/export_godot_data.py` copies the configs Godot needs (maps and bodies at G1) to `godot_app/data/<folder>/<id>.json`, but only after they pass every check in `tools/validate_configs.py`. Each file is wrapped with its source path. The JSON is **committed**, so the project opens and runs without Python, and `tools/check.py` fails if any copy is out of date ("run the export and commit").
+
+This is the "generated equivalent" allowed by D-27: Godot checks only the wrapper and `schema_version`, and trusts the contract validation done by the export. Validating **messages** that arrive from Python at run time is decided at G2 with the transport.
+
+Rejected: a YAML parser written in GDScript (the map uses flow-style YAML; a partial parser would silently misread files) and a third-party YAML add-on (a dependency for little gain).
+
+## D-31 — Ramp, stairs and capability gating in the world
+**Status:** PROPOSED (G1, 2026-11-14)
+
+- **Navigation:** the floor and platform tops are baked into one navigation mesh at start-up, from the map's own geometry. Each map `nav_link` becomes a `NavigationLink3D` on the navigation layer of its `required_capability` (`can_use_ramp` → layer 2, `can_use_stairs` → layer 3). A body's paths may use layer 1 plus the layers of the capabilities its body config grants. The ramp and stair footprints are kept out of the bake, so the **only** way onto a platform is a link the body is allowed to use.
+- **Physics (the host enforces it too):** the stairs have real 0.15 m steps, which stop any body without `can_use_stairs`, and a smooth walking surface that only bodies with `can_use_stairs` collide with. A wheeled robot is blocked even if something drives it at the stairs without navigation. The ramp is solid for everyone.
+- **Sizes the map contract does not describe yet** (G1 constants in `godot_app/scripts/world/map_builder.gd`): wall thickness 0.2 m, ramp and stair width 1.5 m, stair step rise ≤ 0.18 m (0.15 m on the Sandbox platform), greybox prop sizes for `CHAIR` and `PA_SPEAKER`. Unknown prop types are an error. If these need to vary per map, add optional fields to the map contract (minor version) or a props catalog (G6).
+- **One navigation mesh per world,** baked for the largest body radius loaded (0.35 m). Smaller bodies are therefore kept slightly further from walls than they need to be. Per-radius meshes can come later if a scenario needs narrow gaps.
+- **Each world has its own navigation map**, so isolated worlds (one HORIZON robot per world, RANGE_V0_SCOPE §2.2) never share paths.
+
+## D-32 — Robot R greybox body
+**Status:** PROPOSED (G1, 2026-11-14)
+
+Robot R's body config is a `WHEELED_ROBOT`, 1.4 m tall, radius 0.35 m; the [low-poly concept](concept-art/robot_avatar_lowpoly_concept.jpg) shows legs. The V0 model therefore keeps the concept's **upper body at its proportions** (helmet with black visor, ear pods, dark neck band, white chest and pelvis shells, dark waist band, arms with shoulder, elbow and wrist joints) on a **dark mast and wheeled base** (chassis, two drive wheels, two casters) instead of legs. Legs on a body that cannot climb stairs would contradict what the viewer sees in SB-05.
+
+- Identity per ART_DIRECTION §2.1: matte **green** trim on shoulders, forearms and chest band (green is not a Beacon color, D-14), plus an **"R" badge** front and back. The trim pattern for colorblind readability is added when a second robot appears.
+- The visor and ear pods are the future Beacon face and light strip; they stay unlit until Beacon output exists.
+- The model is scaled from the body config's height; the collider is a cylinder of the config's radius and height.
+- Joint nodes are named (`Neck`, `ShoulderL/R`, `ElbowL/R`, `WristL/R`) so the later Blender mesh can use the same skeleton names.
+
+## D-33 — Godot project settings and the world tick
+**Status:** PROPOSED (G1, 2026-11-14)
+
+- **Physics engine: Jolt** (built into Godot 4.7), selected explicitly in `project.godot`. Avatars are `CharacterBody3D`; Jolt handles the cylinder collider and the stair/ramp contacts cleanly. Known: in very fast headless runs Jolt sometimes prints "job system exceeded the maximum number of jobs … waiting"; it waits and continues, and results are unaffected. The check lists it as a note, not an error.
+- **Fixed 60 Hz physics** (ART_DIRECTION §4). The world clock (`SimClock`) counts physics ticks and runs before every avatar in each tick. Avatars move only in the physics step, along their facing direction, limited by their body config's max speed, acceleration and turn rate (turning on the spot when facing away).
+- **Rendering:** Forward+ on the PC, frame rate capped at 60, one directional light without shadows, flat ambient light (V0 greybox). Zones darken the floor in proportion to `1 − light_level`, so the light value the senses will use is also visible.
+- **Headless runs** use `--fixed-fps 60`, so each frame is exactly one tick and results do not depend on the machine's speed.
+- **Open for G2:** scenario `tick_hz` (10 in SB-04) versus the 60 Hz physics tick. Proposal: `tick_hz` must divide 60; each scenario tick spans 60 / `tick_hz` physics ticks, and contract `tick_id` values count scenario ticks. To settle when the observer filter and journal arrive.
+- **Not in G1:** local avoidance between avatars. The demo routes are authored so nobody meets head-on. Two bodies pushed into each other in the same tick may overlap by up to one tick of travel (≤ 2.4 cm) for a moment before being pushed apart; a test checks they never pass through or stay overlapped.
+
+## D-34 — Godot checks in tools/check.py and CI
+**Status:** PROPOSED (G1, 2026-11-14)
+
+- `tools/check.py` gains two steps: **Godot data** (exported JSON is current, D-30) and **Godot** (`tools/godot_check.py`: version must be 4.7.2 stable, `--import` must print no errors, then the headless test scene runs; any `ERROR` line fails the step even if every test passed).
+- Godot is found from `GODOT_BIN`, then `.tools/godot/` (installed by `tools/install_godot.py`), then `godot`/`godot4` on the PATH. On Windows `GODOT_BIN` must name the `_console.exe` build.
+- **If Godot is not found**, the step prints **SKIP** (never PASS) and how to fix it. If `GODOT_BIN` is set but wrong, it **fails**. CI runs `tools/check.py --require-godot`, where a missing Godot is a failure.
+- `tools/install_godot.py` downloads the official 4.7.2 build for Linux or Windows into `.tools/godot/` (git-ignored) and verifies it against the release's SHA-512; CI caches it.
+- **Screenshots in the cloud** are rendered under a virtual display with the Compatibility (OpenGL) renderer, because the cloud has no GPU. They prove the scene draws; the owner's PC (Forward+) is the reference for the real look.
+
+## D-35 — Python version on the PC and in CI
+**Status:** PROPOSED (G1, 2026-11-14; requested by the owner)
+
+The owner's uv picked Python 3.14 and all checks pass there. To keep the PC and CI the same:
+
+- `.python-version` contains **`3.14`**, so uv uses 3.14 everywhere by default (PC and cloud sessions).
+- CI tests **3.12, 3.13 and 3.14**. 3.12 stays the minimum (`requires-python >= 3.12`, D-06), so code must not use anything newer than 3.12 offers; CI catches that.
+- Verified 2026-11-14: `tools/check.py` passes on 3.14.6 and 3.12.3 in a cloud session (3.14.7, the owner's version, was not yet known to the cloud's uv).
+
