@@ -1,0 +1,64 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/bodies/legged_humanoid.yaml",
+  "kind": "bodies",
+  "data": {
+    "schema_version": "2.0",
+    "body_id": "legged_humanoid",
+    "display_name": "Legged humanoid",
+    "kind": "LEGGED_HUMANOID",
+    "dimensions": {
+      "height_m": 1.75,
+      "collider": {
+        "shape": "CAPSULE",
+        "length_m": 0.56,
+        "width_m": 0.56
+      }
+    },
+    "motion": {
+      "max_speed_m_s": 1.2,
+      "max_accel_m_s2": 0.8,
+      "max_turn_rate_rad_s": 1.2
+    },
+    "reach_m": 0.65,
+    "arms": 2,
+    "capabilities": {
+      "can_walk": true,
+      "can_use_stairs": true,
+      "can_use_ramp": true,
+      "can_use_elevator": true,
+      "can_speak": true,
+      "can_gesture": true,
+      "can_grab": true,
+      "can_sit": false,
+      "can_access_staff_areas": false,
+      "can_use_pa": false
+    },
+    "sensors": {
+      "mount_height_m": 1.6,
+      "fov_deg": 120,
+      "visual_range_m": 20,
+      "acoustic_range_m": 10,
+      "cadence_hz": 10,
+      "dropout_rate": 0.0
+    },
+    "gestures": [
+      "WAVE",
+      "SMALL_WAVE",
+      "RAISED_HAND",
+      "POINT",
+      "BECKON",
+      "NOD",
+      "SHAKE_HEAD",
+      "OPEN_PALM",
+      "BOW",
+      "HEAD_TILT",
+      "HAND_OVER"
+    ],
+    "expression_channels": [
+      "SPEECH",
+      "FACE",
+      "LIGHT"
+    ]
+  }
+}

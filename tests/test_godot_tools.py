@@ -17,10 +17,11 @@ def test_exported_godot_data_is_up_to_date():
     assert export_godot_data.stale_files(expected) == []
 
 
-def test_export_covers_the_map_and_both_bodies_godot_reads():
+def test_export_covers_the_map_and_every_body():
     expected, _ = export_godot_data.expected_files()
     names = sorted(p.relative_to(export_godot_data.GODOT_DATA_DIR).as_posix() for p in expected)
-    assert names == ["bodies/human_walker.json", "bodies/robot_r.json", "maps/sandbox_flats.json"]
+    assert names == ["bodies/human_walker.json", "bodies/legged_humanoid.json", "bodies/quadruped.json",
+                     "bodies/quadruped_arm.json", "bodies/wheeled_humanoid.json", "maps/sandbox_flats.json"]
 
 
 def test_export_is_deterministic_and_wraps_the_config_unchanged():
@@ -114,3 +115,13 @@ def test_a_wrong_godot_bin_path_fails_instead_of_skipping(monkeypatch, capsys, t
     monkeypatch.setenv("GODOT_BIN", str(tmp_path / "no_such_godot.exe"))
     assert godot_check.main([]) == godot_check.EXIT_FAILED
     assert "no such file" in capsys.readouterr().out
+
+
+def test_compile_report_finds_broken_scripts():
+    good = "COMPILE DONE scripts=21 failed=0\n"
+    assert godot_check.compile_report(good) == (21, [])
+    bad = ("SCRIPT ERROR: Parse Error: Integer division. Decimal part will be discarded. (Warning treated as error.)\n"
+           "COMPILE FAIL res://scripts/x.gd\nCOMPILE DONE scripts=21 failed=1\n")
+    scripts, problems = godot_check.compile_report(bad)
+    assert scripts == 21 and len(problems) == 2
+    assert godot_check.compile_report("crashed\n")[0] == -1

@@ -37,15 +37,22 @@ def test_example_configs_are_valid():
     assert not problems, "\n".join(map(str, problems))
     assert set(config_set.items["maps"]) == {"sandbox_flats"}
     assert {"robot_r", "visitor_y"} <= set(config_set.items["personas"])
-    assert "robot_r" in config_set.items["bodies"]
-    assert set(config_set.items["scenarios"]) == {"SB04_POLITE_BID"}
+    assert set(config_set.items["bodies"]) == {
+        "legged_humanoid", "wheeled_humanoid", "quadruped", "quadruped_arm", "human_walker"}
+    assert set(config_set.items["scenarios"]) == {"SB04_POLITE_BID", "SB05_RAMP_VS_STAIRS"}
     assert "H0" in config_set.items["presets"]
 
 
-def test_robot_r_cannot_use_stairs_but_can_use_ramp():
+def test_wheeled_humanoid_cannot_use_stairs_but_can_use_ramp():
     config_set, _ = load_and_check()
-    caps = config_set.items["bodies"]["robot_r"]["capabilities"]
+    caps = config_set.items["bodies"]["wheeled_humanoid"]["capabilities"]
     assert caps["can_use_stairs"] is False and caps["can_use_ramp"] is True
+
+
+def test_robot_r_is_a_role_not_a_body():
+    config_set, _ = load_and_check()
+    assert "robot_r" in config_set.items["personas"]
+    assert "robot_r" not in config_set.items["bodies"]
 
 
 def test_slider_out_of_range_names_file_field_and_limit(config_copy):
@@ -55,9 +62,9 @@ def test_slider_out_of_range_names_file_field_and_limit(config_copy):
 
 
 def test_unknown_field_is_named(config_copy):
-    _edit(config_copy / "bodies" / "robot_r.yaml", "reach_m: 0.6", "reach_m: 0.6\nlaser_eyes: true")
+    _edit(config_copy / "bodies" / "wheeled_humanoid.yaml", "reach_m: 0.6", "reach_m: 0.6\nlaser_eyes: true")
     [msg] = _messages(config_copy)
-    assert msg.startswith("configs/bodies/robot_r.yaml: $: unknown field(s) 'laser_eyes' are not allowed.")
+    assert msg.startswith("configs/bodies/wheeled_humanoid.yaml: $: unknown field(s) 'laser_eyes' are not allowed.")
 
 
 def test_duplicate_key_is_rejected(config_copy):
@@ -108,7 +115,7 @@ def test_spawn_outside_map_is_reported(config_copy):
 def test_command_line_exit_codes(config_copy):
     ok = subprocess.run([sys.executable, str(TOOL)], capture_output=True, text=True, cwd=REPO)
     assert ok.returncode == 0, ok.stdout + ok.stderr
-    assert "All 8 config file(s) are valid." in ok.stdout
+    assert "All 12 config file(s) are valid." in ok.stdout
     _edit(config_copy / "personas" / "visitor_y.yaml", "patience: 85", "patience: 120")
     bad = subprocess.run([sys.executable, str(TOOL), str(config_copy)], capture_output=True, text=True, cwd=REPO)
     assert bad.returncode == 1

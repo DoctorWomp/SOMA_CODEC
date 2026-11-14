@@ -6,8 +6,20 @@
   "x-audience": "shared",
   "$defs": {
     "schema_version": {
-      "description": "Contract version. Incompatible changes bump it (CLAUDE.md).",
+      "description": "Contract version. Incompatible changes bump it (CLAUDE.md). Every contract is at 1.0 unless it names its own version below.",
       "const": "1.0"
+    },
+    "body_schema_version": {
+      "description": "Body config contract version. 2.0 (D-37): collider footprint, sensor mount height, arms, gestures and expression channels; radius_m removed; robot kinds renamed.",
+      "const": "2.0"
+    },
+    "gesture": {
+      "description": "Bounded gesture vocabulary (Blueprint §10.3, ART_DIRECTION §6). A body config lists which of these it can perform (D-36); the action gate rejects the rest. SIT_IN_PLACE is a posture in place, not sitting on a chair (that is INTERACT with affordance SIT). HAND_OVER offers a held object.",
+      "enum": ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD", "OPEN_PALM", "BOW", "HEAD_TILT", "SIT_IN_PLACE", "HAND_OVER"]
+    },
+    "expression_channel": {
+      "description": "Ways a body can express itself (D-14, D-19). SPEECH: voice, shown as a text bubble in RANGE. FACE: a readable face (a person's face, or a robot's visor glyph display). LIGHT: a Beacon light strip or visor light.",
+      "enum": ["SPEECH", "FACE", "LIGHT"]
     },
     "id": {
       "description": "Stable identifier: letters, digits, '_', '-', '.', ':'.",

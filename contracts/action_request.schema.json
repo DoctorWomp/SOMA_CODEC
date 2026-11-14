@@ -92,7 +92,7 @@
       "additionalProperties": false,
       "required": ["gesture"],
       "properties": {
-        "gesture": { "enum": ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD", "OPEN_PALM", "BOW"] },
+        "gesture": { "$ref": "common.schema.json#/$defs/gesture" },
         "target_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
         "sign_text": { "type": "string", "minLength": 1, "maxLength": 160 }
       }

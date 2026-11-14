@@ -20,7 +20,9 @@ Why it fits:
 
 ## 2. Robot avatars
 
-Baseline: the [low-poly humanoid concept](concept-art/robot_avatar_lowpoly_concept.jpg). It is plausible next to real humanoid robots, readable at a distance, and cheap.
+v0 has three robot bodies, each with its own reference sheet (D-36): the [legged humanoid](concept-art/robot_avatar_lowpoly_concept.jpg), the [wheeled humanoid](concept-art/robot_wheeled_humanoid_concept.jpg) and the [quadruped](concept-art/robot_quadruped_concept.jpg) (optionally with a dorsal arm). The humanoids share one upper body. The table below describes the humanoids; on the quadruped, the front sensor visor carries the Beacon light only (it is a camera array, not a face), body orientation and head tilt show attention, and the arm variant can point and hand things over.
+
+Humanoid baseline: the [low-poly humanoid concept](concept-art/robot_avatar_lowpoly_concept.jpg). It is plausible next to real humanoid robots, readable at a distance, and cheap.
 
 | Feature | Use in RANGE |
 |---|---|

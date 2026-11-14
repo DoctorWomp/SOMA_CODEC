@@ -1,0 +1,56 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/bodies/quadruped_arm.yaml",
+  "kind": "bodies",
+  "data": {
+    "schema_version": "2.0",
+    "body_id": "quadruped_arm",
+    "display_name": "Quadruped with arm",
+    "kind": "QUADRUPED",
+    "dimensions": {
+      "height_m": 0.83,
+      "collider": {
+        "shape": "BOX",
+        "length_m": 1.1,
+        "width_m": 0.5
+      }
+    },
+    "motion": {
+      "max_speed_m_s": 1.6,
+      "max_accel_m_s2": 1.2,
+      "max_turn_rate_rad_s": 1.5
+    },
+    "reach_m": 0.9,
+    "arms": 1,
+    "capabilities": {
+      "can_walk": true,
+      "can_use_stairs": true,
+      "can_use_ramp": true,
+      "can_use_elevator": true,
+      "can_speak": true,
+      "can_gesture": true,
+      "can_grab": true,
+      "can_sit": true,
+      "can_access_staff_areas": false,
+      "can_use_pa": false
+    },
+    "sensors": {
+      "mount_height_m": 0.55,
+      "fov_deg": 120,
+      "visual_range_m": 20,
+      "acoustic_range_m": 10,
+      "cadence_hz": 10,
+      "dropout_rate": 0.0
+    },
+    "gestures": [
+      "HEAD_TILT",
+      "SIT_IN_PLACE",
+      "POINT",
+      "HAND_OVER"
+    ],
+    "expression_channels": [
+      "SPEECH",
+      "LIGHT"
+    ]
+  }
+}

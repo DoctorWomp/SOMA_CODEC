@@ -2,7 +2,29 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
-## G1 — Sandbox Flats in Godot (2026-11-14, in review)
+## G1b — Robot body family (2026-11-14, in review)
+
+### Added
+- **Three robot bodies** (D-36): `legged_humanoid`, `wheeled_humanoid`, `quadruped`, plus the `quadruped_arm` variant, each with realistic starting values for size, collider, speed and turn limits, stairs/ramp capability, sensor mount height and field of view, reach, arms, gestures and expression channels. "Robot R" is a role; a scenario picks its body.
+- **Body contract 2.0** (D-37): collider footprint, sensor mount height, arms, gestures, expression channels; robot kinds renamed. One shared gesture vocabulary in `contracts/common.schema.json` (adds `HEAD_TILT`, `SIT_IN_PLACE`, `HAND_OVER`) and expression channels (`SPEECH`, `FACE`, `LIGHT`).
+- `range_service/bodies.py` and `godot_app/scripts/core/bodies.gd`: turning/navigation radius and gesture/channel permissions; the config validator reports contradictions.
+- Greybox models: legged and wheeled humanoids (shared upper body; legs or a four-wheeled base with lift column) and the quadruped (sensor-visor head, dorsal rail, four legs, optional stowed arm). Number badges, matte trim and 1–3 stripes.
+- **Per-size navigation** (D-37): one navigation map per body size; a single mesh for the quadruped would have removed 14% of people's walkable floor.
+- Bevelled colliders for legged box bodies, so the quadruped climbs the stairs while the wheeled base is still stopped by the steps.
+- `configs/scenarios/SB05_RAMP_VS_STAIRS.yaml` (Robot R in all three bodies) and three SB-05 spawn points in Sandbox Flats.
+- Demo with all three robot families going up to the platform; `scenes/robot_lineup.tscn` showing every robot body side by side.
+- Godot tests 15 → 19 (and several rewritten for every body); Python tests 356 → 399.
+- A compile step in `tools/godot_check.py` that loads every GDScript file (D-38).
+- Decisions D-36 (approved), D-37 and D-38 (proposed); later embodiments in RANGE_V0_SCOPE §6.1.
+
+### Changed
+- Owner approved D-30, D-31, D-33 (tick resolved: Godot's 60 Hz tick is canonical; `tick_hz` must divide 60, now checked), D-34 and D-35. D-32 superseded by D-36.
+- `robot_r` body renamed `wheeled_humanoid` (persona `robot_r` and SB-04 point at it).
+
+### Fixed
+- Six GDScript warnings seen in the owner's editor (integer division; `tr`, `owner`, `basis` shadowing). Every default-on GDScript warning is now an error (D-38).
+
+## G1 — Sandbox Flats in Godot (2026-11-14, complete: merged 2026-11-14)
 
 ### Added
 - **Godot 4.7.2 project** in `godot_app/` (GDScript, Forward+, Jolt physics, fixed 60 Hz tick, frame rate capped at 60).

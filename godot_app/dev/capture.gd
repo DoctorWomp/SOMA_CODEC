@@ -1,18 +1,28 @@
 extends Node
-## Saves screenshots of the running demo at set simulated times (needs a display; not headless).
+## Saves screenshots of the robot lineup and the running demo (needs a display; not headless).
 ##
 ##   godot --path godot_app --fixed-fps 60 --resolution 1600x900 res://dev/capture.tscn -- --out=<folder>
 ##
 ## In a cloud session without a GPU, run it under a virtual display with the Compatibility
 ## renderer (see docs/BUILD_AND_RUN.md); the owner's PC uses Forward+.
 
-## [file name, simulated seconds, camera mode, camera settings, show HUD]
+const SCENES := {
+	"lineup": "res://scenes/robot_lineup.tscn",
+	"demo": "res://scenes/main.tscn",
+}
+
+## [file name, scene, simulated seconds, camera mode, camera settings, show HUD]
+## Orbit "yaw_from_front" is relative to the avatar's facing: 0 = straight in front of it.
 const SHOTS := [
-	["g1_robot_r_closeup.png", 40.0, "orbit", {"target": "robot_r", "yaw_from_front": 0.5, "pitch": -0.12, "distance": 2.6}, false],
-	["g1_overview.png", 7.0, "free", {"from": Vector3(15, 16.5, 26.5), "at": Vector3(15, 0, 9.0)}, true],
-	["g1_robot_on_ramp.png", 10.0, "free", {"from": Vector3(13.5, 4.0, 13.5), "at": Vector3(21, 0.3, 5)}, true],
-	["g1_visitor_on_stairs.png", 16.0, "free", {"from": Vector3(17.0, 3.2, 6.0), "at": Vector3(22.5, 0.4, 1.5)}, true],
-	["g1_reflective_wall_pa_chairs.png", 8.5, "free", {"from": Vector3(11, 4.5, 16.5), "at": Vector3(1.5, 1.0, 11.5)}, false],
+	["bodies_lineup.png", "lineup", 0.2, "free", {"from": Vector3(6.3, 1.9, 15.6), "at": Vector3(6.3, 0.75, 9.0)}, false],
+	["body_legged_humanoid.png", "lineup", 0.2, "orbit", {"target": "robot_legged", "yaw_from_front": 0.45, "pitch": -0.1, "distance": 2.9}, false],
+	["body_wheeled_humanoid.png", "lineup", 0.2, "orbit", {"target": "robot_wheeled", "yaw_from_front": 0.45, "pitch": -0.12, "distance": 2.6}, false],
+	["body_quadruped.png", "lineup", 0.2, "orbit", {"target": "robot_quadruped", "yaw_from_front": 0.7, "pitch": -0.3, "distance": 2.3}, false],
+	["body_quadruped_arm.png", "lineup", 0.2, "orbit", {"target": "robot_quadruped_arm", "yaw_from_front": -0.75, "pitch": -0.3, "distance": 2.3}, false],
+	["demo_overview.png", "demo", 7.0, "free", {"from": Vector3(15, 16.5, 26.5), "at": Vector3(15, 0, 9.0)}, true],
+	["sb05_ramp_and_stairs.png", "demo", 7.1, "free", {"from": Vector3(15.5, 3.6, 12.5), "at": Vector3(20.5, 0.4, 4.0)}, true],
+	["sb05_all_on_platform.png", "demo", 20.0, "free", {"from": Vector3(21.0, 3.2, 11.5), "at": Vector3(26.0, 0.6, 4.2)}, false],
+	["reflective_wall_pa_chairs.png", "demo", 8.5, "free", {"from": Vector3(11, 4.5, 16.5), "at": Vector3(1.5, 1.0, 11.5)}, false],
 ]
 
 var out_dir := ""
@@ -27,32 +37,46 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 	DirAccess.make_dir_recursive_absolute(out_dir)
-	var main: Node = load("res://scenes/main.tscn").instantiate()
-	add_child(main)
-	while main.demo == null or not main.demo.started():
-		await get_tree().process_frame
-	var shots := SHOTS.duplicate()
-	shots.sort_custom(func(a, b): return a[1] < b[1])
-	for shot in shots:
-		while main.world.clock.seconds() < shot[1]:
+	for scene_key in SCENES:
+		await _capture_scene(scene_key)
+	get_tree().quit()
+
+
+func _capture_scene(scene_key: String) -> void:
+	var scene: Node = load(SCENES[scene_key]).instantiate()
+	add_child(scene)
+	if scene_key == "demo":
+		while scene.demo == null or not scene.demo.started():
 			await get_tree().process_frame
-		var rig: CameraRig = main.camera_rig
-		var cam: Dictionary = shot[3]
-		if shot[2] == "orbit":
-			rig.selected = rig.targets.find(main.world.avatars[cam["target"]])
+	else:
+		for i in 3:
+			await get_tree().process_frame
+	var shots := []
+	for shot in SHOTS:
+		if shot[1] == scene_key:
+			shots.append(shot)
+	shots.sort_custom(func(a: Array, b: Array) -> bool: return a[2] < b[2])
+	for shot in shots:
+		while scene.world.clock.seconds() < shot[2]:
+			await get_tree().process_frame
+		var rig: CameraRig = scene.camera_rig
+		var cam: Dictionary = shot[4]
+		if shot[3] == "orbit":
+			var target: Avatar = scene.world.avatars[cam["target"]]
+			rig.selected = rig.targets.find(target)
 			rig.mode = CameraRig.Mode.ORBIT
-			# Orbit yaw relative to the avatar's facing: 0 = straight in front of it.
-			rig.orbit_yaw = main.world.avatars[cam["target"]].rotation.y + PI + cam["yaw_from_front"]
+			rig.orbit_yaw = target.rotation.y + PI + float(cam["yaw_from_front"])
 			rig.orbit_pitch = cam["pitch"]
 			rig.orbit_distance = cam["distance"]
 		else:
 			rig.look_from(cam["from"], cam["at"])
-		main.hud.visible = shot[4]
+		scene.hud.visible = shot[5]
 		get_tree().paused = true
 		for i in 3:
 			await RenderingServer.frame_post_draw
 		var path := out_dir.path_join(shot[0])
 		var err := get_viewport().get_texture().get_image().save_png(path)
-		print("saved %s at t=%.2f s (%s)" % [path, main.world.clock.seconds(), error_string(err)])
+		print("saved %s at t=%.2f s (%s)" % [path, scene.world.clock.seconds(), error_string(err)])
 		get_tree().paused = false
-	get_tree().quit()
+	scene.queue_free()
+	await get_tree().process_frame

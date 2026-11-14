@@ -1,22 +1,34 @@
 class_name DemoRoutes
 extends Node
-## G1 walk-to-goal demo. Each avatar walks a short list of goals once, then rests.
-## Timing counts world ticks, so the demo plays out the same way on every run.
-## A G1 stand-in only: the scripted policy (G3) replaces it, and its routes are authored so
-## that nobody meets head-on, because local avoidance is not part of G1.
+## G1 walk-to-goal demo, with the robot body family (D-36). Each avatar walks a short list
+## of goals once, then rests. Timing counts world ticks, so the demo plays out the same way on
+## every run. A stand-in only: the scripted policy (G3) replaces it, and its routes are authored
+## so that nobody meets head-on, because local avoidance is not part of G1.
 ##
-## Robot R drives up the ramp to the platform and back; visitor_y takes the stairs.
-## Neither is told which: navigation picks from what each body is allowed to use.
+## SB-05 for all three robot families: they start beside the stairs and each goes up onto the
+## platform. Nobody tells them which way: navigation picks from what each body may use, so the
+## wheeled humanoid takes the ramp while the legged humanoid and the quadruped take the stairs.
 
 ## route entries: [x, z, wait in seconds after arriving]
+## appearance: number badge, matte trim color and 1-3 trim bands (ART_DIRECTION §2.1)
 const CAST := [
-	{"id": "robot_r", "body": "robot_r", "spawn": "spawn_robot", "start_s": 1.0,
-		"route": [[26.0, 4.0, 4.0], [15.0, 10.5, 0.0]]},
-	{"id": "visitor_x", "body": "human_walker", "spawn": "spawn_entrance", "color": "visitor_sand", "start_s": 0.0,
+	{"id": "robot_quadruped", "body": "quadruped", "spawn": "spawn_stairs_side_1", "start_s": 0.0,
+		"appearance": {"badge": "3", "trim": "robot_trim_brown", "bands": 3},
+		"route": [[28.2, 2.0, 0.0]]},
+	{"id": "robot_legged", "body": "legged_humanoid", "spawn": "spawn_stairs_side_2", "start_s": 3.0,
+		"appearance": {"badge": "1", "trim": "robot_trim_green", "bands": 1},
+		"route": [[25.0, 4.5, 0.0]]},
+	{"id": "robot_wheeled", "body": "wheeled_humanoid", "spawn": "spawn_stairs_side_3", "start_s": 0.5,
+		"appearance": {"badge": "2", "trim": "robot_trim_teal", "bands": 2},
+		"route": [[25.5, 6.6, 0.0]]},
+	{"id": "visitor_x", "body": "human_walker", "spawn": "spawn_entrance", "start_s": 0.0,
+		"appearance": {"color": "visitor_sand"},
 		"route": [[5.0, 14.8, 3.0], [7.5, 4.0, 0.0]]},
-	{"id": "visitor_y", "body": "human_walker", "spawn": "spawn_edge", "color": "visitor_slate", "start_s": 6.0,
-		"route": [[18.5, 3.0, 0.5], [27.0, 2.5, 0.0]]},
-	{"id": "visitor_z", "body": "human_walker", "spawn": "spawn_talker", "color": "visitor_mauve", "start_s": 0.0,
+	{"id": "visitor_y", "body": "human_walker", "spawn": "spawn_edge", "start_s": 4.0,
+		"appearance": {"color": "visitor_slate"},
+		"route": [[12.5, 15.5, 0.0]]},
+	{"id": "visitor_z", "body": "human_walker", "spawn": "spawn_talker", "start_s": 0.0,
+		"appearance": {"color": "visitor_mauve"},
 		"route": [[16.5, 10.8, 0.0], [21.0, 11.0, 1.0], [25.0, 15.0, 1.0], [19.5, 17.5, 0.0]]},
 ]
 
@@ -42,7 +54,7 @@ func _init() -> void:
 func spawn_cast(target_world: RangeWorld) -> void:
 	world = target_world
 	for entry in CAST:
-		world.spawn_at(entry["id"], entry["body"], entry["spawn"], {"color": entry.get("color", "visitor_slate")})
+		world.spawn_at(entry["id"], entry["body"], entry["spawn"], entry.get("appearance", {}))
 		_state[entry["id"]] = {"phase": "start", "step": 0, "until": 0}
 
 

@@ -1,0 +1,36 @@
+# Wheeled humanoid robot (D-36), after docs/concept-art/robot_wheeled_humanoid_concept.jpg:
+# the humanoid upper body on a lift column and a four-wheeled base. It cannot use
+# stairs, so it must take the ramp to the platform (SB-05). This was G1's robot body.
+schema_version: "2.0"
+body_id: wheeled_humanoid
+display_name: Wheeled humanoid
+kind: WHEELED_HUMANOID
+dimensions:
+  height_m: 1.5
+  collider: {shape: BOX, length_m: 0.70, width_m: 0.56}   # the wheeled base sets the footprint
+motion:
+  max_speed_m_s: 1.0        # a typical cap for indoor service robots near people
+  max_accel_m_s2: 0.8
+  max_turn_rate_rad_s: 1.5  # four-wheel skid steer: turns on the spot
+reach_m: 0.6
+arms: 2
+capabilities:
+  can_walk: true            # moves across the floor (on wheels)
+  can_use_stairs: false
+  can_use_ramp: true
+  can_use_elevator: true
+  can_speak: true
+  can_gesture: true
+  can_grab: true
+  can_sit: false
+  can_access_staff_areas: false
+  can_use_pa: false
+sensors:
+  mount_height_m: 1.35      # head cameras behind the visor
+  fov_deg: 120
+  visual_range_m: 20
+  acoustic_range_m: 10
+  cadence_hz: 10
+  dropout_rate: 0.0
+gestures: [WAVE, SMALL_WAVE, RAISED_HAND, POINT, BECKON, NOD, SHAKE_HEAD, OPEN_PALM, BOW, HEAD_TILT, HAND_OVER]
+expression_channels: [SPEECH, FACE, LIGHT]

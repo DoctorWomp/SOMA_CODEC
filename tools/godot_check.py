@@ -10,8 +10,10 @@ GODOT_BIN must point at the *_console.exe build so its output reaches this scrip
 
 Steps:
   1. Version: the binary must be Godot 4.7.2 stable (D-06).
-  2. Import: `--import` loads every script and resource, as opening the editor would.
-  3. Tests:  runs godot_app/tests/test_main.tscn at a fixed 60 frames per simulated second.
+  2. Import:  `--import` imports the project's resources, as opening the editor would.
+  3. Compile: loads every .gd file (godot_app/tests/compile_all.gd). GDScript warnings are
+              errors in this project (D-38), so a new warning fails here.
+  4. Tests:   runs godot_app/tests/test_main.tscn at a fixed 60 frames per simulated second.
 
 Any engine or script ERROR line fails the check, even if every test passed.
 Exit code: 0 passed, 1 failed, 2 skipped (Godot not found and --require not given).
@@ -35,12 +37,14 @@ from tools.install_godot import installed_binary  # noqa: E402
 PROJECT_DIR = REPO / "godot_app"
 EXPECTED_VERSION_PREFIX = "4.7.2.stable"
 TEST_SCENE = "res://tests/test_main.tscn"
+COMPILE_SCRIPT = "res://tests/compile_all.gd"
 
 EXIT_PASSED, EXIT_FAILED, EXIT_SKIPPED = 0, 1, 2
 
 _ERROR_LINE = re.compile(r"^\s*(SCRIPT ERROR|USER SCRIPT ERROR|ERROR|Parse Error|USER ERROR)\b")
 _WARNING_LINE = re.compile(r"^\s*(WARNING|USER WARNING|SCRIPT WARNING)\b")
 _SUMMARY_LINE = re.compile(r"^G1 TESTS DONE passed=(\d+) failed=(\d+)\s*$")
+_COMPILE_LINE = re.compile(r"^COMPILE DONE scripts=(\d+) failed=(\d+)\s*$")
 
 
 @dataclass
@@ -79,6 +83,19 @@ def analyze(output: str) -> RunReport:
             if match:
                 report.summary = (int(match.group(1)), int(match.group(2)))
     return report
+
+
+def compile_report(output: str) -> tuple[int, list[str]]:
+    """Number of scripts compiled (-1 if the run did not finish) and the problems found."""
+    scripts = -1
+    problems: list[str] = []
+    for line in output.splitlines():
+        match = _COMPILE_LINE.match(line.strip())
+        if match:
+            scripts = int(match.group(1))
+        elif line.startswith("COMPILE FAIL ") or _ERROR_LINE.match(line):
+            problems.append(line.strip())
+    return scripts, problems
 
 
 def find_godot() -> str | None:
@@ -138,6 +155,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"        {line}")
         return EXIT_FAILED
     print("  project imported with no errors")
+
+    code, out = _run([godot, "--headless", "--path", str(PROJECT_DIR), "--script", COMPILE_SCRIPT], timeout=300)
+    scripts, problems = compile_report(out)
+    if code != 0 or scripts < 0 or problems:
+        print(f"  FAIL  compiling the GDScript files (exit code {code}); GDScript warnings count as errors (D-38)")
+        for line in problems or out.strip().splitlines()[-20:]:
+            print(f"        {line}")
+        return EXIT_FAILED
+    print(f"  {scripts} GDScript files compiled with no errors or warnings")
 
     cmd = [godot, "--headless", "--path", str(PROJECT_DIR), "--fixed-fps", "60", TEST_SCENE]
     if test_filter:

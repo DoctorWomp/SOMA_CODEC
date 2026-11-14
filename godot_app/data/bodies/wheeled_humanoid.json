@@ -1,14 +1,19 @@
 {
   "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
-  "source": "configs/bodies/robot_r.yaml",
+  "source": "configs/bodies/wheeled_humanoid.yaml",
   "kind": "bodies",
   "data": {
-    "schema_version": "1.0",
-    "body_id": "robot_r",
-    "kind": "WHEELED_ROBOT",
+    "schema_version": "2.0",
+    "body_id": "wheeled_humanoid",
+    "display_name": "Wheeled humanoid",
+    "kind": "WHEELED_HUMANOID",
     "dimensions": {
-      "radius_m": 0.35,
-      "height_m": 1.4
+      "height_m": 1.5,
+      "collider": {
+        "shape": "BOX",
+        "length_m": 0.7,
+        "width_m": 0.56
+      }
     },
     "motion": {
       "max_speed_m_s": 1.0,
@@ -16,6 +21,7 @@
       "max_turn_rate_rad_s": 1.5
     },
     "reach_m": 0.6,
+    "arms": 2,
     "capabilities": {
       "can_walk": true,
       "can_use_stairs": false,
@@ -23,17 +29,36 @@
       "can_use_elevator": true,
       "can_speak": true,
       "can_gesture": true,
-      "can_grab": false,
+      "can_grab": true,
       "can_sit": false,
       "can_access_staff_areas": false,
       "can_use_pa": false
     },
     "sensors": {
+      "mount_height_m": 1.35,
       "fov_deg": 120,
       "visual_range_m": 20,
       "acoustic_range_m": 10,
       "cadence_hz": 10,
       "dropout_rate": 0.0
-    }
+    },
+    "gestures": [
+      "WAVE",
+      "SMALL_WAVE",
+      "RAISED_HAND",
+      "POINT",
+      "BECKON",
+      "NOD",
+      "SHAKE_HEAD",
+      "OPEN_PALM",
+      "BOW",
+      "HEAD_TILT",
+      "HAND_OVER"
+    ],
+    "expression_channels": [
+      "SPEECH",
+      "FACE",
+      "LIGHT"
+    ]
   }
 }

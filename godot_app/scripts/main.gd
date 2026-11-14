@@ -15,7 +15,7 @@ var hud: Hud
 
 func _ready() -> void:
 	DisplayServer.window_set_title("SOMA RANGE — Sandbox Flats (G1)")
-	_add_lighting()
+	Stage.add_lighting(self)
 	world = RangeWorld.new()
 	add_child(world)
 	if not world.build(MAP_ID, DemoRoutes.body_ids()):
@@ -38,22 +38,3 @@ func _ready() -> void:
 	if run_demo:
 		demo.start()
 
-
-## V0 lighting: one directional light without shadows plus flat ambient light (ART_DIRECTION §3, §7).
-func _add_lighting() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Palette.color("background")
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(1, 1, 1)
-	env.ambient_light_energy = 0.55
-	var we := WorldEnvironment.new()
-	we.name = "Environment"
-	we.environment = env
-	add_child(we)
-	var sun := DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.rotation = Vector3(deg_to_rad(-55), deg_to_rad(-35), 0)
-	sun.light_energy = 0.9
-	sun.shadow_enabled = false
-	add_child(sun)
