@@ -166,7 +166,7 @@ static func _add_reflective_marker(parent: Node3D, a: Vector2, b: Vector2, heigh
 	var img := Image.create(16, 16, false, Image.FORMAT_RGB8)
 	for px in 16:
 		for py in 16:
-			var stripe := ((px + py) / 4) % 2 == 0
+			var stripe := posmod(floori((px + py) / 4.0), 2) == 0
 			img.set_pixel(px, py, Palette.color("reflective_b" if stripe else "reflective_a"))
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = ImageTexture.create_from_image(img)
@@ -200,11 +200,12 @@ static func _build_platform(nav_source: Node3D, platform: Dictionary) -> StaticB
 
 
 ## Six corners of a wedge rising from the `from` edge (height fh) to the `to` edge (height th).
-static func _wedge_points(fl: Vector2, fr: Vector2, tl: Vector2, tr: Vector2, fh: float, th: float) -> Array:
+static func _wedge_points(low_left: Vector2, low_right: Vector2, high_left: Vector2, high_right: Vector2,
+		fh: float, th: float) -> Array:
 	return [
-		Vector3(fl.x, fh, fl.y), Vector3(fr.x, fh, fr.y),  # A, B: low edge
-		Vector3(tl.x, fh, tl.y), Vector3(tr.x, fh, tr.y),  # C, D: under the high edge
-		Vector3(tl.x, th, tl.y), Vector3(tr.x, th, tr.y),  # E, F: high edge
+		Vector3(low_left.x, fh, low_left.y), Vector3(low_right.x, fh, low_right.y),  # A, B: low edge
+		Vector3(high_left.x, fh, high_left.y), Vector3(high_right.x, fh, high_right.y),  # C, D: under the high edge
+		Vector3(high_left.x, th, high_left.y), Vector3(high_right.x, th, high_right.y),  # E, F: high edge
 	]
 
 
@@ -248,11 +249,11 @@ static func _build_link(parent: Node3D, link: Dictionary, map: Dictionary) -> Di
 	var d := (to2 - from2) / length
 	var n := Vector2(-d.y, d.x)
 	var width := RAMP_WIDTH_M if kind == "RAMP" else STAIR_WIDTH_M
-	var fl := from2 + n * width / 2
-	var fr := from2 - n * width / 2
-	var tl := to2 + n * width / 2
-	var tr := to2 - n * width / 2
-	var pts := _wedge_points(fl, fr, tl, tr, fh, th)
+	var low_left := from2 + n * width / 2
+	var low_right := from2 - n * width / 2
+	var high_left := to2 + n * width / 2
+	var high_right := to2 - n * width / 2
+	var pts := _wedge_points(low_left, low_right, high_left, high_right, fh, th)
 	var yaw := atan2(-d.y, d.x)
 
 	var node := Node3D.new()
@@ -283,7 +284,7 @@ static func _build_link(parent: Node3D, link: Dictionary, map: Dictionary) -> Di
 		"to": Vector3(to2.x, th, to2.y),
 		"width": width,
 		"steps": steps,
-		"footprint": PackedVector2Array([fl, tl, tr, fr]),
+		"footprint": PackedVector2Array([low_left, high_left, high_right, low_right]),
 		"node": node,
 	}
 

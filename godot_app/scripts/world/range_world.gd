@@ -194,7 +194,7 @@ func query_path(from: Vector3, to: Vector3, nav_mask: int) -> Dictionary:
 	NavigationServer3D.query_path(params, result)
 	var links: Array[String] = []
 	for owner_id in result.path_owner_ids:
-		var owner := instance_from_id(owner_id)
-		if owner is NavigationLink3D and not links.has(String(owner.name)):
-			links.append(String(owner.name))
+		var path_owner := instance_from_id(owner_id)
+		if path_owner is NavigationLink3D and not links.has(String(path_owner.name)):
+			links.append(String(path_owner.name))
 	return {"path": result.path, "links": links}

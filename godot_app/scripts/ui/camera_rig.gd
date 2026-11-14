@@ -93,8 +93,8 @@ func _process(delta: float) -> void:
 			Input.get_axis("cam_left", "cam_right"),
 			Input.get_axis("cam_down", "cam_up"),
 			Input.get_axis("cam_forward", "cam_back"))
-		var basis := Basis.from_euler(Vector3(free_pitch, free_yaw, 0))
-		var world_move := basis * Vector3(move.x, 0, move.z) + Vector3.UP * move.y
+		var view_basis := Basis.from_euler(Vector3(free_pitch, free_yaw, 0))
+		var world_move := view_basis * Vector3(move.x, 0, move.z) + Vector3.UP * move.y
 		var speed := free_speed * (FAST_FACTOR if Input.is_action_pressed("cam_fast") else 1.0)
 		free_position += world_move * speed * delta
 	_apply()
@@ -105,8 +105,8 @@ func _apply() -> void:
 		return
 	if mode == Mode.ORBIT and selected_target() != null:
 		var focus := selected_target().global_position + Vector3.UP * ORBIT_FOCUS_HEIGHT
-		var basis := Basis.from_euler(Vector3(orbit_pitch, orbit_yaw, 0))
-		global_transform = Transform3D(basis, focus + basis.z * orbit_distance)
+		var view_basis := Basis.from_euler(Vector3(orbit_pitch, orbit_yaw, 0))
+		global_transform = Transform3D(view_basis, focus + view_basis.z * orbit_distance)
 	else:
 		global_transform = Transform3D(Basis.from_euler(Vector3(free_pitch, free_yaw, 0)), free_position)
 
