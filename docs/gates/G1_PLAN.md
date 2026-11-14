@@ -1,6 +1,6 @@
 # G1 — Sandbox Flats in Godot
 
-**Status:** BUILT, IN REVIEW (draft PR) · built and tested in a cloud session with Godot's headless mode; the owner checks the visuals on the Windows PC ([checklist](G1_OWNER_CHECKLIST.md))
+**Status:** COMPLETE (merged 2026-11-14). Robot bodies were extended afterwards in [G1b](G1b_ROBOT_BODIES.md) · built and tested in a cloud session with Godot's headless mode; the owner checks the visuals on the Windows PC ([checklist](G1_OWNER_CHECKLIST.md))
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §2.1 (Sandbox Flats), §3 (SB-05), §4 (G1 row) · [ART_DIRECTION.md](../ART_DIRECTION.md) §2, §3, §4, §7 (V0 greybox) · Blueprint §5.2, §5.3, §6.1, §7.1, §20 (G1) · [DECISIONS.md](../DECISIONS.md) D-04, D-06, D-22, D-26, D-27, D-29
 
 ## Goal

@@ -1,0 +1,52 @@
+# SB-05 Ramp vs stairs (RANGE_V0_SCOPE §3): three robot bodies start beside the
+# stairs and each must reach the platform. Checks: the wheeled humanoid takes the
+# ramp (it cannot use stairs); the legged humanoid and the quadruped may use the
+# stairs, which are much shorter from here.
+# Robot R is a role (D-36): each cast entry is Robot R in a different body.
+# Checked now by the Godot tests test_sb05_*; measured by the scenario runner from G3.
+schema_version: "1.0"
+scenario_id: SB05_RAMP_VS_STAIRS
+title: Ramp vs stairs
+map: sandbox_flats
+default_seed: 505
+tick_hz: 10
+duration_ticks: 600   # 60 s at 10 ticks per second
+
+cast:
+  robot_quadruped:
+    persona: robot_r
+    body: quadruped
+    controller: SCRIPTED
+    policy: SCRIPTED
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_stairs_side_1
+    task: Reach the platform.
+  robot_legged:
+    persona: robot_r
+    body: legged_humanoid
+    controller: SCRIPTED
+    policy: SCRIPTED
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_stairs_side_2
+    task: Reach the platform.
+  robot_wheeled:
+    persona: robot_r
+    body: wheeled_humanoid
+    controller: SCRIPTED
+    policy: SCRIPTED
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_stairs_side_3
+    task: Reach the platform.
+
+events: []
+
+measure: [reached_platform, nav_link_used, entered_stair_footprint]
+
+# EVALUATOR ONLY: never shown to any agent.
+evaluator_only:
+  robot_wheeled_expected_link: platform_ramp
+  robot_legged_allowed_links: platform_stairs or platform_ramp
+  robot_quadruped_allowed_links: platform_stairs or platform_ramp

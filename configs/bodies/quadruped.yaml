@@ -1,0 +1,37 @@
+# Quadruped robot (D-36), after docs/concept-art/robot_quadruped_concept.jpg (Spot-like).
+# Size and speed in the range published for commercial quadrupeds (about 1.1 x 0.5 m,
+# up to about 1.6 m/s). No arm: it cannot wave, point or hand things over, but it can
+# turn to face people, tilt its sensor head, sit, speak and use its visor light.
+schema_version: "2.0"
+body_id: quadruped
+display_name: Quadruped
+kind: QUADRUPED
+dimensions:
+  height_m: 0.70
+  collider: {shape: BOX, length_m: 1.10, width_m: 0.50}
+motion:
+  max_speed_m_s: 1.6
+  max_accel_m_s2: 1.2
+  max_turn_rate_rad_s: 1.5
+reach_m: 0.0
+arms: 0
+capabilities:
+  can_walk: true
+  can_use_stairs: true
+  can_use_ramp: true
+  can_use_elevator: true
+  can_speak: true           # a speaker; it has no face display
+  can_gesture: true
+  can_grab: false
+  can_sit: true
+  can_access_staff_areas: false
+  can_use_pa: false
+sensors:
+  mount_height_m: 0.55      # the front sensor visor; partitions and crowds block it
+  fov_deg: 120
+  visual_range_m: 20
+  acoustic_range_m: 10
+  cadence_hz: 10
+  dropout_rate: 0.0
+gestures: [HEAD_TILT, SIT_IN_PLACE]
+expression_channels: [SPEECH, LIGHT]   # speaker and the light around the sensor visor

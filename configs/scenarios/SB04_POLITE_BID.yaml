@@ -12,7 +12,7 @@ duration_ticks: 1200   # 120 s at 10 ticks per second
 cast:
   robot_r:
     persona: robot_r
-    body: robot_r
+    body: wheeled_humanoid
     controller: LLM_AGENT
     policy: LLM
     preset: H0

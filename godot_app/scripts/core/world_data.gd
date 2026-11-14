@@ -6,7 +6,8 @@ extends RefCounted
 ## Here we only check the wrapper and the schema version, and fail loudly.
 
 const DATA_DIR := "res://data"
-const SCHEMA_VERSION := "1.0"
+## Contract version each config folder must carry (D-37: bodies moved to 2.0).
+const SCHEMA_VERSIONS := {"maps": "1.0", "bodies": "2.0"}
 const EXPORT_HINT := "Run: uv run python tools/export_godot_data.py"
 
 
@@ -20,9 +21,10 @@ static func load_config(kind: String, config_id: String) -> Dictionary:
 		push_error("WorldData: %s is not an exported '%s' file. %s" % [path, kind, EXPORT_HINT])
 		return {}
 	var data: Dictionary = parsed["data"]
-	if data.get("schema_version") != SCHEMA_VERSION:
+	var expected: String = SCHEMA_VERSIONS.get(kind, "1.0")
+	if data.get("schema_version") != expected:
 		push_error("WorldData: %s has schema_version %s; this build reads %s" % [
-			path, data.get("schema_version"), SCHEMA_VERSION])
+			path, data.get("schema_version"), expected])
 		return {}
 	return data
 

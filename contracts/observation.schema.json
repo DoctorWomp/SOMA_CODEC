@@ -118,7 +118,8 @@
       "required": ["gesture"],
       "properties": {
         "gesture": {
-          "enum": ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD", "OPEN_PALM", "BOW", "UNRECOGNIZED"]
+          "description": "A gesture from the shared vocabulary, or UNRECOGNIZED when the observer saw a gesture it could not classify.",
+          "anyOf": [{ "$ref": "common.schema.json#/$defs/gesture" }, { "const": "UNRECOGNIZED" }]
         },
         "direction": { "enum": ["TOWARD_OBSERVER", "AWAY_FROM_OBSERVER", "UNKNOWN"] },
         "sign_text": { "type": "string", "maxLength": 160 }

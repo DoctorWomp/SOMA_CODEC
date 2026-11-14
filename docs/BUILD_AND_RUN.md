@@ -31,7 +31,7 @@ It runs five steps and prints a summary:
 2. **Configs**: every file in `configs/` matches its contract, and everything it refers to exists.
 3. **Godot data**: the JSON copies in `godot_app/data/` match `configs/` (D-30).
 4. **Tests**: the full `pytest` suite.
-5. **Godot**: imports the Godot project and runs its headless tests (needs Godot; see below).
+5. **Godot**: imports the Godot project, compiles every GDScript file (a GDScript warning counts as an error, D-38) and runs the headless tests (needs Godot; see below).
 
 `All checks passed.` and exit code 0 means green. If Godot is not found, step 5 shows **SKIP** (never PASS) and the summary says so. CI uses `--require-godot`, which turns a missing Godot into a failure.
 
@@ -63,6 +63,7 @@ uv run python tools/godot_check.py --filter sb05
 
 1. Start Godot, choose **Import**, and pick `godot_app/project.godot` in the repository folder.
 2. Press **F5** (or the ▶ button) to run Sandbox Flats. The world is built when it runs; the editor's 3D view of `main.tscn` is empty on purpose.
+3. To see every robot body side by side, open `scenes/robot_lineup.tscn` and press **F6** (Run Current Scene).
 
 Keys: `C` camera mode (free / orbit) · `[` `]` select avatar · hold right mouse to look or orbit · wheel to zoom · `W A S D` move · `Q` `E` down / up · `Shift` faster · `Space` pause · `R` restart the demo · `H` hide the panel.
 
@@ -74,7 +75,7 @@ godot --path godot_app
 
 ### After editing a map or body file
 
-Godot reads JSON copies of `configs/maps/` and `configs/bodies/` (D-30). After changing one of those YAML files, refresh the copies and commit both:
+Godot reads JSON copies of `configs/maps/` and `configs/bodies/` (D-30). Body files follow body contract 2.0 (D-37); `tools/validate_configs.py` explains any problem, including contradictions such as a gesture that needs an arm on a body without one. After changing one of those YAML files, refresh the copies and commit both:
 
 ```bash
 uv run python tools/export_godot_data.py

@@ -37,12 +37,15 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-27 | Contract format and validation | APPROVED (owner, 2026-11-13) |
 | D-28 | License | APPROVED (owner, 2026-11-13) |
 | D-29 | Contract v1 conventions | APPROVED (owner, 2026-11-14) |
-| D-30 | How Godot reads configs | PROPOSED (G1, 2026-11-14) |
-| D-31 | Ramp, stairs and capability gating in the world | PROPOSED (G1, 2026-11-14) |
-| D-32 | Robot R greybox body | PROPOSED (G1, 2026-11-14) |
-| D-33 | Godot project settings and the world tick | PROPOSED (G1, 2026-11-14) |
-| D-34 | Godot checks in tools/check.py and CI | PROPOSED (G1, 2026-11-14) |
-| D-35 | Python version on the PC and in CI | PROPOSED (G1, 2026-11-14; requested by the owner) |
+| D-30 | How Godot reads configs | APPROVED (owner, 2026-11-14) |
+| D-31 | Ramp, stairs and capability gating in the world | APPROVED (owner, 2026-11-14); navigation sizing amended by D-37 |
+| D-32 | Robot R greybox body | SUPERSEDED by D-36 (owner, 2026-11-14) |
+| D-33 | Godot project settings and the world tick | APPROVED (owner, 2026-11-14), tick question resolved |
+| D-34 | Godot checks in tools/check.py and CI | APPROVED (owner, 2026-11-14) |
+| D-35 | Python version on the PC and in CI | APPROVED (owner, 2026-11-14) |
+| D-36 | Robot body family | APPROVED (owner, 2026-11-14) |
+| D-37 | Body contract 2.0, per-size navigation, legged colliders | PROPOSED (G1b, 2026-11-14) |
+| D-38 | GDScript warnings are errors | PROPOSED (G1b, 2026-11-14; requested by the owner) |
 
 ---
 
@@ -344,7 +347,7 @@ Choices made while writing contracts v1 that the source documents left open:
 - **Extra intervention types** `LAYER_BYPASS` (a mid-run bypass, D-03) and `EVALUATOR_TRUTH_OPENED` (D-25), both journaled and tainting.
 
 ## D-30 — How Godot reads configs
-**Status:** PROPOSED (G1, 2026-11-14)
+**Status:** APPROVED (owner, 2026-11-14). Proposed at G1.
 
 Godot has no YAML reader. `tools/export_godot_data.py` copies the configs Godot needs (maps and bodies at G1) to `godot_app/data/<folder>/<id>.json`, but only after they pass every check in `tools/validate_configs.py`. Each file is wrapped with its source path. The JSON is **committed**, so the project opens and runs without Python, and `tools/check.py` fails if any copy is out of date ("run the export and commit").
 
@@ -353,16 +356,16 @@ This is the "generated equivalent" allowed by D-27: Godot checks only the wrappe
 Rejected: a YAML parser written in GDScript (the map uses flow-style YAML; a partial parser would silently misread files) and a third-party YAML add-on (a dependency for little gain).
 
 ## D-31 — Ramp, stairs and capability gating in the world
-**Status:** PROPOSED (G1, 2026-11-14)
+**Status:** APPROVED (owner, 2026-11-14). Proposed at G1. *Amended 2026-11-14 by D-37: navigation is baked per body size, not once for the largest body.*
 
 - **Navigation:** the floor and platform tops are baked into one navigation mesh at start-up, from the map's own geometry. Each map `nav_link` becomes a `NavigationLink3D` on the navigation layer of its `required_capability` (`can_use_ramp` → layer 2, `can_use_stairs` → layer 3). A body's paths may use layer 1 plus the layers of the capabilities its body config grants. The ramp and stair footprints are kept out of the bake, so the **only** way onto a platform is a link the body is allowed to use.
 - **Physics (the host enforces it too):** the stairs have real 0.15 m steps, which stop any body without `can_use_stairs`, and a smooth walking surface that only bodies with `can_use_stairs` collide with. A wheeled robot is blocked even if something drives it at the stairs without navigation. The ramp is solid for everyone.
 - **Sizes the map contract does not describe yet** (G1 constants in `godot_app/scripts/world/map_builder.gd`): wall thickness 0.2 m, ramp and stair width 1.5 m, stair step rise ≤ 0.18 m (0.15 m on the Sandbox platform), greybox prop sizes for `CHAIR` and `PA_SPEAKER`. Unknown prop types are an error. If these need to vary per map, add optional fields to the map contract (minor version) or a props catalog (G6).
-- **One navigation mesh per world,** baked for the largest body radius loaded (0.35 m). Smaller bodies are therefore kept slightly further from walls than they need to be. Per-radius meshes can come later if a scenario needs narrow gaps.
+- ~~**One navigation mesh per world,** baked for the largest body radius loaded (0.35 m).~~ Replaced by per-size navigation (D-37).
 - **Each world has its own navigation map**, so isolated worlds (one HORIZON robot per world, RANGE_V0_SCOPE §2.2) never share paths.
 
 ## D-32 — Robot R greybox body
-**Status:** PROPOSED (G1, 2026-11-14)
+**Status:** SUPERSEDED by D-36 (owner, 2026-11-14). Kept for history: it described G1's single wheeled robot.
 
 Robot R's body config is a `WHEELED_ROBOT`, 1.4 m tall, radius 0.35 m; the [low-poly concept](concept-art/robot_avatar_lowpoly_concept.jpg) shows legs. The V0 model therefore keeps the concept's **upper body at its proportions** (helmet with black visor, ear pods, dark neck band, white chest and pelvis shells, dark waist band, arms with shoulder, elbow and wrist joints) on a **dark mast and wheeled base** (chassis, two drive wheels, two casters) instead of legs. Legs on a body that cannot climb stairs would contradict what the viewer sees in SB-05.
 
@@ -372,17 +375,17 @@ Robot R's body config is a `WHEELED_ROBOT`, 1.4 m tall, radius 0.35 m; the [low-
 - Joint nodes are named (`Neck`, `ShoulderL/R`, `ElbowL/R`, `WristL/R`) so the later Blender mesh can use the same skeleton names.
 
 ## D-33 — Godot project settings and the world tick
-**Status:** PROPOSED (G1, 2026-11-14)
+**Status:** APPROVED (owner, 2026-11-14), with its open question resolved as below.
 
 - **Physics engine: Jolt** (built into Godot 4.7), selected explicitly in `project.godot`. Avatars are `CharacterBody3D`; Jolt handles the cylinder collider and the stair/ramp contacts cleanly. Known: in very fast headless runs Jolt sometimes prints "job system exceeded the maximum number of jobs … waiting"; it waits and continues, and results are unaffected. The check lists it as a note, not an error.
 - **Fixed 60 Hz physics** (ART_DIRECTION §4). The world clock (`SimClock`) counts physics ticks and runs before every avatar in each tick. Avatars move only in the physics step, along their facing direction, limited by their body config's max speed, acceleration and turn rate (turning on the spot when facing away).
 - **Rendering:** Forward+ on the PC, frame rate capped at 60, one directional light without shadows, flat ambient light (V0 greybox). Zones darken the floor in proportion to `1 − light_level`, so the light value the senses will use is also visible.
 - **Headless runs** use `--fixed-fps 60`, so each frame is exactly one tick and results do not depend on the machine's speed.
-- **Open for G2:** scenario `tick_hz` (10 in SB-04) versus the 60 Hz physics tick. Proposal: `tick_hz` must divide 60; each scenario tick spans 60 / `tick_hz` physics ticks, and contract `tick_id` values count scenario ticks. To settle when the observer filter and journal arrive.
+- **Canonical tick (resolved by the owner, 2026-11-14):** Godot's 60 Hz physics tick is the single canonical `tick_id` (Blueprint §2.1). A scenario's `tick_hz` only sets how often observations and decisions are sampled, and must divide 60 (so a 10 Hz scenario samples every 6th tick). `tools/validate_configs.py` rejects a `tick_hz` that does not divide 60. *(The proposal at G1 had `tick_id` count scenario ticks; that was not adopted.)*
 - **Not in G1:** local avoidance between avatars. The demo routes are authored so nobody meets head-on. Two bodies pushed into each other in the same tick may overlap by up to one tick of travel (≤ 2.4 cm) for a moment before being pushed apart; a test checks they never pass through or stay overlapped.
 
 ## D-34 — Godot checks in tools/check.py and CI
-**Status:** PROPOSED (G1, 2026-11-14)
+**Status:** APPROVED (owner, 2026-11-14). Proposed at G1. *Extended 2026-11-14 by D-38: a compile step loads every script.*
 
 - `tools/check.py` gains two steps: **Godot data** (exported JSON is current, D-30) and **Godot** (`tools/godot_check.py`: version must be 4.7.2 stable, `--import` must print no errors, then the headless test scene runs; any `ERROR` line fails the step even if every test passed).
 - Godot is found from `GODOT_BIN`, then `.tools/godot/` (installed by `tools/install_godot.py`), then `godot`/`godot4` on the PATH. On Windows `GODOT_BIN` must name the `_console.exe` build.
@@ -391,11 +394,62 @@ Robot R's body config is a `WHEELED_ROBOT`, 1.4 m tall, radius 0.35 m; the [low-
 - **Screenshots in the cloud** are rendered under a virtual display with the Compatibility (OpenGL) renderer, because the cloud has no GPU. They prove the scene draws; the owner's PC (Forward+) is the reference for the real look.
 
 ## D-35 — Python version on the PC and in CI
-**Status:** PROPOSED (G1, 2026-11-14; requested by the owner)
+**Status:** APPROVED (owner, 2026-11-14). Requested by the owner; proposed at G1.
 
 The owner's uv picked Python 3.14 and all checks pass there. To keep the PC and CI the same:
 
 - `.python-version` contains **`3.14`**, so uv uses 3.14 everywhere by default (PC and cloud sessions).
 - CI tests **3.12, 3.13 and 3.14**. 3.12 stays the minimum (`requires-python >= 3.12`, D-06), so code must not use anything newer than 3.12 offers; CI catches that.
 - Verified 2026-11-14: `tools/check.py` passes on 3.14.6 and 3.12.3 in a cloud session (3.14.7, the owner's version, was not yet known to the cloud's uv).
+
+## D-36 — Robot body family
+**Status:** APPROVED (owner, 2026-11-14)
+
+Replaces D-32. RANGE v0 has **three robot bodies**, each a body config (`configs/bodies/`) plus a greybox avatar built from primitives that matches its reference sheet. No leg animation yet (V0 greybox): bodies glide.
+
+1. **Legged humanoid** (`legged_humanoid`), after [robot_avatar_lowpoly_concept.jpg](concept-art/robot_avatar_lowpoly_concept.jpg). Can use stairs and the ramp.
+2. **Wheeled humanoid** (`wheeled_humanoid`), after [robot_wheeled_humanoid_concept.jpg](concept-art/robot_wheeled_humanoid_concept.jpg): the same upper body on a lift column and a four-wheeled base. Ramp only. This is G1's robot, refined to match the sheet.
+3. **Quadruped**, after [robot_quadruped_concept.jpg](concept-art/robot_quadruped_concept.jpg), Spot-like with a front sensor visor; two configs: **`quadruped`** (no arm) and **`quadruped_arm`** (utility arm on the dorsal rail, shown stowed). Stairs and ramp.
+
+**"Robot R" is a role, not a body.** A scenario chooses which body plays Robot R (the persona's `default_body` is `wheeled_humanoid` when a scenario does not say). SB-05 casts Robot R in all three bodies.
+
+**Values** (starting points chosen at implementation in the range published for comparable robots; verify against real use). Turning radius and navigation radius are derived (D-37).
+
+| | Legged humanoid | Wheeled humanoid | Quadruped | Quadruped + arm | Walking visitor |
+|---|---|---|---|---|---|
+| Height | 1.75 m | 1.50 m | 0.70 m | 0.83 m (arm stowed) | 1.70 m |
+| Collider (length × width) | capsule 0.56 | box 0.70 × 0.56 | box 1.10 × 0.50 | box 1.10 × 0.50 | capsule 0.50 |
+| Turning / navigation radius | 0.28 / 0.30 m | 0.45 / 0.45 m | 0.60 / 0.65 m | 0.60 / 0.65 m | 0.25 / 0.25 m |
+| Max speed, accel, turn | 1.2 m/s, 0.8 m/s², 1.2 rad/s | 1.0, 0.8, 1.5 | 1.6, 1.2, 1.5 | 1.6, 1.2, 1.5 | 1.4, 1.5, 3.0 |
+| Stairs / ramp | yes / yes | **no** / yes | yes / yes | yes / yes | yes / yes |
+| Sensor mount, FOV | 1.60 m, 120° | 1.35 m, 120° | **0.55 m**, 120° | 0.55 m, 120° | 1.60 m (eyes), 180° |
+| Visual / acoustic range | 20 / 10 m | 20 / 10 m | 20 / 10 m | 20 / 10 m | 25 / 12 m |
+| Arms, reach | 2, 0.65 m | 2, 0.60 m | 0, 0 | 1, 0.90 m | 2, 0.70 m |
+| Grab / sit | yes / no | yes / no | no / yes | yes / yes | yes / yes |
+| Gestures | all except SIT_IN_PLACE | all except SIT_IN_PLACE | HEAD_TILT, SIT_IN_PLACE | + POINT, HAND_OVER | all |
+| Expression channels | SPEECH, FACE (visor glyph), LIGHT (ear pods) | SPEECH, FACE, LIGHT | SPEECH, LIGHT (visor light) | SPEECH, LIGHT | SPEECH, FACE |
+
+- **Sensor mount height** is where G2's observer filter will cast sight lines from, so the quadruped's low sensors are blocked by 2 m partitions and by crowds that a humanoid sees over.
+- **Gestures** come from one shared vocabulary in `contracts/common.schema.json` (Blueprint §10.3 plus `HEAD_TILT`, `SIT_IN_PLACE` and `HAND_OVER`). Turning to face someone is the `TURN_TO`/`LOOK_AT` actions, not a gesture. A body performs only the gestures its config lists; the Godot body refuses the rest now, and the action gate (G3) will use the same rule (`range_service/bodies.py`).
+- **Choices made beyond the owner's description:** the quadrupeds have a speaker (`SPEECH`), since an expo assistant must be able to answer; they have no `FACE` channel because their visor is a camera array. The humanoids do not take `SIT_IN_PLACE`. Each is one line in a YAML file to change.
+- **Identity** stays matte trim plus a number badge (ART_DIRECTION §2.1), now with 1–3 trim bands or stripes as a pattern that does not rely on color. Demo colors: green (1), teal (2), brown (3); none is a Beacon hue (D-14).
+- **Later embodiments** (not v0) are listed in RANGE_V0_SCOPE §6.1.
+
+## D-37 — Body contract 2.0, per-size navigation, legged colliders
+**Status:** PROPOSED (G1b, 2026-11-14)
+
+- **Body contract version 2.0** (incompatible, so the version is bumped): `dimensions.radius_m` is replaced by `dimensions.collider` (`CAPSULE`, `CYLINDER` or `BOX`, with length along the facing direction and width across it); new required `sensors.mount_height_m`, `arms`, `gestures` and `expression_channels`; optional `display_name`; robot kinds renamed to `LEGGED_HUMANOID`, `WHEELED_HUMANOID`, `QUADRUPED`. Every other contract stays at 1.0; `common.schema.json` holds each version. Adding gestures to the shared vocabulary is backward-compatible (old messages stay valid), so action and observation contracts stay at 1.0.
+- **Consistency rules** the schema cannot express are checked by `tools/validate_configs.py` (`range_service/bodies.py`): round colliders have equal length and width; sensors sit no higher than the body; arm gestures need an arm; `HAND_OVER` needs `can_grab`; `SIT_IN_PLACE` needs `can_sit`; no reach without an arm; the `SPEECH` channel and `can_speak` agree; listed gestures and `can_gesture` agree.
+- **Turning radius** = half the width for round colliders, half the diagonal for a box: the circle a body sweeps turning on the spot. **Navigation radius** = turning radius rounded up to the 5 cm navigation grid.
+- **Per-size navigation (replaces D-31's single mesh).** Checked as asked: one mesh baked for the quadruped (0.65 m) would cut the walkable floor for people in Sandbox Flats from 526 m² to 454 m² (−14%) and close the 1.15 m pocket between the stairs and the north wall. So each world bakes **one navigation map per distinct navigation radius** among its loaded bodies (Sandbox Flats with all bodies: 0.25, 0.30, 0.45, 0.65 m; 454–526 m² walkable), and each avatar plans on the map for its size. Measured cost (cloud session, 4 CPU cores, 2026-11-14): building Sandbox Flats takes about 65–75 ms with one size and 235–265 ms with all four.
+- **Legged box colliders.** A flat-bottomed box could not get onto the stairs' smooth walking surface (the quadruped stopped at the first riser in a test). Box colliders of bodies with `can_use_stairs` therefore have their lower front and back edges bevelled by 10 cm (legs step over edges); wheeled boxes stay flat, so the real 0.15 m steps still stop them. Round colliders are unchanged.
+
+## D-38 — GDScript warnings are errors
+**Status:** PROPOSED (G1b, 2026-11-14; requested by the owner)
+
+The owner's editor showed six GDScript warnings that headless runs never print (integer division; names shadowing `tr`, `owner` and `basis`). All six are fixed. To stop new ones:
+
+- In `project.godot`, every GDScript warning that Godot shows by default is raised to **error** level. A script with a warning then fails to load, in the editor and in the checks alike. Warnings Godot leaves off by default (for example untyped declarations) stay off.
+- `tools/godot_check.py` gains a **compile** step (`godot_app/tests/compile_all.gd`) that loads every `.gd` file, because Godot's `--import` does not compile every script, and a broken test script would otherwise make the test run hang rather than fail.
+- Reproduced first: with the levels raised, the check failed on exactly the six reported lines; it passes after the fixes. A deliberately added integer division makes the check fail with a clear message.
 

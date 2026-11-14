@@ -2,6 +2,15 @@
   "dropout_over_one": "maximum",
   "fov_too_wide": "maximum",
   "missing_capability": "required",
+  "missing_gestures": "required",
+  "missing_sensor_mount": "required",
+  "old_radius_field": "additionalProperties",
+  "old_version": "const",
+  "repeated_gesture": "uniqueItems",
+  "too_many_arms": "maximum",
   "unknown_capability": "additionalProperties",
-  "unknown_field": "additionalProperties"
+  "unknown_channel": "enum",
+  "unknown_collider_shape": "enum",
+  "unknown_field": "additionalProperties",
+  "unknown_gesture": "enum"
 }

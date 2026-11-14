@@ -12,19 +12,47 @@ const TESTS := [
 	"test_project_settings",
 	"test_fixed_tick",
 	"test_map_built_from_data",
-	"test_robot_model",
+	"test_body_dimensions_and_navigation_radius",
+	"test_robot_models",
+	"test_gesture_permissions",
+	"test_navigation_per_body_size",
 	"test_visitors_reach_goals",
 	"test_wall_collision",
 	"test_avatar_collision",
 	"test_sb05_path_choice",
 	"test_no_capability_no_platform_path",
-	"test_sb05_robot_takes_ramp",
-	"test_walker_climbs_stairs",
+	"test_sb05_wheeled_takes_ramp",
+	"test_sb05_stair_climbers",
 	"test_robot_blocked_by_steps",
 	"test_speed_and_turn_limits",
 	"test_camera",
+	"test_lineup_scene",
 	"test_demo_smoke",
 ]
+
+const ROBOT_BODIES := ["legged_humanoid", "wheeled_humanoid", "quadruped", "quadruped_arm"]
+const ALL_BODIES := ["legged_humanoid", "wheeled_humanoid", "quadruped", "quadruped_arm", "human_walker"]
+
+## Same numbers as tests/test_bodies.py (D-37): turning radius and navigation radius.
+const EXPECTED_RADII := {
+	"legged_humanoid": [0.28, 0.30],
+	"wheeled_humanoid": [0.4478, 0.45],
+	"quadruped": [0.6042, 0.65],
+	"quadruped_arm": [0.6042, 0.65],
+	"human_walker": [0.25, 0.25],
+}
+
+## Every gesture in contracts/common.schema.json, and the ones each body may perform (D-36).
+const ALL_GESTURES := ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD",
+	"OPEN_PALM", "BOW", "HEAD_TILT", "SIT_IN_PLACE", "HAND_OVER"]
+const ALLOWED_GESTURES := {
+	"legged_humanoid": ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD",
+		"OPEN_PALM", "BOW", "HEAD_TILT", "HAND_OVER"],
+	"wheeled_humanoid": ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD",
+		"OPEN_PALM", "BOW", "HEAD_TILT", "HAND_OVER"],
+	"quadruped": ["HEAD_TILT", "SIT_IN_PLACE"],
+	"quadruped_arm": ["HEAD_TILT", "SIT_IN_PLACE", "POINT", "HAND_OVER"],
+}
 
 ## SB-05 setup: start beside the stairs, goal on the platform, so the stairs are by far
 ## the shorter way and only capability can explain the robot taking the ramp.
@@ -71,7 +99,7 @@ func _cleanup() -> void:
 		await get_tree().physics_frame
 
 
-func _world(body_ids := ["robot_r", "human_walker"]) -> RangeWorld:
+func _world(body_ids := ["wheeled_humanoid", "human_walker"]) -> RangeWorld:
 	var w := RangeWorld.new()
 	add_child(w)
 	_node = w
@@ -142,6 +170,13 @@ func test_project_settings() -> String:
 		return "3D physics engine is '%s', expected 'Jolt Physics' (D-33)" % engine_name
 	if int(ProjectSettings.get_setting("application/run/max_fps")) != 60:
 		return "frame rate must be capped at 60 (ART_DIRECTION §3)"
+	# D-38: every GDScript warning that is on by default is an error, so none can slip in.
+	for warning in ["integer_division", "shadowed_variable", "shadowed_variable_base_class",
+			"shadowed_global_identifier", "unused_variable", "unused_parameter", "narrowing_conversion",
+			"unreachable_code", "standalone_expression", "unsafe_void_return"]:
+		var level := int(ProjectSettings.get_setting("debug/gdscript/warnings/" + warning))
+		if level != 2:
+			return "GDScript warning '%s' is at level %d; it must be an error (2), see D-38" % [warning, level]
 	for action in ["cam_forward", "cam_back", "cam_left", "cam_right", "cam_up", "cam_down", "cam_fast",
 			"cam_toggle_mode", "select_prev", "select_next", "sim_pause", "demo_restart", "hud_toggle"]:
 		if not InputMap.has_action(action) or InputMap.action_get_events(action).is_empty():
@@ -234,35 +269,173 @@ func test_map_built_from_data() -> String:
 	return ""
 
 
-func test_robot_model() -> String:
-	var holder := Node3D.new()
-	add_child(holder)
-	_node = holder
-	var model := RobotRModel.create(1.4)
-	holder.add_child(model)
-	for part in ["Base", "WheelL", "WheelR", "Torso", "ChestTrim", "BadgeFront", "Neck", "Head", "Visor",
-			"EarPodL", "EarPodR", "ShoulderL", "ShoulderR", "ElbowL", "ElbowR", "WristL", "WristR"]:
-		if model.find_child(part, true, false) == null:
-			return "Robot R model has no part '%s'" % part
-	var box := AABB()
+func test_body_dimensions_and_navigation_radius() -> String:
+	var w := await _world(ALL_BODIES)
+	if w == null:
+		return "world failed to build"
+	var x := 4.0
+	for body_id in ALL_BODIES:
+		var body: Dictionary = w.bodies[body_id]
+		var expected: Array = EXPECTED_RADII[body_id]
+		if absf(Bodies.turning_radius(body) - float(expected[0])) > 0.001:
+			return "%s turning radius %.4f, expected %.4f" % [body_id, Bodies.turning_radius(body), expected[0]]
+		if not is_equal_approx(Bodies.nav_radius(body), float(expected[1])):
+			return "%s navigation radius %.3f, expected %.2f" % [body_id, Bodies.nav_radius(body), expected[1]]
+		var a := w.spawn_avatar(body_id, body_id, Vector3(x, 0, 16.5), 0.0)
+		x += 2.5
+		var collider: Dictionary = body["dimensions"]["collider"]
+		var shape: Shape3D = (a.get_node("Collider") as CollisionShape3D).shape
+		var height := float(body["dimensions"]["height_m"])
+		match String(collider["shape"]):
+			"BOX":
+				var want := Vector3(float(collider["width_m"]), height, float(collider["length_m"]))
+				var legged := Layers.has_capability(body, "can_use_stairs")
+				if legged != (shape is ConvexPolygonShape3D):
+					return "%s: box bodies that use stairs get a bevelled collider, others a flat box" % body_id
+				var size := (shape as BoxShape3D).size if shape is BoxShape3D else _points_size((shape as ConvexPolygonShape3D).points)
+				if not size.is_equal_approx(want):
+					return "%s box collider is %s, config says %s" % [body_id, size, want]
+			"CAPSULE":
+				var capsule := shape as CapsuleShape3D
+				if not is_equal_approx(capsule.radius, float(collider["width_m"]) / 2) or not is_equal_approx(capsule.height, height):
+					return "%s capsule collider does not match its config" % body_id
+			_:
+				return "%s has an unexpected collider shape %s" % [body_id, collider["shape"]]
+		var mount := a.get_node("SensorMount") as Marker3D
+		if not is_equal_approx(mount.position.y, float(body["sensors"]["mount_height_m"])):
+			return "%s sensor mount at %.2f m, config says %s" % [body_id, mount.position.y, body["sensors"]["mount_height_m"]]
+		if a.nav_agent.navigation_layers != Layers.nav_mask_for(body):
+			return "%s navigation layers do not follow its capabilities" % body_id
+	# Low sensors: the quadruped sees under a 2 m partition's top edge only if it is shorter.
+	if float(w.bodies["quadruped"]["sensors"]["mount_height_m"]) >= 1.0:
+		return "quadruped sensors should be mounted low"
+	return ""
+
+
+func _points_size(points: PackedVector3Array) -> Vector3:
+	var lo := points[0]
+	var hi := points[0]
+	for q in points:
+		lo = Vector3(minf(lo.x, q.x), minf(lo.y, q.y), minf(lo.z, q.z))
+		hi = Vector3(maxf(hi.x, q.x), maxf(hi.y, q.y), maxf(hi.z, q.z))
+	return hi - lo
+
+
+## Combined bounds of an avatar's model meshes, in the avatar's own space.
+func _model_bounds(a: Avatar) -> AABB:
+	var bounds := AABB()
 	var first := true
-	for mi in model.find_children("*", "MeshInstance3D", true, false):
-		var b: AABB = (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
-		box = b if first else box.merge(b)
+	for mi in a.model.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		var b: AABB = (a.global_transform.affine_inverse() * m.global_transform) * m.get_aabb()
+		bounds = b if first else bounds.merge(b)
 		first = false
-	if absf(box.end.y - 1.4) > 0.03 or box.position.y < -0.01:
-		return "model spans y %.3f..%.3f, expected 0..1.4 (body config height)" % [box.position.y, box.end.y]
-	var half_width := maxf(maxf(absf(box.position.x), absf(box.end.x)), maxf(absf(box.position.z), absf(box.end.z)))
-	if half_width > 0.355:
-		return "model reaches %.3f m from its center, beyond the 0.35 m body radius" % half_width
-	# The visor faces forward (-z), the way the body moves.
-	var visor: Node3D = model.find_child("Visor", true, false)
-	if visor.global_position.z > -0.05:
-		return "visor is not on the front (-z) of the head"
-	var model2 := RobotRModel.create(1.7)
-	holder.add_child(model2)
-	if not is_equal_approx(model2.scale.y, 1.7 / 1.4):
-		return "model does not scale to the body height"
+	return bounds
+
+
+func test_robot_models() -> String:
+	var w := await _world(ALL_BODIES)
+	if w == null:
+		return "world failed to build"
+	var parts := {
+		"legged_humanoid": ["Head", "Visor", "EarPodL", "EarPodR", "Torso", "ShoulderL", "ElbowR", "WristL",
+			"HipL", "KneeR", "AnkleL", "BadgeFront", "ForearmBand1"],
+		"wheeled_humanoid": ["Head", "Visor", "EarPodL", "Torso", "ShoulderR", "WristR", "WheelFL", "WheelFR",
+			"WheelBL", "WheelBR", "ColumnLower", "ColumnUpper", "BadgeBack", "ForearmBand2"],
+		"quadruped": ["SensorHead", "Visor", "LensC", "VisorLight", "DorsalRail", "LegFL", "LegFR", "LegBL",
+			"LegBR", "BadgeL", "BadgeR", "TrimL3"],
+		"quadruped_arm": ["SensorHead", "Visor", "DorsalRail", "Arm", "ArmShoulder", "ArmElbow", "Gripper"],
+	}
+	var no_parts := {
+		"legged_humanoid": ["WheelFL", "Arm"],
+		"wheeled_humanoid": ["HipL", "KneeL"],
+		"quadruped": ["Arm", "Gripper", "Head"],
+		"quadruped_arm": ["Head"],
+	}
+	var appearance := {"badge": "7", "trim": "robot_trim_teal", "bands": 3}
+	var x := 4.0
+	for body_id in ROBOT_BODIES:
+		var a := w.spawn_avatar(body_id, body_id, Vector3(x, 0, 16.5), 0.0, appearance)
+		x += 2.5
+		for part in parts[body_id]:
+			if a.model.find_child(part, true, false) == null:
+				return "%s model has no part '%s'" % [body_id, part]
+		for part in no_parts[body_id]:
+			if a.model.find_child(part, true, false) != null:
+				return "%s model should not have a part '%s'" % [body_id, part]
+		var bounds := _model_bounds(a)
+		if bounds.position.y < -0.01 or absf(bounds.end.y - a.height) > 0.04:
+			return "%s model spans y %.3f..%.3f, config height %.2f" % [body_id, bounds.position.y, bounds.end.y, a.height]
+		# The model fits its collider footprint (small tolerance for shoulder caps).
+		var half_len := maxf(-bounds.position.z, bounds.end.z)
+		var half_wid := maxf(-bounds.position.x, bounds.end.x)
+		var round_body := String(a.body["dimensions"]["collider"]["shape"]) != "BOX"
+		var limit_len := a.radius if round_body else a.footprint.x / 2
+		var limit_wid := a.radius if round_body else a.footprint.y / 2
+		if half_len > limit_len + 0.03 or half_wid > limit_wid + 0.03:
+			return "%s model reaches %.3f m forward/back and %.3f m sideways, beyond its collider (%.3f x %.3f)" % [
+				body_id, half_len, half_wid, limit_len, limit_wid]
+		# The visor or sensor head faces forward (-z) at about the sensor mount height.
+		var visor: Node3D = a.model.find_child("Visor", true, false)
+		var visor_pos := a.global_transform.affine_inverse() * visor.global_position
+		if visor_pos.z > -0.05:
+			return "%s visor is not on the front (-z)" % body_id
+		if absf(visor_pos.y - a.sensor_mount_height) > 0.05:
+			return "%s visor at %.2f m, sensor mount at %.2f m" % [body_id, visor_pos.y, a.sensor_mount_height]
+		var badge: Label3D = a.model.find_child("BadgeFront", true, false)
+		if badge == null:
+			badge = a.model.find_child("BadgeL", true, false)
+		if badge.text != "7":
+			return "%s badge shows '%s', expected the number from its appearance" % [body_id, badge.text]
+	return ""
+
+
+func test_gesture_permissions() -> String:
+	var w := await _world(ROBOT_BODIES)
+	if w == null:
+		return "world failed to build"
+	var x := 4.0
+	for body_id in ROBOT_BODIES:
+		var a := w.spawn_avatar(body_id, body_id, Vector3(x, 0, 16.5), 0.0)
+		x += 2.5
+		var allowed: Array = ALLOWED_GESTURES[body_id]
+		for gesture in ALL_GESTURES:
+			var accepted := a.perform_gesture(gesture)
+			if accepted != allowed.has(gesture):
+				return "%s %s %s" % [body_id, "performed" if accepted else "refused", gesture]
+		if a.refused_gestures.size() != ALL_GESTURES.size() - allowed.size():
+			return "%s did not record its refused gestures" % body_id
+	# The quadruped has no face display; the humanoids do.
+	if w.avatars["quadruped"].supports_channel("FACE") or not w.avatars["legged_humanoid"].supports_channel("FACE"):
+		return "FACE channel permissions are wrong"
+	return ""
+
+
+## D-37: one navigation map per body size. A pocket of floor between the stairs and the north
+## wall (about 1.15 m wide) is open to a walker but too narrow for a quadruped turning on the spot.
+func test_navigation_per_body_size() -> String:
+	var w := await _world(ALL_BODIES)
+	if w == null:
+		return "world failed to build"
+	var keys := w.nav_sizes.keys()
+	keys.sort()
+	if keys != ["r025", "r030", "r045", "r065"]:
+		return "navigation sizes are %s, expected r025, r030, r045 and r065" % [keys]
+	var pocket := Vector3(21.3, 0.0, 0.6)
+	var start := Vector3(17.0, 0.0, 4.0)
+	var walker_plan := w.query_path(start, pocket, w.bodies["human_walker"])
+	var walker_path: PackedVector3Array = walker_plan["path"]
+	if walker_path.is_empty() or Vector2(walker_path[-1].x - pocket.x, walker_path[-1].z - pocket.z).length() > 0.15:
+		return "a walker cannot reach the pocket by the stairs; one mesh for the largest body would cause this"
+	var quad_plan := w.query_path(start, pocket, w.bodies["quadruped"])
+	var quad_path: PackedVector3Array = quad_plan["path"]
+	if not quad_path.is_empty() and Vector2(quad_path[-1].x - pocket.x, quad_path[-1].z - pocket.z).length() < 0.4:
+		return "the quadruped got a path into a pocket narrower than its turning circle"
+	# Each body's avatar uses the map of its own size.
+	var q := w.spawn_avatar("q", "quadruped", Vector3(10, 0, 16), 0.0)
+	var h := w.spawn_avatar("h", "human_walker", Vector3(13, 0, 16), 0.0)
+	if q.nav_agent.get_navigation_map() != w.nav_sizes["r065"]["map"] or h.nav_agent.get_navigation_map() != w.nav_sizes["r025"]["map"]:
+		return "avatars are not on the navigation map of their size"
 	return ""
 
 
@@ -301,7 +474,7 @@ func test_wall_collision() -> String:
 	# partition_a runs along x = 10 (z 6..12), 0.2 m thick: its west face is at x = 9.9.
 	var walker := w.spawn_avatar("walker", "human_walker", Vector3(8.6, 0, 9.0), -PI / 2)
 	# partition_b runs along z = 13 (x 17..21): its north face is at z = 12.9.
-	var robot := w.spawn_avatar("robot", "robot_r", Vector3(19.0, 0, 11.3), PI)
+	var robot := w.spawn_avatar("robot", "wheeled_humanoid", Vector3(19.0, 0, 11.3), PI)
 	walker.drive(Vector3(1.4, 0, 0))
 	robot.drive(Vector3(0, 0, 1.0))
 	var traces := await _run([walker, robot], 60 * 4)
@@ -328,7 +501,7 @@ func test_avatar_collision() -> String:
 		return "world failed to build"
 	var a := w.spawn_avatar("walker_a", "human_walker", Vector3(4.0, 0, 4.0), -PI / 2)
 	var b := w.spawn_avatar("walker_b", "human_walker", Vector3(8.0, 0, 4.0), PI / 2)
-	var r := w.spawn_avatar("robot", "robot_r", Vector3(4.0, 0, 8.0), -PI / 2)
+	var r := w.spawn_avatar("robot", "wheeled_humanoid", Vector3(4.0, 0, 8.0), -PI / 2)
 	var c := w.spawn_avatar("walker_c", "human_walker", Vector3(8.0, 0, 8.0), PI / 2)
 	a.drive(Vector3(1.4, 0, 0))
 	b.drive(Vector3(-1.4, 0, 0))
@@ -364,21 +537,23 @@ func test_avatar_collision() -> String:
 
 
 func test_sb05_path_choice() -> String:
-	var w := await _world()
+	var w := await _world(ALL_BODIES)
 	if w == null:
 		return "world failed to build"
-	var robot_mask := Layers.nav_mask_for(w.bodies["robot_r"])
-	var walker_mask := Layers.nav_mask_for(w.bodies["human_walker"])
-	var robot_plan := w.query_path(SB05_START, SB05_GOAL, robot_mask)
-	var walker_plan := w.query_path(SB05_START, SB05_GOAL, walker_mask)
-	if robot_plan["links"] != ["platform_ramp"]:
-		return "Robot R's path uses %s, expected only platform_ramp" % [robot_plan["links"]]
-	if walker_plan["links"] != ["platform_stairs"]:
-		return "walker's path uses %s, expected only platform_stairs (the shorter way)" % [walker_plan["links"]]
-	for plan in [robot_plan, walker_plan]:
+	var expected := {
+		"wheeled_humanoid": ["platform_ramp"],
+		"legged_humanoid": ["platform_stairs"],
+		"quadruped": ["platform_stairs"],
+		"quadruped_arm": ["platform_stairs"],
+		"human_walker": ["platform_stairs"],
+	}
+	for body_id in expected:
+		var plan := w.query_path(SB05_START, SB05_GOAL, w.bodies[body_id])
+		if plan["links"] != expected[body_id]:
+			return "%s's path uses %s, expected %s" % [body_id, plan["links"], expected[body_id]]
 		var path: PackedVector3Array = plan["path"]
 		if path.is_empty() or path[path.size() - 1].distance_to(SB05_GOAL) > 0.3:
-			return "a path does not reach the platform goal"
+			return "%s's path does not reach the platform goal" % body_id
 	return ""
 
 
@@ -386,10 +561,10 @@ func test_no_capability_no_platform_path() -> String:
 	var w := await _world()
 	if w == null:
 		return "world failed to build"
-	var body: Dictionary = w.bodies["robot_r"].duplicate(true)
+	var body: Dictionary = w.bodies["wheeled_humanoid"].duplicate(true)
 	body["capabilities"]["can_use_ramp"] = false
 	body["capabilities"]["can_use_stairs"] = false
-	var plan := w.query_path(SB05_START, SB05_GOAL, Layers.nav_mask_for(body))
+	var plan := w.query_path(SB05_START, SB05_GOAL, body)
 	if not plan["links"].is_empty():
 		return "a body with no stairs/ramp capability got a path through %s" % [plan["links"]]
 	var path: PackedVector3Array = plan["path"]
@@ -398,78 +573,85 @@ func test_no_capability_no_platform_path() -> String:
 	return ""
 
 
-func test_sb05_robot_takes_ramp() -> String:
+func test_sb05_wheeled_takes_ramp() -> String:
 	var w := await _world()
 	if w == null:
 		return "world failed to build"
-	var robot := w.spawn_avatar("robot_r", "robot_r", SB05_START, -PI / 2)
+	var robot := w.spawn_avatar("robot_wheeled", "wheeled_humanoid", SB05_START, -PI / 2)
 	robot.navigate_to(SB05_GOAL)
 	var traces := await _run([robot], 60 * 60, _all_idle([robot]))
 	if robot.ever_stuck:
-		return "Robot R got stuck at %s" % _v(robot.global_position)
+		return "the wheeled humanoid got stuck at %s" % _v(robot.global_position)
 	if not robot.last_goal_reached or not _on_platform(w, robot.global_position):
-		return "Robot R did not reach the platform goal; it ended at %s" % _v(robot.global_position)
+		return "the wheeled humanoid did not reach the platform goal; it ended at %s" % _v(robot.global_position)
 	if robot.links_used != ["platform_ramp"]:
-		return "Robot R entered links %s, expected only platform_ramp" % [robot.links_used]
+		return "the wheeled humanoid entered links %s, expected only platform_ramp" % [robot.links_used]
 	var stairs := _grow(w.registry["links"]["platform_stairs"]["footprint"], 0.05)
 	var ramp: PackedVector2Array = w.registry["links"]["platform_ramp"]["footprint"]
 	var on_ramp := 0
-	for p in traces["robot_r"]["pos"]:
+	for p in traces["robot_wheeled"]["pos"]:
 		if _in_poly(p, stairs):
-			return "Robot R entered the stairs footprint at %s" % _v(p)
+			return "the wheeled humanoid entered the stairs footprint at %s" % _v(p)
 		if _in_poly(p, ramp) and p.y > 0.1 and p.y < 0.5:
 			on_ramp += 1
 	if on_ramp < 60:
-		return "Robot R spent only %d ticks partway up the ramp" % on_ramp
+		return "the wheeled humanoid spent only %d ticks partway up the ramp" % on_ramp
 	return ""
 
 
-func test_walker_climbs_stairs() -> String:
-	var w := await _world()
+## SB-05: the legged humanoid, both quadrupeds and a walker may use the stairs, and from beside
+## the stairs they do, physically climbing them.
+func test_sb05_stair_climbers() -> String:
+	var w := await _world(ALL_BODIES)
 	if w == null:
 		return "world failed to build"
-	var walker := w.spawn_avatar("walker", "human_walker", SB05_START, -PI / 2)
-	walker.navigate_to(SB05_GOAL)
-	var traces := await _run([walker], 60 * 30, _all_idle([walker]))
-	if walker.ever_stuck or not walker.last_goal_reached or not _on_platform(w, walker.global_position):
-		return "walker did not reach the platform by the stairs; ended at %s" % _v(walker.global_position)
-	if walker.links_used != ["platform_stairs"]:
-		return "walker entered links %s, expected only platform_stairs" % [walker.links_used]
 	var stairs: PackedVector2Array = w.registry["links"]["platform_stairs"]["footprint"]
-	var climbing := 0
-	for p in traces["walker"]["pos"]:
-		if _in_poly(p, stairs) and p.y > 0.1 and p.y < 0.5:
-			climbing += 1
-	if climbing < 10:
-		return "walker was seen partway up the stairs on only %d ticks" % climbing
+	for body_id in ["legged_humanoid", "quadruped", "quadruped_arm", "human_walker"]:
+		var a := w.spawn_avatar(body_id, body_id, SB05_START, -PI / 2)
+		a.navigate_to(SB05_GOAL)
+		var traces := await _run([a], 60 * 30, _all_idle([a]))
+		if a.ever_stuck or not a.last_goal_reached or not _on_platform(w, a.global_position):
+			return "%s did not reach the platform by the stairs; ended at %s" % [body_id, _v(a.global_position)]
+		if a.links_used != ["platform_stairs"]:
+			return "%s entered links %s, expected only platform_stairs" % [body_id, a.links_used]
+		var climbing := 0
+		for p in traces[body_id]["pos"]:
+			if _in_poly(p, stairs) and p.y > 0.1 and p.y < 0.5:
+				climbing += 1
+		if climbing < 10:
+			return "%s was seen partway up the stairs on only %d ticks" % [body_id, climbing]
+		w.avatars.erase(body_id)
+		a.queue_free()
+		await get_tree().physics_frame
 	return ""
 
 
 func test_robot_blocked_by_steps() -> String:
-	var w := await _world()
+	var w := await _world(["wheeled_humanoid", "quadruped"])
 	if w == null:
 		return "world failed to build"
-	# Drive straight at the bottom step (x = 20.5) without navigation.
-	# Two lanes inside the 1.5 m wide stairs (z 1.25..2.75): robot at z 1.65, walker at z 2.45.
-	var robot := w.spawn_avatar("robot", "robot_r", Vector3(19.2, 0, 1.65), -PI / 2)
-	var walker := w.spawn_avatar("walker", "human_walker", Vector3(19.2, 0, 2.45), -PI / 2)
+	# Drive straight at the bottom step (x = 20.5) without navigation. Two lanes inside the
+	# 1.5 m wide stairs (z 1.25..2.75): the wheeled robot at z 1.62, the quadruped at z 2.46.
+	var robot := w.spawn_avatar("robot", "wheeled_humanoid", Vector3(19.2, 0, 1.62), -PI / 2)
+	var quad := w.spawn_avatar("quad", "quadruped", Vector3(18.9, 0, 2.46), -PI / 2)
 	robot.drive(Vector3(1.0, 0, 0))
-	walker.drive(Vector3(1.4, 0, 0))
-	var traces := await _run([robot, walker], 60 * 5)
+	quad.drive(Vector3(1.0, 0, 0))
+	var traces := await _run([robot, quad], 60 * 5)
 	var robot_max_y := -INF
 	var robot_max_x := -INF
 	for p in traces["robot"]["pos"]:
 		robot_max_y = maxf(robot_max_y, p.y)
 		robot_max_x = maxf(robot_max_x, p.x)
+	var half_length := robot.footprint.x / 2
 	if robot_max_y > 0.05:
-		return "Robot R climbed to y = %.3f on the stairs; wheeled bodies must be stopped by the steps" % robot_max_y
-	if robot_max_x > 20.5 - 0.35 + 0.03:
-		return "Robot R reached x = %.3f, into the first step at 20.5" % robot_max_x
-	if robot_max_x < 20.5 - 0.35 - 0.1:
-		return "Robot R stopped at x = %.3f, before reaching the stairs" % robot_max_x
-	# Control: the same push takes a walker (can_use_stairs) up onto the platform.
-	if walker.global_position.y < 0.55:
-		return "walker driven the same way did not climb the stairs (y = %.3f)" % walker.global_position.y
+		return "the wheeled humanoid climbed to y = %.3f on the stairs; it must be stopped by the steps" % robot_max_y
+	if robot_max_x > 20.5 - half_length + 0.03:
+		return "the wheeled humanoid reached x = %.3f, into the first step at 20.5" % robot_max_x
+	if robot_max_x < 20.5 - half_length - 0.1:
+		return "the wheeled humanoid stopped at x = %.3f, before reaching the stairs" % robot_max_x
+	# Control: the same push takes the quadruped (can_use_stairs) up onto the platform.
+	if quad.global_position.y < 0.55:
+		return "the quadruped driven the same way did not climb the stairs (y = %.3f)" % quad.global_position.y
 	return ""
 
 
@@ -503,16 +685,16 @@ func test_speed_and_turn_limits() -> String:
 
 
 func test_camera() -> String:
-	var w := await _world(["robot_r", "human_walker"])
+	var w := await _world(["wheeled_humanoid", "human_walker"])
 	if w == null:
 		return "world failed to build"
-	var r := w.spawn_avatar("robot_r", "robot_r", Vector3(10, 0, 10), 0.0)
+	var r := w.spawn_avatar("robot_wheeled", "wheeled_humanoid", Vector3(10, 0, 10), 0.0)
 	w.spawn_avatar("visitor_x", "human_walker", Vector3(20, 0, 15), 0.0)
 	var rig := CameraRig.new()
 	w.add_child(rig)
 	rig.set_targets(w.avatar_list())
 	if rig.selected_target() != r:
-		return "first selected avatar should be robot_r"
+		return "first selected avatar should be robot_wheeled"
 	rig.select_next()
 	if (rig.selected_target() as Avatar).avatar_id != "visitor_x":
 		return "select_next did not move to visitor_x"
@@ -520,7 +702,7 @@ func test_camera() -> String:
 	rig.select_prev()
 	rig.select_prev()
 	if rig.selected_target() != r:
-		return "select_prev did not cycle back to robot_r"
+		return "select_prev did not cycle back to robot_wheeled"
 	rig.toggle_mode()
 	if rig.mode != CameraRig.Mode.ORBIT:
 		return "toggle_mode did not switch to orbit"
@@ -548,6 +730,20 @@ func test_camera() -> String:
 	return ""
 
 
+func test_lineup_scene() -> String:
+	var lineup: Node = load("res://scenes/robot_lineup.tscn").instantiate()
+	add_child(lineup)
+	_node = lineup
+	await get_tree().physics_frame
+	var bodies_seen := []
+	for a in lineup.world.avatar_list():
+		bodies_seen.append(String((a as Avatar).body["body_id"]))
+	bodies_seen.sort()
+	if bodies_seen != ["human_walker", "legged_humanoid", "quadruped", "quadruped_arm", "wheeled_humanoid"]:
+		return "lineup shows %s" % [bodies_seen]
+	return ""
+
+
 func test_demo_smoke() -> String:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
@@ -561,9 +757,15 @@ func test_demo_smoke() -> String:
 	if not started:
 		return "demo did not start"
 	var avatars: Array = main.world.avatar_list()
-	if avatars.size() != 4:
-		return "expected Robot R and 3 visitors, got %d avatars" % avatars.size()
-	var traces := await _run(avatars, 60 * 45, func() -> bool: return main.demo.finished)
+	if avatars.size() != 6:
+		return "expected three robots and three visitors, got %d avatars" % avatars.size()
+	var kinds := {}
+	for a in avatars:
+		kinds[(a as Avatar).kind] = true
+	for kind in ["LEGGED_HUMANOID", "WHEELED_HUMANOID", "QUADRUPED", "HUMAN_WALKER"]:
+		if not kinds.has(kind):
+			return "no %s in the demo" % kind
+	await _run(avatars, 60 * 45, func() -> bool: return main.demo.finished)
 	if not main.demo.finished:
 		return "demo routes did not finish within 45 s"
 	for a in avatars:
@@ -571,20 +773,16 @@ func test_demo_smoke() -> String:
 			return "%s got stuck" % a.avatar_id
 		if not a.last_goal_reached:
 			return "%s did not reach its last goal" % a.avatar_id
-	var robot: Avatar = main.world.avatars["robot_r"]
-	if robot.links_used.has("platform_stairs") or not robot.links_used.has("platform_ramp"):
-		return "Robot R used links %s in the demo" % [robot.links_used]
-	if not main.world.avatars["visitor_y"].links_used.has("platform_stairs"):
-		return "visitor_y should have taken the stairs in the demo"
-	for i in avatars.size():
-		for j in range(i + 1, avatars.size()):
-			var a: Avatar = avatars[i]
-			var b: Avatar = avatars[j]
-			var pa: Array = traces[a.avatar_id]["pos"]
-			var pb: Array = traces[b.avatar_id]["pos"]
-			for k in pa.size():
-				if Vector2(pa[k].x - pb[k].x, pa[k].z - pb[k].z).length() < a.radius + b.radius + 0.05:
-					return "%s and %s came into contact in the demo at tick %d" % [a.avatar_id, b.avatar_id, k]
-	if not String(main.hud.status_text()).contains("Sandbox Flats"):
-		return "HUD text is missing"
+		if not a.contacts.is_empty():
+			return "%s touched %s in the demo" % [a.avatar_id, a.contacts]
+	# SB-05 in the demo: everyone ends on the platform, the wheeled humanoid by the ramp.
+	var expected := {"robot_wheeled": "platform_ramp", "robot_legged": "platform_stairs", "robot_quadruped": "platform_stairs"}
+	for robot_id in expected:
+		var robot: Avatar = main.world.avatars[robot_id]
+		if robot.links_used != [expected[robot_id]]:
+			return "%s used links %s in the demo, expected %s" % [robot_id, robot.links_used, expected[robot_id]]
+		if not _on_platform(main.world, robot.global_position):
+			return "%s did not end on the platform" % robot_id
+	if not String(main.hud.status_text()).contains("stairs"):
+		return "HUD does not show the selected body's capabilities"
 	return ""

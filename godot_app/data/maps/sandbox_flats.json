@@ -254,6 +254,30 @@
           "z": 19
         },
         "yaw_rad": 0.0
+      },
+      {
+        "spawn_id": "spawn_stairs_side_1",
+        "position": {
+          "x": 18.0,
+          "z": 1.6
+        },
+        "yaw_rad": -1.5708
+      },
+      {
+        "spawn_id": "spawn_stairs_side_2",
+        "position": {
+          "x": 18.0,
+          "z": 3.3
+        },
+        "yaw_rad": -1.5708
+      },
+      {
+        "spawn_id": "spawn_stairs_side_3",
+        "position": {
+          "x": 18.0,
+          "z": 5.0
+        },
+        "yaw_rad": -1.5708
       }
     ]
   }

@@ -19,8 +19,11 @@ const STUCK_MIN_PROGRESS_M := 0.05
 var avatar_id := ""
 var body: Dictionary = {}
 var kind := ""
-var radius := 0.25
+var radius := 0.25                   # turning radius: the circle the body sweeps turning on the spot
+var nav_radius := 0.25               # turning radius on the navigation grid; selects the navigation map
+var footprint := Vector2(0.5, 0.5)   # collider length (along facing) and width, meters
 var height := 1.7
+var sensor_mount_height := 1.6
 var max_speed := 1.0
 var max_accel := 1.0
 var max_turn_rate := 1.0
@@ -32,6 +35,9 @@ var links_used: Array[String] = []   # every nav link entered, in order (e.g. "p
 var stuck := false
 var ever_stuck := false
 var speed := 0.0                     # current forward speed, m/s
+var contacts: Dictionary = {}        # other avatar id -> ticks in contact (from physics)
+var current_gesture := ""            # last gesture the body accepted (no animation yet)
+var refused_gestures: Array[String] = []
 var nav_agent: NavigationAgent3D
 var model: Node3D
 
@@ -45,8 +51,12 @@ func setup(id: String, body_config: Dictionary, appearance := {}) -> void:
 	name = id
 	body = body_config
 	kind = String(body_config["kind"])
-	radius = float(body_config["dimensions"]["radius_m"])
+	var collider: Dictionary = body_config["dimensions"]["collider"]
+	footprint = Vector2(float(collider["length_m"]), float(collider["width_m"]))
+	radius = Bodies.turning_radius(body_config)
+	nav_radius = Bodies.nav_radius(body_config)
 	height = float(body_config["dimensions"]["height_m"])
+	sensor_mount_height = float(body_config["sensors"]["mount_height_m"])
 	var motion: Dictionary = body_config["motion"]
 	max_speed = float(motion["max_speed_m_s"])
 	max_accel = float(motion["max_accel_m_s2"])
@@ -62,35 +72,76 @@ func setup(id: String, body_config: Dictionary, appearance := {}) -> void:
 
 	var cs := CollisionShape3D.new()
 	cs.name = "Collider"
-	if kind == "WHEELED_ROBOT":
-		var cylinder := CylinderShape3D.new()
-		cylinder.radius = radius
-		cylinder.height = height
-		cs.shape = cylinder
-	else:
-		var capsule := CapsuleShape3D.new()
-		capsule.radius = radius
-		capsule.height = height
-		cs.shape = capsule
+	match String(collider["shape"]):
+		"BOX":
+			cs.shape = box_collider(footprint, height, Layers.has_capability(body_config, "can_use_stairs"))
+		"CYLINDER":
+			var cylinder := CylinderShape3D.new()
+			cylinder.radius = footprint.y / 2
+			cylinder.height = height
+			cs.shape = cylinder
+		_:
+			var capsule := CapsuleShape3D.new()
+			capsule.radius = footprint.y / 2
+			capsule.height = height
+			cs.shape = capsule
 	cs.position.y = height / 2
 	add_child(cs)
 
-	if kind == "WHEELED_ROBOT":
-		model = RobotRModel.create(height, String(appearance.get("badge", "R")))
-	else:
-		model = VisitorModel.create(radius, height, String(appearance.get("color", "visitor_slate")), id)
+	match kind:
+		"LEGGED_HUMANOID":
+			model = HumanoidModel.create(height, "LEGS", appearance)
+		"WHEELED_HUMANOID":
+			model = HumanoidModel.create(height, "WHEELS", appearance)
+		"QUADRUPED":
+			model = QuadrupedModel.create(footprint.x, int(body_config["arms"]) > 0, appearance)
+		_:
+			model = VisitorModel.create(footprint.y / 2, height, String(appearance.get("color", "visitor_slate")), id)
 	add_child(model)
+	if kind != "HUMAN_WALKER" and kind != "SCRIPTED_CROWD":
+		RobotParts.name_tag(model, id, height / model.scale.y)
+
+	# Where the observer filter (G2) will cast sight lines from.
+	var mount := Marker3D.new()
+	mount.name = "SensorMount"
+	mount.position = Vector3(0, sensor_mount_height, 0)
+	add_child(mount)
 
 	nav_agent = NavigationAgent3D.new()
 	nav_agent.name = "NavAgent"
 	nav_agent.navigation_layers = nav_mask
-	nav_agent.radius = radius
+	nav_agent.radius = nav_radius
 	nav_agent.height = height
 	nav_agent.path_desired_distance = 0.4
 	nav_agent.target_desired_distance = ARRIVE_DISTANCE_M
 	nav_agent.avoidance_enabled = false
 	nav_agent.link_reached.connect(_on_link_reached)
 	add_child(nav_agent)
+
+
+## Collider for a BOX body. Bodies that can use stairs step over edges with their legs, so the
+## lower front and back edges are bevelled by BEVEL_M and the body glides onto the stairs'
+## walking surface. Wheeled boxes stay flat-bottomed, so the real steps stop them (D-37).
+const BEVEL_M := 0.10
+
+
+static func box_collider(size_lw: Vector2, h: float, legged: bool) -> Shape3D:
+	if not legged:
+		var flat := BoxShape3D.new()
+		flat.size = Vector3(size_lw.y, h, size_lw.x)
+		return flat
+	var half_l := size_lw.x / 2
+	var half_w := size_lw.y / 2
+	var bevel := minf(BEVEL_M, h / 3)
+	var pts := PackedVector3Array()
+	for sx in [-half_w, half_w]:
+		pts.append_array([
+			Vector3(sx, h / 2, -half_l), Vector3(sx, h / 2, half_l),
+			Vector3(sx, -h / 2 + bevel, -half_l), Vector3(sx, -h / 2 + bevel, half_l),
+			Vector3(sx, -h / 2, -half_l + bevel), Vector3(sx, -h / 2, half_l - bevel)])
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = pts
+	return shape
 
 
 func attach_navigation(map: RID) -> void:
@@ -117,6 +168,24 @@ func drive(velocity_request: Vector3) -> void:
 func stop() -> void:
 	mode = Mode.IDLE
 	_direct_velocity = Vector3.ZERO
+
+
+## Host-side gesture check (D-36): a body only performs gestures its config lists. Returns
+## false and records the refusal otherwise. No animation yet (V0 greybox).
+func perform_gesture(gesture: String) -> bool:
+	if not Bodies.supports_gesture(body, gesture):
+		refused_gestures.append(gesture)
+		return false
+	current_gesture = gesture
+	return true
+
+
+func supports_gesture(gesture: String) -> bool:
+	return Bodies.supports_gesture(body, gesture)
+
+
+func supports_channel(channel: String) -> bool:
+	return Bodies.supports_channel(body, channel)
 
 
 func horizontal_distance_to(p: Vector3) -> float:
@@ -162,6 +231,11 @@ func _steer(dir: Vector3, wanted_speed: float, delta: float) -> void:
 	else:
 		velocity.y -= GRAVITY * delta
 	move_and_slide()
+	for i in get_slide_collision_count():
+		var other := get_slide_collision(i).get_collider()
+		if other is Avatar:
+			var other_id := (other as Avatar).avatar_id
+			contacts[other_id] = int(contacts.get(other_id, 0)) + 1
 	if model != null and model.has_method("animate"):
 		model.animate(speed, delta)
 

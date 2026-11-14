@@ -17,8 +17,9 @@ Main specs: the [Master Build Blueprint](docs/sources/range/SOMA_RANGE_Master_Bu
 ## Status
 
 **G0 complete** (merged 2026-11-14): contracts v1, headless test world, ΔP module, config validator, one check command, CI. Decision D-29 (contract conventions) is APPROVED.
-**G1 built, in review** (draft PR; not merged until the owner approves): Sandbox Flats in Godot 4.7.2, Robot R and three visitors, capability-gated ramp/stairs (SB-05), free/orbit camera, 15 headless Godot tests in `tools/check.py` and CI. Plan: [docs/gates/G1_PLAN.md](docs/gates/G1_PLAN.md); owner checks: [docs/gates/G1_OWNER_CHECKLIST.md](docs/gates/G1_OWNER_CHECKLIST.md). Decisions D-30 to D-35 are PROPOSED. See [CHANGELOG.md](CHANGELOG.md).
-Next gate after merge: **G2** (observer filter, COMMS, disclosure gate, event journal). Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
+**G1 complete** (merged 2026-11-14): Sandbox Flats in Godot 4.7.2, capability-gated ramp/stairs, free/orbit camera, headless Godot tests in `tools/check.py` and CI. Decisions D-30, D-31, D-33, D-34, D-35 APPROVED.
+**G1b robot body family built, in review** (draft PR): legged humanoid, wheeled humanoid, quadruped (+ arm variant); Robot R is a role (D-36, APPROVED); body contract 2.0 and per-size navigation (D-37) and GDScript warnings as errors (D-38) are PROPOSED. See [docs/gates/G1b_ROBOT_BODIES.md](docs/gates/G1b_ROBOT_BODIES.md) and [CHANGELOG.md](CHANGELOG.md).
+Next gate after merge: **G2** (observer filter, COMMS, disclosure gate, event journal); the observer filter casts sight lines from each body's `sensors.mount_height_m`. Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
 
 ## Rules that never bend
 

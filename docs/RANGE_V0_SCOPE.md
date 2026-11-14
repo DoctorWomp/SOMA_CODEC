@@ -31,6 +31,7 @@ When a behavior breaks in the expo, rebuild the situation in the sandbox and fix
 ### 2.2 Agents
 
 - **Robot R** plus the scenario's cast. Expo uses the Blueprint §6.3 cast plus a scripted background crowd.
+- **Robot R is a role, not a body** (D-36). v0 has three robot bodies: a **legged humanoid**, a **wheeled humanoid** and a **quadruped** (with or without a dorsal arm). A scenario chooses which body plays Robot R; each body declares its size, movement limits, capabilities (stairs, ramp), sensor height and field of view, and the gestures and expression channels it can use.
 - Every avatar has three settings (D-03): **policy** (`SCRIPTED` or `LLM`), **perception mask** (which of L0–L8 are active) and **sensor package**.
 - **HORIZON can be switched on or off per avatar**, including human NPCs, for exploration in the sandbox.
 - **Controlled trials** test one HORIZON robot per isolated world, with paired runs, so robots don't affect each other's results.
@@ -117,7 +118,7 @@ evaluator_only:
 | SB-02 Blocked view | A partition hides part of R's view | L1/L7: hidden sectors are `UNKNOWN`, not free |
 | SB-03 Echo | PA sound reflects off the marked wall near a silent avatar | L2/L7: R does not blame the silent avatar |
 | SB-04 Polite bid | R talks with X; Y waits at the edge | L3/L4/L6/L8: no interruption, bid noticed, held open |
-| SB-05 Ramp vs stairs | Wheeled R must reach the platform | Capability flags: takes the ramp |
+| SB-05 Ramp vs stairs | Robot R in each of the three robot bodies must reach the platform from beside the stairs (D-36) | Capability flags: the wheeled humanoid takes the ramp; the legged humanoid and the quadruped may use the stairs |
 | SB-06 Audience shift | Private exchange; a stranger walks into earshot | Disclosure gate: R narrows what it says, without hinting |
 
 **Expo:** S001, S002, S004 and S006 first (Blueprint minimum), then S003, S005, S007–S010.
@@ -175,6 +176,15 @@ Alongside the Blueprint §13.2 metrics:
 ## 6. Not in v0
 
 Multi-floor maps · real audio, vision or depth models · BET hardware and MIDI · microphone and voice output · multiplayer · photorealism · articulated physics beyond P1 · reinforcement-learning training · ten simultaneous LLM agents.
+
+### 6.1 Later embodiments (not in v0)
+
+Recorded so the body contract (D-37) can grow toward them; none is built in v0:
+
+- **Drone / quadcopter:** flies, so stairs and ramps do not apply; needs 3D navigation, noise and downdraft near people, and different sensor placement.
+- **Wheeled quadruped:** legs ending in wheels; fast on flat floors, can still step; capability depends on mode.
+- **Maintenance and floor-cleaning robots:** low, slow, task-driven; mostly ignore people but must yield and stay predictable.
+- **Centaur-style chassis:** a humanoid upper body on a four-legged base; stairs-capable with arms and a face.
 
 ## 7. Open items
 

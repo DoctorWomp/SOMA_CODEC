@@ -4,8 +4,9 @@ Each folder has a contract in ``contracts/``. A config is accepted only if:
 
 1. it is valid YAML with no duplicate keys (plain YAML silently keeps the last one),
 2. it matches its JSON Schema,
-3. its id matches its file name, and
-4. everything it refers to (map, persona, body, preset, spawn point) exists.
+3. its id matches its file name,
+4. everything it refers to (map, persona, body, preset, spawn point) exists, and
+5. a body's fields agree with each other (range_service/bodies.py).
 
 Problems are reported as ``file: location: what is wrong`` so the owner can fix
 them without reading code.
@@ -19,6 +20,7 @@ from typing import Any
 
 import yaml
 
+from . import bodies as body_rules
 from . import contracts
 
 CONFIGS_DIR = contracts.REPO_ROOT / "configs"
@@ -147,6 +149,10 @@ def _cross_checks(cs: ConfigSet) -> list[ConfigProblem]:
 
     maps, personas, scenarios = cs.items["maps"], cs.items["personas"], cs.items["scenarios"]
 
+    for body_id, b in cs.items["bodies"].items():
+        for problem in body_rules.body_problems(b):
+            found.append(ConfigProblem(cs.files[("bodies", body_id)], problem))
+
     for map_id, m in maps.items():
         f = cs.files[("maps", map_id)]
         for sp in m["spawn_points"]:
@@ -165,6 +171,10 @@ def _cross_checks(cs: ConfigSet) -> list[ConfigProblem]:
 
     for scenario_id, s in scenarios.items():
         f = cs.files[("scenarios", scenario_id)]
+        if 60 % s["tick_hz"] != 0:
+            found.append(ConfigProblem(f, f"tick_hz {s['tick_hz']} must divide 60: the world's canonical tick is "
+                                          "Godot's 60 Hz physics step, and tick_hz only sets how often observations "
+                                          "and decisions are sampled (D-33)"))
         game_map = maps.get(s["map"])
         if missing("maps", s["map"]):
             found.append(ConfigProblem(f, f"map {s['map']!r} not found in configs/maps/"))

@@ -24,7 +24,11 @@ const COLORS := {
 	"robot_visor": Color("#0e0f11"),
 	"robot_wheel": Color("#25272a"),
 	"robot_ear": Color("#b8bbbf"),
-	"robot_trim": Color("#4e9a5c"),
+	"robot_lens": Color("#2a2e33"),
+	# Matte identity trims (ART_DIRECTION §2.1); none is a Beacon hue (D-14).
+	"robot_trim_green": Color("#4e9a5c"),
+	"robot_trim_teal": Color("#2f7f7a"),
+	"robot_trim_brown": Color("#86603f"),
 	"visitor_sand": Color("#c8a46e"),
 	"visitor_slate": Color("#7c8ca3"),
 	"visitor_mauve": Color("#a27f9b"),

@@ -29,7 +29,8 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 - Missing or stale evidence is `null` with a reason, never `0`.
 - Enum values are `UPPER_SNAKE`; envelope `type` values are dotted lowercase (`world.observation`), as in the Blueprint.
 - Positions use Godot's frame: floor is x/z, y is up, yaw 0 faces −z, positive yaw and bearing turn left (D-29).
-- Every top-level contract has `schema_version: "1.0"`. An incompatible change bumps it.
+- Every top-level contract has a `schema_version`. An incompatible change bumps it. All contracts are at `1.0` except **`body`, at `2.0`** (D-37); `common.schema.json` holds each version.
+- Gestures come from one shared vocabulary, `common.schema.json#/$defs/gesture`, used by `body`, `action_request` and `observation` (D-36). Expression channels likewise (`SPEECH`, `FACE`, `LIGHT`).
 
 ## Examples
 

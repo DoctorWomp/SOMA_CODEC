@@ -59,7 +59,9 @@ func status_text() -> String:
 	lines.append("Camera: %s" % mode_name)
 	if target is Avatar:
 		var a := target as Avatar
-		lines.append("Selected: %s (%s) · %.2f m/s" % [a.avatar_id, a.kind, a.speed])
+		lines.append("Selected: %s · %s · %.2f m/s" % [a.avatar_id, Bodies.display_name(a.body), a.speed])
+		lines.append("  " + capability_line(a))
+		lines.append("  gestures: " + gesture_line(a))
 		lines.append("  position (%.1f, %.1f, %.1f)" % [a.global_position.x, a.global_position.y, a.global_position.z])
 		if demo != null:
 			lines.append("  " + demo.status_text(a.avatar_id))
@@ -68,6 +70,24 @@ func status_text() -> String:
 	lines.append("C camera mode · [ ] select avatar · right mouse look/orbit · wheel zoom")
 	lines.append("W A S D move · Q E down/up · Shift fast · Space pause · R restart · H hide")
 	return "\n".join(lines)
+
+
+## What the body can do, e.g. "stairs yes · ramp yes · sensors at 0.55 m, 120° · channels SPEECH, LIGHT".
+static func capability_line(a: Avatar) -> String:
+	return "stairs %s · ramp %s · sensors at %.2f m, %d° · channels %s" % [
+		"yes" if Layers.has_capability(a.body, "can_use_stairs") else "NO",
+		"yes" if Layers.has_capability(a.body, "can_use_ramp") else "NO",
+		a.sensor_mount_height, int(a.body["sensors"]["fov_deg"]),
+		", ".join(a.body.get("expression_channels", []))]
+
+
+static func gesture_line(a: Avatar) -> String:
+	var gestures: Array = a.body.get("gestures", [])
+	if gestures.is_empty():
+		return "none"
+	if gestures.size() <= 6:
+		return ", ".join(gestures)
+	return "%s and %d more" % [", ".join(gestures.slice(0, 6)), gestures.size() - 6]
 
 
 func _unhandled_input(event: InputEvent) -> void:

@@ -44,11 +44,31 @@ def test_every_contract_has_valid_and_invalid_examples(name):
     assert (EXAMPLES / name / "invalid" / "_expect.json").is_file()
 
 
+# Contracts that carry their own version instead of the shared 1.0 (D-37).
+OWN_VERSION = {"body": "body_schema_version"}
+
+
 @pytest.mark.parametrize("name", NON_SHARED)
 def test_every_contract_requires_schema_version(name):
     schema = contracts.load_schema(name)
     assert "schema_version" in schema["required"]
-    assert schema["properties"]["schema_version"] == {"$ref": "common.schema.json#/$defs/schema_version"}
+    version_def = OWN_VERSION.get(name, "schema_version")
+    assert schema["properties"]["schema_version"] == {"$ref": f"common.schema.json#/$defs/{version_def}"}
+
+
+def test_contract_versions():
+    defs = contracts.load_schema("common")["$defs"]
+    assert defs["schema_version"]["const"] == "1.0"
+    assert defs["body_schema_version"]["const"] == "2.0"
+
+
+def test_one_gesture_vocabulary_is_shared():
+    """Bodies, actions and observations name gestures from the same list (D-36)."""
+    ref = {"$ref": "common.schema.json#/$defs/gesture"}
+    assert contracts.load_schema("body")["properties"]["gestures"]["items"] == ref
+    assert contracts.load_schema("action_request")["$defs"]["args_gesture"]["properties"]["gesture"] == ref
+    observed = contracts.load_schema("observation")["$defs"]["value_gesture"]["properties"]["gesture"]
+    assert ref in observed["anyOf"]
 
 
 def _object_nodes(node, path="#"):
