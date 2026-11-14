@@ -14,7 +14,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        # 3.12 is the baseline (D-06); 3.14 matches the owner's PC and .python-version (D-35).
+        python-version: ["3.12", "3.13", "3.14"]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
@@ -28,5 +29,16 @@ jobs:
       - name: Install dependencies from the lockfile
         run: uv sync --locked
 
-      - name: Run all checks
-        run: uv run --locked python tools/check.py
+      # Godot 4.7.2 for the headless world checks (D-34). The download is verified against
+      # the SHA-512 pinned in tools/install_godot.py.
+      - name: Cache Godot
+        uses: actions/cache@v4
+        with:
+          path: .tools/godot
+          key: godot-4.7.2-stable-linux-x86_64-${{ hashFiles('tools/install_godot.py') }}
+
+      - name: Install Godot 4.7.2 (verified)
+        run: uv run --locked python tools/install_godot.py
+
+      - name: Run all checks (Godot required)
+        run: uv run --locked python tools/check.py --require-godot

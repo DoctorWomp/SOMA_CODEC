@@ -1,0 +1,39 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/bodies/robot_r.yaml",
+  "kind": "bodies",
+  "data": {
+    "schema_version": "1.0",
+    "body_id": "robot_r",
+    "kind": "WHEELED_ROBOT",
+    "dimensions": {
+      "radius_m": 0.35,
+      "height_m": 1.4
+    },
+    "motion": {
+      "max_speed_m_s": 1.0,
+      "max_accel_m_s2": 0.8,
+      "max_turn_rate_rad_s": 1.5
+    },
+    "reach_m": 0.6,
+    "capabilities": {
+      "can_walk": true,
+      "can_use_stairs": false,
+      "can_use_ramp": true,
+      "can_use_elevator": true,
+      "can_speak": true,
+      "can_gesture": true,
+      "can_grab": false,
+      "can_sit": false,
+      "can_access_staff_areas": false,
+      "can_use_pa": false
+    },
+    "sensors": {
+      "fov_deg": 120,
+      "visual_range_m": 20,
+      "acoustic_range_m": 10,
+      "cadence_hz": 10,
+      "dropout_rate": 0.0
+    }
+  }
+}

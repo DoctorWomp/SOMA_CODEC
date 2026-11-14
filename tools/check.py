@@ -1,14 +1,17 @@
-"""Run every G0 check with one command.
+"""Run every check with one command.
 
-    uv run python tools/check.py
+    uv run python tools/check.py                  # everything; Godot is skipped (and says so) if not found
+    uv run python tools/check.py --require-godot  # CI: a missing Godot is a failure, not a skip
 
 Steps, in order:
-  1. Contracts: each schema is valid JSON Schema 2020-12; each example passes or fails as declared.
-  2. Configs:   every file in configs/ matches its contract and its references exist.
-  3. Tests:     the full pytest suite.
+  1. Contracts:   each schema is valid JSON Schema 2020-12; each example passes or fails as declared.
+  2. Configs:     every file in configs/ matches its contract and its references exist.
+  3. Godot data:  the JSON copies in godot_app/data/ match configs/ (D-30).
+  4. Tests:       the full pytest suite.
+  5. Godot:       import the Godot project and run its headless tests (tools/godot_check.py).
 
 All steps run even if an earlier one fails, so you see every problem at once.
-Exit code 0 means everything passed.
+Exit code 0 means everything that ran passed. A skipped step is printed as SKIP, never PASS.
 """
 
 from __future__ import annotations
@@ -80,26 +83,60 @@ def check_configs() -> bool:
     return validate_configs_main([]) == 0
 
 
+def check_godot_data() -> bool:
+    from tools.export_godot_data import main as export_main
+
+    return export_main(["--check"]) == 0
+
+
 def run_tests() -> bool:
     result = subprocess.run([sys.executable, "-m", "pytest"], cwd=REPO)
     return result.returncode == 0
 
 
-def main() -> int:
-    steps = [("Contracts", check_contracts), ("Configs", check_configs), ("Tests", run_tests)]
+PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    require_godot = "--require-godot" in args
+
+    def run_godot() -> str:
+        from tools.godot_check import EXIT_PASSED, EXIT_SKIPPED
+        from tools.godot_check import main as godot_main
+
+        code = godot_main(["--require"] if require_godot else [])
+        return PASS if code == EXIT_PASSED else SKIP if code == EXIT_SKIPPED else FAIL
+
+    steps = [
+        ("Contracts", check_contracts),
+        ("Configs", check_configs),
+        ("Godot data", check_godot_data),
+        ("Tests", run_tests),
+        ("Godot", run_godot),
+    ]
     results = []
     for title, step in steps:
         print(f"\n== {title} ==")
         start = time.monotonic()
-        passed = step()
-        results.append((title, passed, time.monotonic() - start))
+        outcome = step()
+        if isinstance(outcome, bool):
+            outcome = PASS if outcome else FAIL
+        results.append((title, outcome, time.monotonic() - start))
 
     print("\n== Summary ==")
-    for title, passed, seconds in results:
-        print(f"  {'PASS' if passed else 'FAIL'}  {title:<10} ({seconds:.1f}s)")
-    all_passed = all(p for _, p, _ in results)
-    print("\nAll checks passed." if all_passed else "\nSome checks FAILED (see above).")
-    return 0 if all_passed else 1
+    for title, outcome, seconds in results:
+        print(f"  {outcome}  {title:<10} ({seconds:.1f}s)")
+    failed = [t for t, o, _ in results if o == FAIL]
+    skipped = [t for t, o, _ in results if o == SKIP]
+    if failed:
+        print("\nSome checks FAILED (see above).")
+        return 1
+    if skipped:
+        print(f"\nAll checks that ran passed. SKIPPED: {', '.join(skipped)} (see above for how to enable).")
+        return 0
+    print("\nAll checks passed.")
+    return 0
 
 
 if __name__ == "__main__":

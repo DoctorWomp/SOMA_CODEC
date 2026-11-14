@@ -31,3 +31,6 @@ models/*
 .DS_Store
 Thumbs.db
 .idea/
+
+# Tools downloaded by tools/install_godot.py
+.tools/
