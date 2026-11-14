@@ -31,7 +31,7 @@ It runs five steps and prints a summary:
 2. **Configs**: every file in `configs/` matches its contract, and everything it refers to exists.
 3. **Godot data**: the JSON copies in `godot_app/data/` match `configs/` (D-30).
 4. **Tests**: the full `pytest` suite.
-5. **Godot**: imports the Godot project, compiles every GDScript file (a GDScript warning counts as an error, D-38) and runs the headless tests (needs Godot; see below).
+5. **Godot**: imports the Godot project, compiles every GDScript file (a GDScript warning counts as an error, D-38), runs the headless tests, and checks every journal line and observation packet they wrote against the contracts (needs Godot; see below).
 
 `All checks passed.` and exit code 0 means green. If Godot is not found, step 5 shows **SKIP** (never PASS) and the summary says so. CI uses `--require-godot`, which turns a missing Godot into a failure.
 
@@ -65,7 +65,9 @@ uv run python tools/godot_check.py --filter sb05
 2. Press **F5** (or the ▶ button) to run Sandbox Flats. The world is built when it runs; the editor's 3D view of `main.tscn` is empty on purpose.
 3. To see every robot body side by side, open `scenes/robot_lineup.tscn` and press **F6** (Run Current Scene).
 
-Keys: `C` camera mode (free / orbit) · `[` `]` select avatar · hold right mouse to look or orbit · wheel to zoom · `W A S D` move · `Q` `E` down / up · `Shift` faster · `Space` pause · `R` restart the demo · `H` hide the panel.
+Keys: `C` camera mode (free / orbit) · `[` `]` select avatar · hold right mouse to look or orbit · wheel to zoom · `W A S D` move · `Q` `E` down / up · `Shift` faster · `Space` pause · `R` restart the demo · `H` hide the panel · `F2` show what the selected avatar sees and hears.
+
+Each run of the main scene writes an event journal (one JSON line per event, D-41) to `user://journals/`; on Windows that is `%APPDATA%\Godot\app_userdata\SOMA RANGE\journals`. The newest 10 are kept.
 
 From a terminal instead of the editor:
 

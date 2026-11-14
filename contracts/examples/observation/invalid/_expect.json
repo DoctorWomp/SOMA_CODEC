@@ -9,6 +9,8 @@
   "private_goal_in_packet": "additionalProperties",
   "private_goal_in_value": "additionalProperties",
   "unknown_field": "additionalProperties",
+  "unknown_validity_reason": "enum",
+  "unknown_visible_part": "enum",
   "wrong_frame": "const",
   "wrong_value_for_kind": "additionalProperties"
 }

@@ -125,3 +125,21 @@ def test_compile_report_finds_broken_scripts():
     scripts, problems = godot_check.compile_report(bad)
     assert scripts == 21 and len(problems) == 2
     assert godot_check.compile_report("crashed\n")[0] == -1
+
+
+def test_godot_outputs_are_checked_against_the_contracts(tmp_path):
+    good = {"schema_version": "1.0", "seq": 0, "tick_id": 0, "sim_time_ms": 0, "kind": "RUN_ENDED",
+            "actor_id": None, "payload": {"ticks_run": 0}}
+    leak = dict(good, seq=1, kind="SPEECH_EMITTED", payload={"avatar_id": "x", "event_id": "evt_1",
+                "channel": "LOCAL", "text": "hi", "addressee_id": None, "level_db": 62, "duration_ms": 1000,
+                "private_goal": "secret"})
+    (tmp_path / "run.jsonl").write_text(json.dumps(good) + "\n" + json.dumps(leak) + "\n", encoding="utf-8")
+    packet = {"schema_version": "1.0", "observer_id": "a", "based_on_tick_id": 6, "sim_time_ms": 100,
+              "coordinate_frame": "world_meters_xyz", "observer_pose": {"x": 0, "y": 0, "z": 0, "yaw_rad": 0},
+              "observations": [], "scenario_label": "SB05"}
+    (tmp_path / "x.observations.json").write_text(json.dumps([packet]), encoding="utf-8")
+    checked, problems = godot_check.validate_artifacts(tmp_path, require_all=True)
+    assert checked == 3
+    assert any("run.jsonl line 2" in p and "private_goal" in p for p in problems)
+    assert any("x.observations.json packet 0" in p for p in problems)
+    assert any("sampling.jsonl was not written" in p for p in problems)

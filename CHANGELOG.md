@@ -2,7 +2,28 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
-## G1b — Robot body family (2026-11-14, in review)
+## G2a — Senses, journal, avoidance (2026-11-14, in review)
+
+First half of G2 (plan: `docs/gates/G2_PLAN.md`; G2b adds channels, the disclosure gate and the WebSocket link).
+
+### Added
+- **Observer filter** in Godot (`scripts/senses/`, D-39): sight lines from each body's sensor mount to the head, torso, both sides and the gesturing hand of every other avatar; walls, props, steps and other avatars block sight. Fully seen → `OBSERVED`; partly → `DEGRADED` / `PARTLY_OCCLUDED` with the visible parts; recently seen but hidden → `OCCLUDED` / `MISSING` at the last known spot with no quality; never seen → absent.
+- **Hearing** (D-40): local speech level falls with distance, walls take some off, the zone noise floor masks it; heard without sight as `UNKNOWN_SOURCE` with a direction only; delivered once, never backfilled.
+- **Gestures and speech as world events:** `Avatar.perform_gesture()` (refused if the body cannot, D-36) and `Avatar.say()`; perceived only by those who could see or hear them.
+- **Observation packets** in the observation contract, sampled at `tick_hz` (10 Hz) on the 60 Hz tick (D-33), with anonymous per-observer tracks.
+- **Event journal** written by Godot (D-41) to `user://journals/`, deterministic (same seed, same bytes); `tools/godot_check.py` validates every journal line and packet the tests write against the contracts in Python.
+- **Shared local avoidance** across the per-size navigation maps (D-42).
+- **Low divider** (1.1 m) in Sandbox Flats: the quadruped cannot see over it, humanoids can.
+- **F2 sense view**: lines and labels for what the selected avatar perceives; the info panel lists what it sees and hears.
+- Demo: robots greet each other on the platform; the quadruped's attempted wave is refused and journaled.
+- Contract additions (backward-compatible): observation `validity_reason`, `visible_parts`; journal kinds `GESTURE_PERFORMED`, `GESTURE_REFUSED`, `SPEECH_EMITTED`; `sample_hz` in `RUN_STARTED`.
+- Godot tests 19 → 30; Python tests 399 → 410.
+- Decisions D-39 to D-42 (proposed).
+
+### Changed
+- Owner approved D-37 and D-38.
+
+## G1b — Robot body family (2026-11-14, complete: merged 2026-11-14)
 
 ### Added
 - **Three robot bodies** (D-36): `legged_humanoid`, `wheeled_humanoid`, `quadruped`, plus the `quadruped_arm` variant, each with realistic starting values for size, collider, speed and turn limits, stairs/ramp capability, sensor mount height and field of view, reach, arms, gestures and expression channels. "Robot R" is a role; a scenario picks its body.

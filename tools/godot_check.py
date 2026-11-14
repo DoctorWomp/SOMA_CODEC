@@ -14,6 +14,8 @@ Steps:
   3. Compile: loads every .gd file (godot_app/tests/compile_all.gd). GDScript warnings are
               errors in this project (D-38), so a new warning fails here.
   4. Tests:   runs godot_app/tests/test_main.tscn at a fixed 60 frames per simulated second.
+  5. Outputs: every journal line and observation packet the tests wrote is validated against
+              contracts/ in Python (D-41), so Godot and Python keep to one contract.
 
 Any engine or script ERROR line fails the check, even if every test passed.
 Exit code: 0 passed, 1 failed, 2 skipped (Godot not found and --require not given).
@@ -21,11 +23,13 @@ Exit code: 0 passed, 1 failed, 2 skipped (Godot not found and --require not give
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -98,6 +102,41 @@ def compile_report(output: str) -> tuple[int, list[str]]:
     return scripts, problems
 
 
+# Files the full test run must leave behind (a filtered run may write fewer).
+EXPECTED_ARTIFACTS = ("sampling.jsonl", "sampling.observations.json", "demo_a.jsonl", "demo_b.jsonl")
+
+
+def validate_artifacts(folder: Path, require_all: bool = True) -> tuple[int, list[str]]:
+    """Check Godot's journals (*.jsonl) and packet dumps (*.observations.json) against the
+    contracts. Returns (number of records checked, problems)."""
+    from range_service import contracts
+
+    problems: list[str] = []
+    checked = 0
+    if require_all:
+        for name in EXPECTED_ARTIFACTS:
+            if not (folder / name).is_file():
+                problems.append(f"{name} was not written by the Godot tests")
+    for path in sorted(folder.glob("*.jsonl")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            checked += 1
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as exc:
+                problems.append(f"{path.name} line {number}: not JSON ({exc})")
+                continue
+            for p in contracts.problems("journal_entry", entry)[:3]:
+                problems.append(f"{path.name} line {number}: {p}")
+            if entry.get("seq") != number - 1:
+                problems.append(f"{path.name} line {number}: seq is {entry.get('seq')}, expected {number - 1}")
+    for path in sorted(folder.glob("*.observations.json")):
+        for index, packet in enumerate(json.loads(path.read_text(encoding="utf-8"))):
+            checked += 1
+            for p in contracts.problems("observation", packet)[:3]:
+                problems.append(f"{path.name} packet {index}: {p}")
+    return checked, problems
+
+
 def find_godot() -> str | None:
     env = os.environ.get("GODOT_BIN", "").strip().strip('"')
     if env:
@@ -165,9 +204,11 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_FAILED
     print(f"  {scripts} GDScript files compiled with no errors or warnings")
 
-    cmd = [godot, "--headless", "--path", str(PROJECT_DIR), "--fixed-fps", "60", TEST_SCENE]
+    artifacts = Path(tempfile.mkdtemp(prefix="godot_artifacts_"))
+    cmd = [godot, "--headless", "--path", str(PROJECT_DIR), "--fixed-fps", "60", TEST_SCENE,
+           "--", f"--artifacts-dir={artifacts.as_posix()}"]
     if test_filter:
-        cmd += ["--", f"--filter={test_filter}"]
+        cmd.append(f"--filter={test_filter}")
     code, out = _run(cmd, timeout=900)
     report = analyze(out)
     for name in report.passed:
@@ -185,8 +226,18 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_FAILED
     if code != 0 or not report.ok:
         print(f"  {len(report.passed)} passed, {len(report.failed)} failed, {len(report.errors)} error line(s)")
+        shutil.rmtree(artifacts, ignore_errors=True)
         return EXIT_FAILED
     print(f"  {len(report.passed)} Godot tests passed")
+
+    checked, problems = validate_artifacts(artifacts, require_all=not test_filter)
+    shutil.rmtree(artifacts, ignore_errors=True)
+    if problems:
+        print(f"  FAIL  {len(problems)} problem(s) in what Godot wrote (journals and observation packets):")
+        for line in problems[:20]:
+            print(f"        {line}")
+        return EXIT_FAILED
+    print(f"  {checked} journal lines and observation packets from Godot match the contracts")
     return EXIT_PASSED
 
 

@@ -9,27 +9,28 @@ extends Node
 ## platform. Nobody tells them which way: navigation picks from what each body may use, so the
 ## wheeled humanoid takes the ramp while the legged humanoid and the quadruped take the stairs.
 
-## route entries: [x, z, wait in seconds after arriving]
+## route entries: [x, z, wait in seconds after arriving, optional {"gesture": ..., "say": ...} done on arrival]
+## The quadruped also tries to WAVE, which its body cannot do: the world refuses it (D-36).
 ## appearance: number badge, matte trim color and 1-3 trim bands (ART_DIRECTION §2.1)
 const CAST := [
 	{"id": "robot_quadruped", "body": "quadruped", "spawn": "spawn_stairs_side_1", "start_s": 0.0,
 		"appearance": {"badge": "3", "trim": "robot_trim_brown", "bands": 3},
-		"route": [[28.2, 2.0, 0.0]]},
+		"route": [[28.2, 2.0, 0.0, {"gesture": "WAVE", "then_gesture": "HEAD_TILT", "say": "Hello from up here."}]]},
 	{"id": "robot_legged", "body": "legged_humanoid", "spawn": "spawn_stairs_side_2", "start_s": 3.0,
 		"appearance": {"badge": "1", "trim": "robot_trim_green", "bands": 1},
-		"route": [[25.0, 4.5, 0.0]]},
+		"route": [[25.0, 4.5, 0.0, {"gesture": "WAVE", "say": "I took the stairs."}]]},
 	{"id": "robot_wheeled", "body": "wheeled_humanoid", "spawn": "spawn_stairs_side_3", "start_s": 0.5,
 		"appearance": {"badge": "2", "trim": "robot_trim_teal", "bands": 2},
-		"route": [[25.5, 6.6, 0.0]]},
+		"route": [[25.5, 6.6, 0.0, {"say": "And I came up the ramp."}]]},
 	{"id": "visitor_x", "body": "human_walker", "spawn": "spawn_entrance", "start_s": 0.0,
 		"appearance": {"color": "visitor_sand"},
-		"route": [[5.0, 14.8, 3.0], [7.5, 4.0, 0.0]]},
+		"route": [[5.0, 14.8, 3.0, {"say": "These chairs look free."}], [7.5, 4.0, 0.0]]},
 	{"id": "visitor_y", "body": "human_walker", "spawn": "spawn_edge", "start_s": 4.0,
 		"appearance": {"color": "visitor_slate"},
 		"route": [[12.5, 15.5, 0.0]]},
 	{"id": "visitor_z", "body": "human_walker", "spawn": "spawn_talker", "start_s": 0.0,
 		"appearance": {"color": "visitor_mauve"},
-		"route": [[16.5, 10.8, 0.0], [21.0, 11.0, 1.0], [25.0, 15.0, 1.0], [19.5, 17.5, 0.0]]},
+		"route": [[16.5, 10.8, 0.0], [21.0, 11.0, 1.0, {"gesture": "SMALL_WAVE"}], [25.0, 15.0, 1.0], [19.5, 17.5, 0.0]]},
 ]
 
 var world: RangeWorld
@@ -92,7 +93,10 @@ func _physics_process(_delta: float) -> void:
 			"moving":
 				if avatar.mode == Avatar.Mode.IDLE:
 					s["phase"] = "waiting"
-					s["until"] = now + _ticks(float(entry["route"][s["step"]][2]))
+					var step: Array = entry["route"][s["step"]]
+					s["until"] = now + _ticks(float(step[2]))
+					if step.size() > 3:
+						_act(avatar, step[3])
 			"waiting":
 				if now >= s["until"]:
 					s["step"] += 1
@@ -105,6 +109,15 @@ func _physics_process(_delta: float) -> void:
 	if all_done:
 		finished = true
 		finished_tick = world.clock.tick
+
+
+func _act(avatar: Avatar, actions: Dictionary) -> void:
+	if actions.has("gesture"):
+		avatar.perform_gesture(String(actions["gesture"]))
+	if actions.has("then_gesture"):
+		avatar.perform_gesture(String(actions["then_gesture"]))
+	if actions.has("say"):
+		avatar.say(String(actions["say"]))
 
 
 ## One line for the HUD, e.g. "goal 1/2 → (26.0, 4.0) · moving".

@@ -52,7 +52,7 @@ func status_text() -> String:
 	var state := "PAUSED" if get_tree().paused else "running"
 	if demo != null and demo.finished:
 		state += " · demo finished (R restarts)"
-	lines.append("SOMA RANGE · Sandbox Flats · G1 greybox")
+	lines.append("SOMA RANGE · Sandbox Flats · greybox (G2a)")
 	lines.append("Tick %d (60 Hz) · %.1f s · %s" % [world.clock.tick, world.clock.seconds(), state])
 	var target: Node3D = rig.selected_target() if rig != null else null
 	var mode_name := "ORBIT" if rig != null and rig.mode == CameraRig.Mode.ORBIT else "FREE"
@@ -66,10 +66,37 @@ func status_text() -> String:
 		if demo != null:
 			lines.append("  " + demo.status_text(a.avatar_id))
 		lines.append("  links used: %s" % (", ".join(a.links_used) if not a.links_used.is_empty() else "none yet"))
+		lines.append("  senses (F2 shows them): " + senses_line(world, a))
 	lines.append("")
 	lines.append("C camera mode · [ ] select avatar · right mouse look/orbit · wheel zoom")
-	lines.append("W A S D move · Q E down/up · Shift fast · Space pause · R restart · H hide")
+	lines.append("W A S D move · Q E down/up · Shift fast · Space pause · R restart · H hide · F2 senses")
 	return "\n".join(lines)
+
+
+## What the avatar perceived at the last sample, e.g. "sees 3 (1 partly) · lost 1 · heard «Hello»".
+static func senses_line(w: RangeWorld, a: Avatar) -> String:
+	if w.senses == null or not w.senses.latest.has(a.avatar_id):
+		return "not sampled yet"
+	var seen := 0
+	var partly := 0
+	var lost := 0
+	for item in w.senses.latest[a.avatar_id]["observations"]:
+		match String(item["kind"]):
+			"VISUAL_PRESENCE":
+				match String(item["validity"]):
+					"OBSERVED":
+						seen += 1
+					"DEGRADED":
+						seen += 1
+						partly += 1
+					_:
+						lost += 1
+	var line := "sees %d (%d partly) · lost %d" % [seen, partly, lost]
+	var heard: Dictionary = w.senses.last_heard.get(a.avatar_id, {})
+	var ago := (SimClock.ms_at(w.clock.tick) - int(heard.get("ms", -100000))) / 1000.0
+	if not heard.is_empty() and ago <= 3.0:
+		line += " · heard «%s»%s" % [heard["text"], "" if heard["validity"] == "OBSERVED" else " (%s)" % String(heard["validity"]).to_lower()]
+	return line
 
 
 ## What the body can do, e.g. "stairs yes · ramp yes · sensors at 0.55 m, 120° · channels SPEECH, LIGHT".

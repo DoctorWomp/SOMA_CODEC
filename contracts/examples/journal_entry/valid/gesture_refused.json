@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "seq": 13,
+  "tick_id": 301,
+  "sim_time_ms": 5016,
+  "kind": "GESTURE_REFUSED",
+  "actor_id": "robot_quadruped",
+  "payload": {
+    "avatar_id": "robot_quadruped",
+    "gesture": "WAVE",
+    "reason_code": "CAPABILITY_DENIED"
+  }
+}

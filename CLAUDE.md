@@ -18,8 +18,9 @@ Main specs: the [Master Build Blueprint](docs/sources/range/SOMA_RANGE_Master_Bu
 
 **G0 complete** (merged 2026-11-14): contracts v1, headless test world, ΔP module, config validator, one check command, CI. Decision D-29 (contract conventions) is APPROVED.
 **G1 complete** (merged 2026-11-14): Sandbox Flats in Godot 4.7.2, capability-gated ramp/stairs, free/orbit camera, headless Godot tests in `tools/check.py` and CI. Decisions D-30, D-31, D-33, D-34, D-35 APPROVED.
-**G1b robot body family built, in review** (draft PR): legged humanoid, wheeled humanoid, quadruped (+ arm variant); Robot R is a role (D-36, APPROVED); body contract 2.0 and per-size navigation (D-37) and GDScript warnings as errors (D-38) are PROPOSED. See [docs/gates/G1b_ROBOT_BODIES.md](docs/gates/G1b_ROBOT_BODIES.md) and [CHANGELOG.md](CHANGELOG.md).
-Next gate after merge: **G2** (observer filter, COMMS, disclosure gate, event journal); the observer filter casts sight lines from each body's `sensors.mount_height_m`. Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
+**G1b complete** (merged 2026-11-14): robot body family (legged humanoid, wheeled humanoid, quadruped + arm variant); Robot R is a role. D-36, D-37, D-38 APPROVED.
+**G2 split in two** ([docs/gates/G2_PLAN.md](docs/gates/G2_PLAN.md)). **G2a built, in review** (draft PR): observer filter (multi-point sight from each body's sensor mount, hearing with walls and zone noise), observation packets at `tick_hz`, Godot event journal checked against the contracts in Python, shared local avoidance, low divider, F2 sense view. D-39 to D-42 PROPOSED.
+Next: **G2b** (COMMS router with GESTURE/LOCAL/GROUP/PA, disclosure gate, loopback WebSocket link with session token; T13–T17 end to end). Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
 
 ## Rules that never bend
 
@@ -50,7 +51,7 @@ Full details: [docs/BUILD_AND_RUN.md](docs/BUILD_AND_RUN.md).
 - `uv run python tools/check.py`: **run every check** (contracts, configs, Godot data, tests, Godot headless tests). Must pass before finishing any task. A missing Godot shows as SKIP; in a cloud session run `uv run python tools/install_godot.py` first so the Godot step really runs.
 - `uv run python tools/validate_configs.py`: check only the YAML files in `configs/`.
 - `uv run python tools/export_godot_data.py`: refresh `godot_app/data/` after editing a map or body config (commit both).
-- `uv run python tools/godot_check.py [--filter NAME]`: only the Godot import and headless tests.
+- `uv run python tools/godot_check.py [--filter NAME]`: only the Godot import, compile, headless tests and the contract check of what Godot wrote.
 - `uv run pytest`: run only the Python tests.
 
 Layout: contracts in `contracts/` (see [contracts/README.md](contracts/README.md)), Python in `range_service/`, Godot in `godot_app/` (see [godot_app/README.md](godot_app/README.md)), content in `configs/`, tests in `tests/` and `godot_app/tests/`, scripts in `tools/`.

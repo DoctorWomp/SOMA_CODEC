@@ -145,6 +145,21 @@
         "blocks_sight": true,
         "blocks_sound": false,
         "movable": true
+      },
+      {
+        "wall_id": "divider_low",
+        "a": {
+          "x": 2.5,
+          "z": 6.5
+        },
+        "b": {
+          "x": 6.5,
+          "z": 6.5
+        },
+        "height_m": 1.1,
+        "blocks_sight": true,
+        "blocks_sound": false,
+        "movable": true
       }
     ],
     "platforms": [

@@ -1,8 +1,10 @@
 {
+  "gesture_not_in_vocabulary": "enum",
   "missing_required": "required",
   "negative_seq": "minimum",
   "negative_tick": "minimum",
   "payload_mismatch": "required",
+  "speech_on_group_channel": "const",
   "unknown_field": "additionalProperties",
   "unknown_kind": "enum"
 }
