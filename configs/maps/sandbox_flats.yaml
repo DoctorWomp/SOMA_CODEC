@@ -44,6 +44,9 @@ walls:
   # Movable partitions (SB-02 blocked view).
   - {wall_id: partition_a, a: {x: 10, z: 6}, b: {x: 10, z: 12}, height_m: 2.0, blocks_sight: true, blocks_sound: false, movable: true}
   - {wall_id: partition_b, a: {x: 17, z: 13}, b: {x: 21, z: 13}, height_m: 2.0, blocks_sight: true, blocks_sound: false, movable: true}
+  # Low divider, like a booth counter (G2): a quadruped's 0.55 m sensors cannot see over it,
+  # a humanoid's can (D-36). Sound passes over it.
+  - {wall_id: divider_low, a: {x: 2.5, z: 6.5}, b: {x: 6.5, z: 6.5}, height_m: 1.1, blocks_sight: true, blocks_sound: false, movable: true}
 
 platforms:
   - platform_id: raised_platform

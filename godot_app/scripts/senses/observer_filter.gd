@@ -1,0 +1,215 @@
+class_name ObserverFilter
+extends Node
+## Builds each avatar's observation packet (contracts/observation.schema.json) from what its
+## simulated senses could perceive (D-39, D-40). Runs after every avatar has moved, every
+## 60 / sample_hz physics ticks; packets carry the 60 Hz tick (D-33).
+##
+## Rules:
+## - A target the observer has never seen is absent: a packet never reveals that someone
+##   hidden exists.
+## - Seen with every sampled part → OBSERVED; some parts → DEGRADED / PARTLY_OCCLUDED.
+## - Seen before, not now, within TRACK_TTL_MS → OCCLUDED (blocked) or MISSING (left the field of
+##   view or range), at the last known position, with no quality: missing is never zero.
+## - Track ids are anonymous, random and per observer; source_entity_id stays null until
+##   identity is legitimately introduced (G3+).
+## - Speech is an event: delivered once, at the first sample after it was spoken, to those who
+##   could hear it then. Nothing is backfilled.
+
+signal sampled(tick: int, packets: Dictionary)
+
+const TRACK_TTL_MS := 3000
+const EXPIRES_AFTER_MS := 1000
+const VISUAL_PROVENANCE := "synthetic_visual_multipoint_v1"
+const AUDIO_PROVENANCE := "synthetic_acoustic_v1"
+
+var world: RangeWorld
+var latest: Dictionary = {}        # observer id -> last packet
+## For the spectator UI only: the last speech each avatar heard, {"text", "ms", "validity"}.
+var last_heard: Dictionary = {}
+var _tracks: Dictionary = {}       # observer id -> {target id -> {"track_id", "last_seen_ms", "last_pos"}}
+var _rng := RandomNumberGenerator.new()
+var _obs_counter := 0
+var _last_sample_tick := -1
+
+
+func _init() -> void:
+	name = "ObserverFilter"
+	process_physics_priority = 100   # after avatars and scripted controllers
+
+
+func setup(target_world: RangeWorld, seed_value: int) -> void:
+	world = target_world
+	_rng.seed = seed_value
+
+
+func _physics_process(_delta: float) -> void:
+	if world == null or world.clock == null:
+		return
+	if world.clock.tick % world.sample_period_ticks() == 0 and world.clock.tick != _last_sample_tick:
+		sample()
+
+
+## Observe for every avatar now. Returns {observer id: packet}.
+func sample() -> Dictionary:
+	var tick := world.clock.tick
+	var packets := {}
+	for observer in world.avatar_list():
+		packets[(observer as Avatar).avatar_id] = observe(observer)
+	world.clear_spoken_before(tick)
+	_last_sample_tick = tick
+	latest = packets
+	for observer_id in packets:
+		world.journal_write("OBSERVATION_DELIVERED", observer_id, packets[observer_id])
+	sampled.emit(tick, packets)
+	return packets
+
+
+## One observer's packet for the current tick.
+func observe(observer: Avatar) -> Dictionary:
+	var tick := world.clock.tick
+	var now_ms := SimClock.ms_at(tick)
+	var eye := SenseModel.sensor_origin(observer)
+	var tracks: Dictionary = _tracks.get(observer.avatar_id, {})
+	_tracks[observer.avatar_id] = tracks
+	var items: Array = []
+	var seen_now := {}
+	for target in world.avatar_list():
+		var t := target as Avatar
+		if t == observer:
+			continue
+		var gesture := t.active_gesture(tick)
+		var visual_range := float(observer.body["sensors"]["visual_range_m"]) * world.visual_range_factor(observer.global_position, t.global_position)
+		var seen := SenseModel.look(observer, t, visual_range, String(gesture.get("gesture", "")))
+		var visible: Array = seen["visible"]
+		var body_parts := visible.filter(func(part: String) -> bool: return part != "HAND")
+		if not visible.is_empty():
+			var track := _track(tracks, t.avatar_id)
+			track["last_seen_ms"] = now_ms
+			track["last_pos"] = t.global_position
+			seen_now[t.avatar_id] = track["track_id"]
+			var quality := _visual_quality(eye, t, visual_range, body_parts.size() if not body_parts.is_empty() else 1)
+			var presence := _item("VISUAL_PRESENCE", null, track["track_id"], observer, eye, t.global_position, {}, now_ms,
+				"OBSERVED" if body_parts.size() == SenseModel.PARTS.size() else "DEGRADED", quality, VISUAL_PROVENANCE)
+			if body_parts.size() < SenseModel.PARTS.size():
+				presence["validity_reason"] = "PARTLY_OCCLUDED"
+			presence["visible_parts"] = visible.duplicate()
+			items.append(presence)
+			if not gesture.is_empty() and visible.has("HAND") \
+					and eye.distance_to(seen["points"]["HAND"]) <= SenseModel.GESTURE_LEGIBLE_RANGE_M * world.visual_range_factor(observer.global_position, t.global_position):
+				var facing := SenseModel.forward_of(t).dot((observer.global_position - t.global_position).normalized())
+				var g := _item("VISUAL_GESTURE", gesture["event_id"], track["track_id"], observer, eye, t.global_position,
+					{"gesture": gesture["gesture"], "direction": "TOWARD_OBSERVER" if facing > 0.5 else "AWAY_FROM_OBSERVER"},
+					now_ms, "OBSERVED", quality, VISUAL_PROVENANCE)
+				items.append(g)
+		elif tracks.has(t.avatar_id):
+			var track: Dictionary = tracks[t.avatar_id]
+			if now_ms - int(track["last_seen_ms"]) > TRACK_TTL_MS:
+				tracks.erase(t.avatar_id)
+				continue
+			var lost := _item("VISUAL_PRESENCE", null, track["track_id"], observer, eye, track["last_pos"], {},
+				int(track["last_seen_ms"]), "OCCLUDED", null, VISUAL_PROVENANCE)
+			lost["expires_at_ms"] = int(track["last_seen_ms"]) + TRACK_TTL_MS
+			if seen["in_view"]:
+				lost["validity_reason"] = "OCCLUDED_SINCE_LAST_SEEN"
+			else:
+				lost["validity"] = "MISSING"
+				lost["validity_reason"] = "LEFT_FIELD_OF_VIEW" if seen["in_range"] else "OUT_OF_RANGE"
+			lost["visible_parts"] = []
+			items.append(lost)
+	for speech in world.spoken_since(_last_sample_tick):
+		var item := _speech_item(observer, eye, speech, seen_now, tracks, now_ms)
+		if not item.is_empty():
+			items.append(item)
+			last_heard[observer.avatar_id] = {"text": speech["text"], "ms": now_ms, "validity": item["validity"]}
+	return {
+		"schema_version": "1.0",
+		"observer_id": observer.avatar_id,
+		"based_on_tick_id": tick,
+		"sim_time_ms": now_ms,
+		"coordinate_frame": "world_meters_xyz",
+		"observer_pose": {"x": _r(observer.global_position.x), "y": _r(observer.global_position.y),
+			"z": _r(observer.global_position.z), "yaw_rad": _r(wrapf(observer.rotation.y, -PI, PI))},
+		"observations": items,
+	}
+
+
+func _speech_item(listener: Avatar, eye: Vector3, speech: Dictionary, seen_now: Dictionary, tracks: Dictionary, now_ms: int) -> Dictionary:
+	if speech["speaker_id"] == listener.avatar_id or not world.avatars.has(speech["speaker_id"]):
+		return {}
+	var speaker: Avatar = world.avatars[speech["speaker_id"]]
+	var mouth := SenseModel.mouth_of(speaker)
+	var heard := SenseModel.hear(world, mouth, listener, float(speech["level_db"]))
+	if not heard["heard"]:
+		return {}
+	var addressee = speech["addressee_id"]
+	var value := {"channel": "LOCAL", "text": speech["text"],
+		"addressed_to_observer": null if addressee == null else addressee == listener.avatar_id}
+	var quality := clampf(float(heard["snr_db"]) / 20.0, 0.05, 1.0)
+	var reason := ""
+	if float(heard["wall_loss_db"]) > 0.0:
+		reason = "THROUGH_WALL"
+	elif float(heard["snr_db"]) < SenseModel.CLEAR_SPEECH_SNR_DB:
+		reason = "LOW_SIGNAL_TO_NOISE"
+	var item: Dictionary
+	if seen_now.has(speaker.avatar_id):
+		item = _item("AUDIO_SPEECH", speech["event_id"], tracks[speaker.avatar_id]["track_id"], listener, eye,
+			speaker.global_position, value, now_ms, "OBSERVED" if reason == "" else "DEGRADED", quality, AUDIO_PROVENANCE)
+	else:
+		# Heard but not seen: a direction, no position and no track (UNKNOWN_SOURCE).
+		item = _item("AUDIO_SPEECH", speech["event_id"], null, listener, eye, mouth, value, now_ms,
+			"UNKNOWN_SOURCE", quality, AUDIO_PROVENANCE)
+		item["position_estimate"] = null
+		item["range_m"] = null
+		if reason == "":
+			reason = "SPEAKER_NOT_IN_VIEW"
+	if reason != "":
+		item["validity_reason"] = reason
+	return item
+
+
+## EVALUATOR ONLY (tests, journal analysis): which anonymous track an observer uses for a
+## target. Never part of anything an agent receives.
+func track_id_for(observer_id: String, target_id: String) -> String:
+	var tracks: Dictionary = _tracks.get(observer_id, {})
+	return String(tracks[target_id]["track_id"]) if tracks.has(target_id) else ""
+
+
+func _track(tracks: Dictionary, target_id: String) -> Dictionary:
+	if not tracks.has(target_id):
+		var token := ""
+		for i in 10:
+			token += "abcdefghijklmnopqrstuvwxyz0123456789"[_rng.randi_range(0, 35)]
+		tracks[target_id] = {"track_id": "anon_" + token, "last_seen_ms": 0, "last_pos": Vector3.ZERO}
+	return tracks[target_id]
+
+
+func _visual_quality(eye: Vector3, t: Avatar, visual_range: float, parts_seen: int) -> float:
+	var fraction := float(parts_seen) / SenseModel.PARTS.size()
+	var distance_factor := 1.0 - 0.5 * clampf(eye.distance_to(t.global_position) / visual_range, 0.0, 1.0)
+	var light := float(world.environment_at(t.global_position)["light_level"])
+	return _r(clampf(fraction * distance_factor * (0.5 + 0.5 * light), 0.0, 1.0))
+
+
+func _item(kind: String, event_id, track_id, observer: Avatar, eye: Vector3, at: Vector3, value: Dictionary,
+		observed_ms: int, validity: String, quality, provenance: String) -> Dictionary:
+	_obs_counter += 1
+	return {
+		"observation_id": "obs_%06d" % _obs_counter,
+		"event_id": event_id,
+		"kind": kind,
+		"track_id": track_id,
+		"source_entity_id": null,
+		"position_estimate": {"x": _r(at.x), "y": _r(at.y), "z": _r(at.z)},
+		"bearing_rad": _r(SenseModel.bearing(observer, eye, at)),
+		"range_m": _r(Vector2(at.x - eye.x, at.z - eye.z).length()),
+		"value": value,
+		"observed_at_ms": observed_ms,
+		"expires_at_ms": observed_ms + EXPIRES_AFTER_MS,
+		"validity": validity,
+		"quality": quality,
+		"provenance": provenance,
+	}
+
+
+static func _r(x: float) -> float:
+	return snappedf(x, 0.0001)

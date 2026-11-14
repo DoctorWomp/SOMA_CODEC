@@ -6,11 +6,16 @@ extends Node3D
 const MAP_ID := "sandbox_flats"
 
 @export var run_demo := true
+## Where to write the event journal: "auto" = a new file in user://journals (the newest 10 are
+## kept), "" = no journal, anything else = that file path.
+@export var journal_path := "auto"
+@export var run_seed := 1
 
 var world: RangeWorld
 var demo: DemoRoutes
 var camera_rig: CameraRig
 var hud: Hud
+var sense_view: SenseView
 
 
 func _ready() -> void:
@@ -33,6 +38,15 @@ func _ready() -> void:
 	hud = Hud.new()
 	hud.setup(world, camera_rig, demo)
 	add_child(hud)
+
+	sense_view = SenseView.new()
+	sense_view.setup(world, camera_rig)
+	add_child(sense_view)
+
+	var path := journal_path
+	if path == "auto":
+		path = Journal.new_default_path("run_" + Time.get_datetime_string_from_system().replace(":", "-"))
+	world.start_run(run_seed, path)
 
 	await world.wait_navigation_ready()
 	if run_demo:

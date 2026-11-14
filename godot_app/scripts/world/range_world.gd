@@ -23,8 +23,19 @@ var clock: SimClock
 ## Navigation per size: size key (e.g. "r045") -> {"radius", "map" (RID), "region", "links": {link_id: NavigationLink3D}}
 var nav_sizes: Dictionary = {}
 var avatars: Dictionary = {}      # avatar_id -> Avatar
+## Senses (G2a): observations are sampled sample_hz times per second; tick_id stays the 60 Hz
+## physics tick (D-33). The seed drives anonymous track ids.
+var sample_hz := 10
+var seed_value := 1
+var senses: ObserverFilter
+var journal: Journal
+## One avoidance map shared by every avatar, whatever navigation map its size uses (D-42).
+var avoidance_map: RID
 var _avatar_root: Node3D
 var _nav_ready := false
+var _event_counter := 0
+var _spoken: Array = []           # speech events not yet delivered to listeners
+var _zones_by_size: Array = []    # zone dictionaries, smallest area first
 
 
 ## Load the map and bodies, build everything. Returns false (with an error printed) on bad data.
@@ -48,11 +59,111 @@ func build(map_id: String, body_ids: Array) -> bool:
 	_avatar_root.name = "Avatars"
 	add_child(_avatar_root)
 	_build_navigation()
+	avoidance_map = NavigationServer3D.map_create()
+	NavigationServer3D.map_set_up(avoidance_map, Vector3.UP)
+	NavigationServer3D.map_set_active(avoidance_map, true)
+	_zones_by_size = map_data["zones"].duplicate()
+	_zones_by_size.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _area(a) < _area(b))
+	senses = ObserverFilter.new()
+	senses.setup(self, seed_value)
+	add_child(senses)
 	return true
+
+
+static func _area(zone: Dictionary) -> float:
+	var a: Dictionary = zone["area"]
+	return (float(a["x_max"]) - float(a["x_min"])) * (float(a["z_max"]) - float(a["z_min"]))
+
+
+## Start a recorded run: set the seed and sampling rate, open the journal (if a path is given)
+## and write RUN_STARTED with every avatar's pose. Call after spawning the avatars.
+func start_run(run_seed: int, journal_path := "", run_sample_hz := 10) -> bool:
+	if 60 % run_sample_hz != 0:
+		push_error("RangeWorld: sample_hz %d must divide 60 (D-33)" % run_sample_hz)
+		return false
+	seed_value = run_seed
+	sample_hz = run_sample_hz
+	senses.setup(self, run_seed)
+	if journal_path != "":
+		journal = Journal.new()
+		if not journal.open(journal_path):
+			journal = null
+			return false
+	var poses := []
+	for a in avatar_list():
+		poses.append({"avatar_id": a.avatar_id, "x": snappedf(a.global_position.x, 0.0001),
+			"z": snappedf(a.global_position.z, 0.0001), "yaw_rad": snappedf(wrapf(a.rotation.y, -PI, PI), 0.0001)})
+	journal_write("RUN_STARTED", null, {"seed": run_seed, "map_id": String(map_data["map_id"]),
+		"tick_hz": SimClock.TICK_HZ, "sample_hz": sample_hz, "avatars": poses})
+	return true
+
+
+## Write RUN_ENDED and close the journal. Returns its SHA-256 (empty if there was none).
+func end_run() -> String:
+	if journal == null:
+		return ""
+	journal_write("RUN_ENDED", null, {"ticks_run": clock.tick})
+	var digest := journal.close()
+	journal = null
+	return digest
+
+
+func journal_write(kind: String, actor_id, payload: Dictionary) -> void:
+	if journal != null:
+		journal.write(kind, clock.tick, actor_id, payload)
+
+
+func sample_period_ticks() -> int:
+	return maxi(1, roundi(float(SimClock.TICK_HZ) / sample_hz))
+
+
+func next_event_id() -> String:
+	_event_counter += 1
+	return "evt_%06d" % _event_counter
+
+
+## The environment values (light, visual range factor, noise floor) of the most specific zone
+## containing the point; the map file declares them (ART_DIRECTION §5).
+func environment_at(p: Vector3) -> Dictionary:
+	for zone in _zones_by_size:
+		var a: Dictionary = zone["area"]
+		if p.x >= float(a["x_min"]) and p.x <= float(a["x_max"]) and p.z >= float(a["z_min"]) and p.z <= float(a["z_max"]):
+			return zone["environment"]
+	return {"light_level": 1.0, "visual_range_factor": 1.0, "noise_floor_db": 45.0}
+
+
+## Sight range is cut by haze or darkness at either end (the lower factor applies).
+func visual_range_factor(a: Vector3, b: Vector3) -> float:
+	return minf(float(environment_at(a)["visual_range_factor"]), float(environment_at(b)["visual_range_factor"]))
+
+
+## Called by Avatar.say(): records LOCAL speech for listeners to hear at the next sample.
+func emit_speech(speaker: Avatar, text: String, addressee_id, level_db: float) -> String:
+	var event_id := next_event_id()
+	var duration_ms := maxi(1000, text.length() * 70)
+	_spoken.append({"event_id": event_id, "speaker_id": speaker.avatar_id, "text": text,
+		"addressee_id": addressee_id, "level_db": level_db, "tick": clock.tick})
+	journal_write("SPEECH_EMITTED", speaker.avatar_id, {"avatar_id": speaker.avatar_id, "event_id": event_id,
+		"channel": "LOCAL", "text": text, "addressee_id": addressee_id, "level_db": level_db, "duration_ms": duration_ms})
+	return event_id
+
+
+func spoken_since(_tick: int) -> Array:
+	return _spoken
+
+
+func clear_spoken_before(tick: int) -> void:
+	_spoken = _spoken.filter(func(s: Dictionary) -> bool: return int(s["tick"]) > tick)
+
+
+func _exit_tree() -> void:
+	end_run()
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
+		if avoidance_map.is_valid():
+			NavigationServer3D.free_rid(avoidance_map)
 		for size in nav_sizes.values():
 			if size["map"].is_valid():
 				NavigationServer3D.free_rid(size["map"])
@@ -197,6 +308,7 @@ func spawn_avatar(avatar_id: String, body_id: String, at: Vector3, yaw: float, a
 	avatar.rotation.y = yaw
 	_avatar_root.add_child(avatar)
 	avatar.attach_navigation(nav_map_for(bodies[body_id]))
+	avatar.attach_world(self)
 	avatars[avatar_id] = avatar
 	return avatar
 

@@ -20,3 +20,8 @@ func _physics_process(_delta: float) -> void:
 
 func seconds() -> float:
 	return float(tick) / TICK_HZ
+
+
+## Simulated time of a tick in whole milliseconds (contracts' sim_time_ms).
+static func ms_at(at_tick: int) -> int:
+	return floori(at_tick * 1000.0 / TICK_HZ)

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "seq": 12,
+  "tick_id": 300,
+  "sim_time_ms": 5000,
+  "kind": "GESTURE_PERFORMED",
+  "actor_id": "visitor_y",
+  "payload": {
+    "avatar_id": "visitor_y",
+    "event_id": "evt_000004",
+    "gesture": "SALUTE",
+    "duration_ms": 1500
+  }
+}

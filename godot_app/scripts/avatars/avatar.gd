@@ -15,6 +15,12 @@ const GRAVITY := 9.8
 const ARRIVE_DISTANCE_M := 0.25
 const STUCK_WINDOW_TICKS := 180
 const STUCK_MIN_PROGRESS_M := 0.05
+const GESTURE_DURATION_TICKS := 90      # a gesture is visible for 1.5 s
+## Local avoidance (D-42): RVO on the world's shared avoidance map, so bodies of every size
+## steer around each other even though each size plans paths on its own navigation map.
+const AVOID_MARGIN_M := 0.15
+const AVOID_NEIGHBOR_DISTANCE_M := 5.0
+const AVOID_TIME_HORIZON_S := 2.0
 
 var avatar_id := ""
 var body: Dictionary = {}
@@ -38,10 +44,16 @@ var speed := 0.0                     # current forward speed, m/s
 var contacts: Dictionary = {}        # other avatar id -> ticks in contact (from physics)
 var current_gesture := ""            # last gesture the body accepted (no animation yet)
 var refused_gestures: Array[String] = []
+var avoidance_enabled := true
+var world: RangeWorld
 var nav_agent: NavigationAgent3D
 var model: Node3D
 
 var _direct_velocity := Vector3.ZERO
+var _gesture := {}                   # {"gesture", "event_id", "until_tick"} while one is shown
+var _avoid_rid: RID
+var _safe_velocity := Vector3.ZERO
+var _has_safe_velocity := false
 var _progress_anchor := Vector3.ZERO
 var _progress_ticks := 0
 
@@ -148,6 +160,34 @@ func attach_navigation(map: RID) -> void:
 	nav_agent.set_navigation_map(map)
 
 
+## Join a world: its journal, events and shared avoidance map.
+func attach_world(target_world: RangeWorld) -> void:
+	world = target_world
+	_avoid_rid = NavigationServer3D.agent_create()
+	NavigationServer3D.agent_set_map(_avoid_rid, world.avoidance_map)
+	NavigationServer3D.agent_set_use_3d_avoidance(_avoid_rid, false)
+	NavigationServer3D.agent_set_radius(_avoid_rid, radius + AVOID_MARGIN_M)
+	NavigationServer3D.agent_set_height(_avoid_rid, height)
+	NavigationServer3D.agent_set_max_speed(_avoid_rid, max_speed)
+	NavigationServer3D.agent_set_neighbor_distance(_avoid_rid, AVOID_NEIGHBOR_DISTANCE_M)
+	NavigationServer3D.agent_set_max_neighbors(_avoid_rid, 16)
+	NavigationServer3D.agent_set_time_horizon_agents(_avoid_rid, AVOID_TIME_HORIZON_S)
+	NavigationServer3D.agent_set_position(_avoid_rid, global_position)
+	NavigationServer3D.agent_set_avoidance_callback(_avoid_rid, _on_safe_velocity)
+	NavigationServer3D.agent_set_avoidance_enabled(_avoid_rid, true)
+
+
+func _exit_tree() -> void:
+	if _avoid_rid.is_valid():
+		NavigationServer3D.free_rid(_avoid_rid)
+		_avoid_rid = RID()
+
+
+func _on_safe_velocity(safe: Vector3) -> void:
+	_safe_velocity = Vector3(safe.x, 0, safe.z)
+	_has_safe_velocity = true
+
+
 ## Walk to a point using navigation (only links this body's capabilities allow).
 func navigate_to(target: Vector3) -> void:
 	goal = target
@@ -175,9 +215,33 @@ func stop() -> void:
 func perform_gesture(gesture: String) -> bool:
 	if not Bodies.supports_gesture(body, gesture):
 		refused_gestures.append(gesture)
+		if world != null:
+			world.journal_write("GESTURE_REFUSED", avatar_id, {"avatar_id": avatar_id, "gesture": gesture,
+				"reason_code": "CAPABILITY_DENIED"})
 		return false
 	current_gesture = gesture
+	if world != null:
+		var event_id := world.next_event_id()
+		_gesture = {"gesture": gesture, "event_id": event_id, "until_tick": world.clock.tick + GESTURE_DURATION_TICKS}
+		world.journal_write("GESTURE_PERFORMED", avatar_id, {"avatar_id": avatar_id, "event_id": event_id,
+			"gesture": gesture, "duration_ms": SimClock.ms_at(GESTURE_DURATION_TICKS)})
 	return true
+
+
+## The gesture being shown at `tick` ({"gesture", "event_id", ...}), or {} if none.
+func active_gesture(tick: int) -> Dictionary:
+	if _gesture.is_empty() or tick > int(_gesture["until_tick"]):
+		return {}
+	return _gesture
+
+
+## Say something out loud (LOCAL speech). Who hears it is decided by the observer filter at the
+## next sample (D-40). `addressee_id` may be null. Returns the event id, or "" if this body
+## cannot speak.
+func say(text: String, addressee_id = null) -> String:
+	if world == null or not Layers.has_capability(body, "can_speak"):
+		return ""
+	return world.emit_speech(self, text, addressee_id, SenseModel.SPEECH_LEVEL_DB)
 
 
 func supports_gesture(gesture: String) -> bool:
@@ -210,6 +274,16 @@ func _physics_process(delta: float) -> void:
 			if _direct_velocity.length() > 0.001:
 				dir = _direct_velocity.normalized()
 				wanted_speed = minf(_direct_velocity.length(), max_speed)
+	# Avoidance: tell the shared avoidance map where this body wants to go (zero when idle, so
+	# others steer around it) and, when navigating, follow the safe velocity it returned for the
+	# previous tick. Direct drive bypasses avoidance (tests of raw collision).
+	if _avoid_rid.is_valid():
+		NavigationServer3D.agent_set_position(_avoid_rid, global_position)
+		NavigationServer3D.agent_set_velocity(_avoid_rid, dir * wanted_speed if mode == Mode.NAVIGATE else Vector3.ZERO)
+		if avoidance_enabled and mode == Mode.NAVIGATE and _has_safe_velocity and wanted_speed > 0.0:
+			if _safe_velocity.length() > 0.001:
+				dir = _safe_velocity.normalized()
+			wanted_speed = minf(_safe_velocity.length(), wanted_speed)
 	_steer(dir, wanted_speed, delta)
 	_track_progress()
 

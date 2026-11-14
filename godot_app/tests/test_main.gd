@@ -28,7 +28,21 @@ const TESTS := [
 	"test_camera",
 	"test_lineup_scene",
 	"test_demo_smoke",
+	"test_partly_seen_behind_partition_edge",
+	"test_low_divider_and_sensor_height",
+	"test_crowd_occludes",
+	"test_lost_track_then_dropped",
+	"test_gesture_perception",
+	"test_gesture_refused_is_never_seen",
+	"test_speech_audibility",
+	"test_walls_range_and_noise_on_speech",
+	"test_sampling_and_packets",
+	"test_journal_is_deterministic",
+	"test_avoidance_crossing",
 ]
+
+## Where tests write journals and packets for tools/godot_check.py to validate in Python.
+var artifacts_dir := "user://test_artifacts"
 
 const ROBOT_BODIES := ["legged_humanoid", "wheeled_humanoid", "quadruped", "quadruped_arm"]
 const ALL_BODIES := ["legged_humanoid", "wheeled_humanoid", "quadruped", "quadruped_arm", "human_walker"]
@@ -68,6 +82,9 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--filter="):
 			filter = arg.trim_prefix("--filter=")
+		elif arg.begins_with("--artifacts-dir="):
+			artifacts_dir = arg.trim_prefix("--artifacts-dir=")
+	DirAccess.make_dir_recursive_absolute(artifacts_dir)
 	await get_tree().process_frame
 	var passed := 0
 	var failed := 0
@@ -178,7 +195,7 @@ func test_project_settings() -> String:
 		if level != 2:
 			return "GDScript warning '%s' is at level %d; it must be an error (2), see D-38" % [warning, level]
 	for action in ["cam_forward", "cam_back", "cam_left", "cam_right", "cam_up", "cam_down", "cam_fast",
-			"cam_toggle_mode", "select_prev", "select_next", "sim_pause", "demo_restart", "hud_toggle"]:
+			"cam_toggle_mode", "select_prev", "select_next", "sim_pause", "demo_restart", "hud_toggle", "sense_view"]:
 		if not InputMap.has_action(action) or InputMap.action_get_events(action).is_empty():
 			return "input action '%s' is missing from project.godot" % action
 	return ""
@@ -226,8 +243,10 @@ func test_map_built_from_data() -> String:
 	for wall in reg["walls"].values():
 		if wall.get_meta("movable"):
 			partitions += 1
-	if reg["walls"].size() != 6 or partitions != 2:
-		return "expected 4 outer walls + 2 movable partitions, got %d walls, %d movable" % [reg["walls"].size(), partitions]
+	if reg["walls"].size() != 7 or partitions != 3:
+		return "expected 4 outer walls + 2 partitions + 1 low divider, got %d walls, %d movable" % [reg["walls"].size(), partitions]
+	if not is_equal_approx(float(m["walls"][6]["height_m"]), 1.1) or reg["walls"]["divider_low"].get_meta("blocks_sound"):
+		return "divider_low should be 1.1 m high and let sound pass"
 	if not reg["walls"]["wall_west"].get_meta("acoustically_reflective"):
 		return "wall_west is not marked acoustically reflective"
 	if w.find_child("ReflectiveWallMarker", true, false) == null or w.find_child("ReflectiveWallLabel", true, false) == null:
@@ -746,6 +765,7 @@ func test_lineup_scene() -> String:
 
 func test_demo_smoke() -> String:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
+	main.journal_path = ""
 	add_child(main)
 	_node = main
 	var started := false
@@ -785,4 +805,345 @@ func test_demo_smoke() -> String:
 			return "%s did not end on the platform" % robot_id
 	if not String(main.hud.status_text()).contains("stairs"):
 		return "HUD does not show the selected body's capabilities"
+	return ""
+
+
+# ---------- G2a: senses, journal, avoidance ----------
+
+## Spawn avatars from [id, body, x, z, yaw] rows, then wait until physics knows their colliders.
+func _place(w: RangeWorld, rows: Array) -> Dictionary:
+	var out := {}
+	for row in rows:
+		out[row[0]] = w.spawn_avatar(row[0], row[1], Vector3(float(row[2]), 0, float(row[3])), float(row[4]))
+	for i in 3:
+		await get_tree().physics_frame
+	return out
+
+
+## The observation an observer has about a target (by its anonymous track), or {}.
+func _about(w: RangeWorld, packet: Dictionary, observer: Avatar, target: Avatar, kind := "VISUAL_PRESENCE") -> Dictionary:
+	var track := w.senses.track_id_for(observer.avatar_id, target.avatar_id)
+	for item in packet["observations"]:
+		if item["kind"] == kind and track != "" and item["track_id"] == track:
+			return item
+	return {}
+
+
+func _speech(packet: Dictionary, text: String) -> Dictionary:
+	for item in packet["observations"]:
+		if item["kind"] == "AUDIO_SPEECH" and item["value"]["text"] == text:
+			return item
+	return {}
+
+
+## A visitor standing just past the end of partition_a: only its right side shows (D-39).
+func test_partly_seen_behind_partition_edge() -> String:
+	var w := await _world(["legged_humanoid", "human_walker"])
+	var av := await _place(w, [
+		["observer", "legged_humanoid", 13.0, 12.05, PI / 2],     # faces -x, toward the partition end
+		["half", "human_walker", 8.5, 12.05, -PI / 2],            # behind the end; its right side is +z
+		["clear", "human_walker", 8.5, 13.0, -PI / 2],            # past the end: fully visible
+		["hidden", "human_walker", 8.5, 10.0, -PI / 2],           # fully behind the partition
+	])
+	var packet := w.senses.observe(av["observer"])
+	var half := _about(w, packet, av["observer"], av["half"])
+	if half.is_empty() or half["validity"] != "DEGRADED" or half.get("validity_reason") != "PARTLY_OCCLUDED":
+		return "half-hidden visitor should be DEGRADED / PARTLY_OCCLUDED, got %s" % [half]
+	if half["visible_parts"] != ["RIGHT_SIDE"] or half["quality"] == null or float(half["quality"]) >= 0.5:
+		return "half-hidden visitor: expected only RIGHT_SIDE visible and a low quality, got %s" % [half]
+	var clear := _about(w, packet, av["observer"], av["clear"])
+	if clear.is_empty() or clear["validity"] != "OBSERVED" or clear["visible_parts"].size() != 4:
+		return "visitor past the partition should be OBSERVED with all four parts, got %s" % [clear]
+	if w.senses.track_id_for("observer", "hidden") != "":
+		return "a visitor never seen (fully behind the partition) must not appear at all"
+	for item in packet["observations"]:
+		if item["source_entity_id"] != null:
+			return "source_entity_id must stay null without an introduction"
+	return ""
+
+
+## The 1.1 m divider hides a visitor from a quadruped's 0.55 m sensors, not from a humanoid's (D-36).
+func test_low_divider_and_sensor_height() -> String:
+	var w := await _world(["legged_humanoid", "quadruped", "human_walker"])
+	var av := await _place(w, [
+		["visitor", "human_walker", 4.5, 3.2, PI],
+		["quad", "quadruped", 5.6, 7.4, 0.0],
+		["humanoid", "legged_humanoid", 3.4, 7.4, 0.0],
+	])
+	var quad_packet := w.senses.observe(av["quad"])
+	var humanoid_packet := w.senses.observe(av["humanoid"])
+	if not _about(w, quad_packet, av["quad"], av["visitor"]).is_empty():
+		return "the quadruped saw the visitor through the 1.1 m divider"
+	var seen := _about(w, humanoid_packet, av["humanoid"], av["visitor"])
+	if seen.is_empty() or seen["validity"] != "OBSERVED":
+		return "the humanoid should see the visitor over the divider, got %s" % [seen]
+	return ""
+
+
+func test_crowd_occludes() -> String:
+	var w := await _world(["quadruped", "human_walker"])
+	var av := await _place(w, [
+		["quad", "quadruped", 15.0, 17.5, 0.0],
+		["blocker", "human_walker", 15.0, 15.8, 0.0],
+		["target", "human_walker", 15.0, 13.8, PI],
+	])
+	if not _about(w, w.senses.observe(av["quad"]), av["quad"], av["target"]).is_empty():
+		return "a person standing in between should hide the target from a low sensor"
+	av["blocker"].global_position = Vector3(11.0, 0.0, 17.5)
+	for i in 3:
+		await get_tree().physics_frame
+	var item := _about(w, w.senses.observe(av["quad"]), av["quad"], av["target"])
+	if item.is_empty() or item["validity"] != "OBSERVED":
+		return "with the blocker gone the target should be seen, got %s" % [item]
+	return ""
+
+
+## Seen, then walks behind partition_a: OCCLUDED at the last known spot with no quality, then gone.
+func test_lost_track_then_dropped() -> String:
+	var w := await _world(["legged_humanoid", "human_walker"])
+	var av := await _place(w, [
+		["observer", "legged_humanoid", 13.0, 14.0, PI / 2],
+		["walker", "human_walker", 8.0, 14.0, 0.0],
+	])
+	w.start_run(3)
+	var history: Array = []
+	var track := {"id": ""}   # the walker's anonymous track, captured while it exists
+	w.senses.sampled.connect(func(_tick: int, packets: Dictionary) -> void:
+		history.append(packets["observer"])
+		if track["id"] == "":
+			track["id"] = w.senses.track_id_for("observer", "walker"))
+	av["walker"].drive(Vector3(0, 0, -1.4))
+	for i in 60 * 8:
+		await get_tree().physics_frame
+		if av["walker"].global_position.z <= 10.0:
+			av["walker"].stop()
+	var states: Array[String] = []
+	var occluded := {}
+	for packet in history:
+		var item := {}
+		for obs in packet["observations"]:
+			if obs["kind"] == "VISUAL_PRESENCE" and obs["track_id"] == track["id"]:
+				item = obs
+		var state := "ABSENT" if item.is_empty() else String(item["validity"])
+		if states.is_empty() or states[-1] != state:
+			states.append(state)
+		if state == "OCCLUDED" and occluded.is_empty():
+			occluded = item
+	if states.slice(0, 1) != ["OBSERVED"] or not states.has("OCCLUDED") or states[-1] != "ABSENT":
+		return "expected OBSERVED ... OCCLUDED ... then absent, got %s" % [states]
+	if occluded.get("validity_reason") != "OCCLUDED_SINCE_LAST_SEEN" or occluded["quality"] != null:
+		return "occluded track should say OCCLUDED_SINCE_LAST_SEEN with no quality, got %s" % [occluded]
+	if float(occluded["position_estimate"]["z"]) < 10.5:
+		return "occluded track should stay at the last place it was seen, got %s" % [occluded["position_estimate"]]
+	return ""
+
+
+## T13 groundwork: a gesture is perceived only in view, in line of sight and within legible range.
+func test_gesture_perception() -> String:
+	var w := await _world(["legged_humanoid", "human_walker"])
+	var av := await _place(w, [
+		["observer", "legged_humanoid", 15.0, 15.5, 0.0],    # faces -z
+		["front", "human_walker", 15.0, 12.5, PI],           # in view, 3 m
+		["behind", "human_walker", 15.0, 18.5, PI],          # outside the field of view
+		["walled", "human_walker", 19.0, 11.0, PI],          # behind partition_b
+		["far", "human_walker", 12.5, 2.5, PI],              # in view but beyond legible range
+	])
+	for id in ["front", "behind", "walled", "far"]:
+		if not av[id].perform_gesture("WAVE"):
+			return "%s could not wave" % id
+	var packet := w.senses.observe(av["observer"])
+	var gestures: Array = packet["observations"].filter(func(item: Dictionary) -> bool: return item["kind"] == "VISUAL_GESTURE")
+	if gestures.size() != 1:
+		return "expected exactly one perceived gesture (the one in front), got %d" % gestures.size()
+	var g: Dictionary = gestures[0]
+	if g["track_id"] != w.senses.track_id_for("observer", "front") or g["value"]["gesture"] != "WAVE":
+		return "the perceived gesture should be the WAVE in front, got %s" % [g]
+	if g["value"]["direction"] != "TOWARD_OBSERVER" or g["event_id"] == null:
+		return "gesture should carry its event id and face the observer, got %s" % [g]
+	if _about(w, packet, av["observer"], av["far"]).is_empty():
+		return "the far visitor should still be seen as present (only the gesture is too far to read)"
+	return ""
+
+
+func test_gesture_refused_is_never_seen() -> String:
+	var w := await _world(["legged_humanoid", "quadruped"])
+	var av := await _place(w, [
+		["observer", "legged_humanoid", 15.0, 15.5, 0.0],
+		["quad", "quadruped", 15.0, 12.5, PI],
+	])
+	if av["quad"].perform_gesture("WAVE"):
+		return "an armless quadruped must not be able to wave"
+	for item in w.senses.observe(av["observer"])["observations"]:
+		if item["kind"] == "VISUAL_GESTURE":
+			return "a refused gesture was perceived"
+	if not av["quad"].perform_gesture("HEAD_TILT"):
+		return "the quadruped should be able to tilt its sensor head"
+	var tilt := _about(w, w.senses.observe(av["observer"]), av["observer"], av["quad"], "VISUAL_GESTURE")
+	if tilt.is_empty() or tilt["value"]["gesture"] != "HEAD_TILT":
+		return "HEAD_TILT in view should be perceived, got %s" % [tilt]
+	return ""
+
+
+## T14 groundwork: speech is heard without sight, weakened through a partition.
+func test_speech_audibility() -> String:
+	var w := await _world(["legged_humanoid", "human_walker"])
+	var av := await _place(w, [
+		["listener", "legged_humanoid", 15.0, 15.5, 0.0],
+		["behind", "human_walker", 15.0, 17.5, PI],
+		["front", "human_walker", 15.0, 13.5, PI],
+		["listener2", "legged_humanoid", 11.5, 9.0, PI / 2],
+		["walled", "human_walker", 8.5, 9.0, -PI / 2],
+	])
+	av["behind"].say("Behind you.", "listener")
+	av["front"].say("Hello there.")
+	av["walled"].say("Anyone over there?")
+	var packet := w.senses.observe(av["listener"])
+	var behind := _speech(packet, "Behind you.")
+	if behind.is_empty() or behind["validity"] != "UNKNOWN_SOURCE" or behind.get("validity_reason") != "SPEAKER_NOT_IN_VIEW":
+		return "speech from behind should be heard as UNKNOWN_SOURCE / SPEAKER_NOT_IN_VIEW, got %s" % [behind]
+	if behind["track_id"] != null or behind["position_estimate"] != null or absf(float(behind["bearing_rad"])) < 2.8:
+		return "unseen speaker: no track or position, a direction behind, got %s" % [behind]
+	if behind["value"]["addressed_to_observer"] != true:
+		return "speech addressed to the listener should say so"
+	var front := _speech(packet, "Hello there.")
+	if front.is_empty() or front["validity"] != "OBSERVED" or front["track_id"] != w.senses.track_id_for("listener", "front"):
+		return "speech from a visible speaker should be OBSERVED and on its track, got %s" % [front]
+	if front["value"]["addressed_to_observer"] != null:
+		return "speech with no addressee should have addressed_to_observer null"
+	if not _speech(packet, "Anyone over there?").is_empty():
+		return "speech 9 m away behind a partition should not reach this listener"
+	var walled := _speech(w.senses.observe(av["listener2"]), "Anyone over there?")
+	if walled.is_empty() or walled["validity"] != "UNKNOWN_SOURCE" or walled.get("validity_reason") != "THROUGH_WALL":
+		return "speech through a partition 3 m away should be heard weakly, source unknown, got %s" % [walled]
+	if float(walled["quality"]) >= float(behind["quality"]):
+		return "speech through the partition should be weaker than open speech nearby"
+	# Delivered once: after the sample, it is gone (no backfill, no repeats).
+	w.senses.sample()
+	if not _speech(w.senses.observe(av["listener"]), "Behind you.").is_empty():
+		return "speech should be delivered once, at the first sample after it was spoken"
+	return ""
+
+
+func test_walls_range_and_noise_on_speech() -> String:
+	var w := await _world(["legged_humanoid"])
+	var av := await _place(w, [
+		["by_wall", "legged_humanoid", 1.6, 13.0, PI / 2],
+		["corner", "legged_humanoid", 7.0, 15.0, -PI / 2],
+		["open", "legged_humanoid", 17.0, 17.5, -PI / 2],
+	])
+	var level := SenseModel.SPEECH_LEVEL_DB
+	var outside := SenseModel.hear(w, Vector3(-1.0, 1.5, 13.0), av["by_wall"], level)
+	var inside := SenseModel.hear(w, Vector3(4.2, 1.5, 13.0), av["by_wall"], level)
+	if outside["heard"] or not inside["heard"] or float(outside["wall_loss_db"]) < SenseModel.WALL_LOSS_DB:
+		return "a sound-blocking wall should stop speech that the same distance in the open carries: %s vs %s" % [outside, inside]
+	var far := SenseModel.hear(w, Vector3(17.0, 1.5, 6.4), av["open"], level)
+	if far["heard"]:
+		return "speech 11 m away should be beyond hearing, got %s" % [far]
+	var quiet := SenseModel.hear(w, Vector3(12.0, 1.5, 15.0), av["corner"], level)   # chair_corner, 40 dB floor
+	var busy := SenseModel.hear(w, Vector3(22.0, 1.5, 17.5), av["open"], level)      # main floor, 45 dB floor
+	if not (float(busy["snr_db"]) < SenseModel.CLEAR_SPEECH_SNR_DB and float(quiet["snr_db"]) >= SenseModel.CLEAR_SPEECH_SNR_DB):
+		return "at 5 m speech should be clear in the quiet corner and weak on the busy floor: %s vs %s" % [quiet, busy]
+	return ""
+
+
+## Packets every 60/tick_hz ticks, on the 60 Hz tick, anonymous per observer. Writes the packets
+## and the journal for tools/godot_check.py to validate against the contracts.
+func test_sampling_and_packets() -> String:
+	var w := await _world(["legged_humanoid", "quadruped", "human_walker"])
+	var av := await _place(w, [
+		["a", "legged_humanoid", 15.0, 15.5, 0.0],
+		["b", "quadruped", 13.0, 15.5, 0.0],
+		["c", "human_walker", 14.0, 12.5, PI],
+	])
+	var path := artifacts_dir.path_join("sampling.jsonl")
+	if not w.start_run(7, path, 10):
+		return "could not start a journaled run at %s" % path
+	var samples: Array = []
+	w.senses.sampled.connect(func(tick: int, packets: Dictionary) -> void: samples.append([tick, packets]))
+	av["c"].perform_gesture("SMALL_WAVE")
+	av["c"].say("Over here!")
+	av["b"].perform_gesture("WAVE")
+	for i in 60:
+		await get_tree().physics_frame
+	w.end_run()
+	if samples.size() < 9 or samples.size() > 11:
+		return "expected about 10 samples in 1 s at 10 Hz, got %d" % samples.size()
+	var all_packets: Array = []
+	var ids := {}
+	for s in samples:
+		if int(s[0]) % 6 != 0:
+			return "sample at tick %d is not on the 60/10 = 6 tick grid" % s[0]
+		for packet in s[1].values():
+			if int(packet["based_on_tick_id"]) != int(s[0]):
+				return "based_on_tick_id must be the 60 Hz tick of the sample"
+			all_packets.append(packet)
+			for item in packet["observations"]:
+				if ids.has(item["observation_id"]):
+					return "observation id %s used twice" % item["observation_id"]
+				ids[item["observation_id"]] = true
+	var ta := w.senses.track_id_for("a", "c")
+	var tb := w.senses.track_id_for("b", "c")
+	if ta == "" or tb == "" or ta == tb or ta.contains("c") and ta == "anon_c":
+		return "each observer needs its own anonymous track for the same visitor (%s, %s)" % [ta, tb]
+	var f := FileAccess.open(artifacts_dir.path_join("sampling.observations.json"), FileAccess.WRITE)
+	f.store_string(JSON.stringify(all_packets, "", true))
+	f.close()
+	return ""
+
+
+## Two runs of the demo with the same seed write the same journal, byte for byte (T28 groundwork).
+func test_journal_is_deterministic() -> String:
+	var digests: Array[String] = []
+	for run in ["demo_a", "demo_b"]:
+		var main: Node = load("res://scenes/main.tscn").instantiate()
+		main.journal_path = artifacts_dir.path_join(run + ".jsonl")
+		main.run_seed = 11
+		add_child(main)
+		_node = main
+		for i in 60 * 30:
+			await get_tree().physics_frame
+			if main.demo != null and main.demo.finished:
+				break
+		if main.demo == null or not main.demo.finished:
+			return "the demo did not finish in %s" % run
+		digests.append(main.world.end_run())
+		await _cleanup()
+	if digests[0] == "" or digests[0] != digests[1]:
+		return "two runs with the same seed gave different journals (%s vs %s)" % digests
+	var kinds := {}
+	for line in FileAccess.get_file_as_string(artifacts_dir.path_join("demo_a.jsonl")).split("\n", false):
+		kinds[JSON.parse_string(line)["kind"]] = true
+	for kind in ["RUN_STARTED", "OBSERVATION_DELIVERED", "GESTURE_PERFORMED", "GESTURE_REFUSED", "SPEECH_EMITTED", "RUN_ENDED"]:
+		if not kinds.has(kind):
+			return "the demo journal has no %s entry" % kind
+	return ""
+
+
+## Shared avoidance across navigation sizes (D-42): a wheeled humanoid and a quadruped cross
+## head-on and at right angles; both arrive with no contact.
+func test_avoidance_crossing() -> String:
+	var cases := [
+		["head-on", [11.0, 16.5, -PI / 2, 20.0, 16.5], [20.0, 16.5, PI / 2, 11.0, 16.5]],
+		["right angles", [15.5, 14.2, PI, 15.5, 19.3], [11.0, 17.0, -PI / 2, 20.0, 17.0]],
+	]
+	for c in cases:
+		var w := await _world(["wheeled_humanoid", "quadruped"])
+		var wheeled := w.spawn_avatar("wheeled", "wheeled_humanoid", Vector3(c[1][0], 0, c[1][1]), c[1][2])
+		var quad := w.spawn_avatar("quad", "quadruped", Vector3(c[2][0], 0, c[2][1]), c[2][2])
+		wheeled.navigate_to(w.ground_point(c[1][3], c[1][4]))
+		quad.navigate_to(w.ground_point(c[2][3], c[2][4]))
+		var traces := await _run([wheeled, quad], 60 * 30, _all_idle([wheeled, quad]))
+		for a in [wheeled, quad]:
+			if a.ever_stuck or not a.last_goal_reached:
+				return "%s: %s did not arrive (ended at %s)" % [c[0], a.avatar_id, _v(a.global_position)]
+			if not a.contacts.is_empty():
+				return "%s: %s touched %s" % [c[0], a.avatar_id, a.contacts]
+		var closest := INF
+		var pw: Array = traces["wheeled"]["pos"]
+		var pq: Array = traces["quad"]["pos"]
+		for i in pw.size():
+			closest = minf(closest, Vector2(pw[i].x - pq[i].x, pw[i].z - pq[i].z).length())
+		if closest > 3.0:
+			return "%s: the robots never came near each other (closest %.2f m); the test did not exercise avoidance" % [c[0], closest]
+		await _cleanup()
 	return ""

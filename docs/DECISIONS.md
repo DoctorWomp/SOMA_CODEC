@@ -44,8 +44,12 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-34 | Godot checks in tools/check.py and CI | APPROVED (owner, 2026-11-14) |
 | D-35 | Python version on the PC and in CI | APPROVED (owner, 2026-11-14) |
 | D-36 | Robot body family | APPROVED (owner, 2026-11-14) |
-| D-37 | Body contract 2.0, per-size navigation, legged colliders | PROPOSED (G1b, 2026-11-14) |
-| D-38 | GDScript warnings are errors | PROPOSED (G1b, 2026-11-14; requested by the owner) |
+| D-37 | Body contract 2.0, per-size navigation, legged colliders | APPROVED (owner, 2026-11-14) |
+| D-38 | GDScript warnings are errors | APPROVED (owner, 2026-11-14) |
+| D-39 | Sight: the observer filter | PROPOSED (G2a, 2026-11-14) |
+| D-40 | Hearing: local speech | PROPOSED (G2a, 2026-11-14) |
+| D-41 | Godot event journal and contract checks of Godot output | PROPOSED (G2a, 2026-11-14) |
+| D-42 | Shared local avoidance | PROPOSED (G2a, 2026-11-14) |
 
 ---
 
@@ -436,7 +440,7 @@ Replaces D-32. RANGE v0 has **three robot bodies**, each a body config (`configs
 - **Later embodiments** (not v0) are listed in RANGE_V0_SCOPE §6.1.
 
 ## D-37 — Body contract 2.0, per-size navigation, legged colliders
-**Status:** PROPOSED (G1b, 2026-11-14)
+**Status:** APPROVED (owner, 2026-11-14). Proposed at G1b.
 
 - **Body contract version 2.0** (incompatible, so the version is bumped): `dimensions.radius_m` is replaced by `dimensions.collider` (`CAPSULE`, `CYLINDER` or `BOX`, with length along the facing direction and width across it); new required `sensors.mount_height_m`, `arms`, `gestures` and `expression_channels`; optional `display_name`; robot kinds renamed to `LEGGED_HUMANOID`, `WHEELED_HUMANOID`, `QUADRUPED`. Every other contract stays at 1.0; `common.schema.json` holds each version. Adding gestures to the shared vocabulary is backward-compatible (old messages stay valid), so action and observation contracts stay at 1.0.
 - **Consistency rules** the schema cannot express are checked by `tools/validate_configs.py` (`range_service/bodies.py`): round colliders have equal length and width; sensors sit no higher than the body; arm gestures need an arm; `HAND_OVER` needs `can_grab`; `SIT_IN_PLACE` needs `can_sit`; no reach without an arm; the `SPEECH` channel and `can_speak` agree; listed gestures and `can_gesture` agree.
@@ -445,11 +449,46 @@ Replaces D-32. RANGE v0 has **three robot bodies**, each a body config (`configs
 - **Legged box colliders.** A flat-bottomed box could not get onto the stairs' smooth walking surface (the quadruped stopped at the first riser in a test). Box colliders of bodies with `can_use_stairs` therefore have their lower front and back edges bevelled by 10 cm (legs step over edges); wheeled boxes stay flat, so the real 0.15 m steps still stop them. Round colliders are unchanged.
 
 ## D-38 — GDScript warnings are errors
-**Status:** PROPOSED (G1b, 2026-11-14; requested by the owner)
+**Status:** APPROVED (owner, 2026-11-14). Requested by the owner; proposed at G1b.
 
 The owner's editor showed six GDScript warnings that headless runs never print (integer division; names shadowing `tr`, `owner` and `basis`). All six are fixed. To stop new ones:
 
 - In `project.godot`, every GDScript warning that Godot shows by default is raised to **error** level. A script with a warning then fails to load, in the editor and in the checks alike. Warnings Godot leaves off by default (for example untyped declarations) stay off.
 - `tools/godot_check.py` gains a **compile** step (`godot_app/tests/compile_all.gd`) that loads every `.gd` file, because Godot's `--import` does not compile every script, and a broken test script would otherwise make the test run hang rather than fail.
 - Reproduced first: with the levels raised, the check failed on exactly the six reported lines; it passes after the fixes. A deliberately added integer division makes the check fail with a clear message.
+
+## D-39 — Sight: the observer filter
+**Status:** PROPOSED (G2a, 2026-11-14)
+
+What an avatar sees is computed in Godot from world state through its own sensors (D-04, D-16); all values are labelled synthetic proxies, idealized to start (sensor realism is a dial).
+
+- **Rays from the sensor mount** (D-36; at the front of a quadruped's body, slightly ahead of a humanoid's head) to four points on each target: **head, torso, left side, right side**, plus the **hand** while a gesture is shown (raised for waves, forward for pointing and handing over, the head for nods and tilts, the torso for bows and sitting). A point counts if it is within visual range (body range × the lower zone `visual_range_factor` of either end), inside the field of view and has a clear line. Walls (unless `blocks_sight: false`), the platform, props, steps and **other avatars** block sight.
+- **Result per target:** all four parts → `OBSERVED`; some → `DEGRADED` with `validity_reason: PARTLY_OCCLUDED` and `visible_parts`; none, but seen within the last **3 s** → `OCCLUDED` (`OCCLUDED_SINCE_LAST_SEEN`) or `MISSING` (`LEFT_FIELD_OF_VIEW`, `OUT_OF_RANGE`) at the **last known position with quality null**; after 3 s the track is dropped. **A target never seen is absent**: no packet reveals that a hidden person exists.
+- **Quality** (separate from validity): fraction of parts seen × (1 − 0.5 × distance / range) × (0.5 + 0.5 × zone light level). Positions are exact (idealized) where seen.
+- **Gestures** (`VISUAL_GESTURE`, with the gesture's event id) are perceived only if the gesturing point is seen and within **12 m** (× the visual range factor); direction is `TOWARD_OBSERVER` when the gesturer faces the observer within 60°. A gesture is shown for 1.5 s.
+- **Tracks** are anonymous (`anon_` + 10 random characters from the run seed), separate per observer and run; `source_entity_id` stays null until identity is introduced (G3+).
+- **Sampling:** every 60 / `tick_hz` physics ticks (10 Hz default), after all avatars have moved; `based_on_tick_id` is the 60 Hz tick (D-33).
+- **Contract additions** (backward-compatible; observation stays 1.0): optional `validity_reason` and `visible_parts`.
+
+## D-40 — Hearing: local speech
+**Status:** PROPOSED (G2a, 2026-11-14)
+
+- Speech starts at **62 dB at 1 m** (a conversational voice in a busy hall) from the speaker's mouth, falls **20·log10(distance)**, and loses **30 dB per wall that blocks sound** and **6 dB per wall sound passes over** (partitions, the low divider). The listener's zone **noise floor** masks it: heard if signal-to-noise ≥ 0 dB and within the body's acoustic range; **clear** (`OBSERVED`) from 6 dB; below that, or through any wall, `DEGRADED` (`LOW_SIGNAL_TO_NOISE`, `THROUGH_WALL`). Quality = SNR / 20, between 0.05 and 1.
+- **Heard without sight:** if the listener does not see the speaker, the observation is `UNKNOWN_SOURCE` with a direction (`bearing_rad`) but no track, position or range (reason `SPEAKER_NOT_IN_VIEW`, or `THROUGH_WALL` / `LOW_SIGNAL_TO_NOISE` when those apply). Reflections (SB-03) come later.
+- `addressed_to_observer` is true for the addressee, false when overheard (D-12), null when nobody was addressed.
+- Speech is an **event**: delivered once, at the first sample after it was spoken, to those who could hear it then. **Nothing is backfilled.** A body without `can_speak` cannot speak.
+- What these numbers give (from the formula, open floor, no walls): on the 45 dB main floor speech is clear to about 3.5 m and heard to about 7 m; in the 40 dB chair corner, clear to about 6.3 m and heard out to the 10 m acoustic range.
+
+## D-41 — Godot event journal and contract checks of Godot output
+**Status:** PROPOSED (G2a, 2026-11-14)
+
+- Godot writes the event journal as JSON lines in the `journal_entry` contract: `RUN_STARTED` (seed, map, `tick_hz` 60, `sample_hz`, poses), every `OBSERVATION_DELIVERED` packet, `GESTURE_PERFORMED`, `GESTURE_REFUSED` (`CAPABILITY_DENIED`), `SPEECH_EMITTED`, `RUN_ENDED`. Keys are sorted, so the same run gives the same bytes; a SHA-256 of the file identifies a run (two demo runs with the same seed match: T28 groundwork).
+- The main scene writes to `user://journals/` (on Windows: `%APPDATA%\Godot\app_userdata\SOMA RANGE\journals`), keeping the newest 10.
+- **One contract, checked on both sides (D-27):** GDScript has no JSON Schema validator, so `tools/godot_check.py` validates every journal line and observation packet the Godot tests write, with the Python contracts. A leak of an evaluator-only field or any shape error fails the check.
+- **Contract additions** (backward-compatible; versions unchanged): journal kinds `GESTURE_PERFORMED`, `GESTURE_REFUSED`, `SPEECH_EMITTED`, optional `sample_hz` in `RUN_STARTED`.
+
+## D-42 — Shared local avoidance
+**Status:** PROPOSED (G2a, 2026-11-14)
+
+Paths are planned per body size (D-37), but every avatar must steer around every other. Godot's avoidance works per map, so each avatar also has an **avoidance agent on one shared avoidance map** (no navigation mesh, just agents): radius = turning radius + 0.15 m, neighbours within 5 m, a 2 s time horizon. While navigating, an avatar follows the safe velocity returned for the previous tick (a one-tick delay), still within its own speed, acceleration and turn limits; idle avatars count as obstacles. Direct drive (used by collision tests) bypasses avoidance. Measured in tests: a wheeled humanoid and a quadruped crossing head-on and at right angles both arrive without touching; the demo has no contacts.
 

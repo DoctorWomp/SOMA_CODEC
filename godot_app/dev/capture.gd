@@ -9,7 +9,18 @@ extends Node
 const SCENES := {
 	"lineup": "res://scenes/robot_lineup.tscn",
 	"demo": "res://scenes/main.tscn",
+	"senses": "",
 }
+
+## Staged avatars for the "senses" shots: [id, body, x, z, yaw].
+const STAGE := [
+	["visitor", "human_walker", 4.5, 3.2, PI],
+	["quad", "quadruped", 5.6, 7.4, 0.0],
+	["humanoid", "legged_humanoid", 3.4, 7.4, 0.0],
+	["observer", "legged_humanoid", 13.0, 12.05, PI / 2],
+	["half_hidden", "human_walker", 8.5, 12.05, -PI / 2],
+	["past_the_end", "human_walker", 8.5, 13.4, -PI / 2],
+]
 
 ## [file name, scene, simulated seconds, camera mode, camera settings, show HUD]
 ## Orbit "yaw_from_front" is relative to the avatar's facing: 0 = straight in front of it.
@@ -23,6 +34,10 @@ const SHOTS := [
 	["sb05_ramp_and_stairs.png", "demo", 7.1, "free", {"from": Vector3(15.5, 3.6, 12.5), "at": Vector3(20.5, 0.4, 4.0)}, true],
 	["sb05_all_on_platform.png", "demo", 20.0, "free", {"from": Vector3(21.0, 3.2, 11.5), "at": Vector3(26.0, 0.6, 4.2)}, false],
 	["reflective_wall_pa_chairs.png", "demo", 8.5, "free", {"from": Vector3(11, 4.5, 16.5), "at": Vector3(1.5, 1.0, 11.5)}, false],
+	["senses_demo_heard_and_seen.png", "demo", 18.4, "free", {"from": Vector3(19.5, 5.5, 10.5), "at": Vector3(24.5, 0.6, 3.5), "senses": "robot_legged"}, true],
+	["senses_divider_quadruped.png", "senses", 0.3, "free", {"from": Vector3(8.6, 3.2, 10.6), "at": Vector3(4.6, 0.6, 5.0), "senses": "quad"}, false],
+	["senses_divider_humanoid.png", "senses", 0.3, "free", {"from": Vector3(8.6, 3.2, 10.6), "at": Vector3(4.6, 0.6, 5.0), "senses": "humanoid"}, false],
+	["senses_partly_seen.png", "senses", 0.3, "free", {"from": Vector3(14.5, 4.2, 16.5), "at": Vector3(9.5, 0.8, 11.5), "senses": "observer"}, false],
 ]
 
 var out_dir := ""
@@ -43,7 +58,9 @@ func _ready() -> void:
 
 
 func _capture_scene(scene_key: String) -> void:
-	var scene: Node = load(SCENES[scene_key]).instantiate()
+	var scene: Node = _stage() if SCENES[scene_key] == "" else load(SCENES[scene_key]).instantiate()
+	if scene_key == "demo":
+		scene.journal_path = ""
 	add_child(scene)
 	if scene_key == "demo":
 		while scene.demo == null or not scene.demo.started():
@@ -71,6 +88,13 @@ func _capture_scene(scene_key: String) -> void:
 		else:
 			rig.look_from(cam["from"], cam["at"])
 		scene.hud.visible = shot[5]
+		if cam.has("senses"):
+			var watched: Avatar = scene.world.avatars[cam["senses"]]
+			rig.selected = rig.targets.find(watched)
+			scene.sense_view.visible = true
+			scene.world.senses.latest[watched.avatar_id] = scene.world.senses.observe(watched)
+		elif scene.get("sense_view") != null:
+			scene.sense_view.visible = false
 		get_tree().paused = true
 		for i in 3:
 			await RenderingServer.frame_post_draw
@@ -80,3 +104,10 @@ func _capture_scene(scene_key: String) -> void:
 		get_tree().paused = false
 	scene.queue_free()
 	await get_tree().process_frame
+
+
+## A small staged scene for the senses shots: the low divider and the partition-end cases.
+func _stage() -> Node3D:
+	var root := Node3D.new()
+	root.set_script(load("res://dev/sense_stage.gd"))
+	return root
