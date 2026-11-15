@@ -39,7 +39,7 @@
         }
       },
       {
-        "at_tick": 145,
+        "at_tick": 210,
         "event_type": "turn_to",
         "actor": "visitor_y",
         "args": {
@@ -47,7 +47,7 @@
         }
       },
       {
-        "at_tick": 160,
+        "at_tick": 225,
         "event_type": "small_wave",
         "actor": "visitor_y",
         "args": {
@@ -55,7 +55,7 @@
         }
       },
       {
-        "at_tick": 230,
+        "at_tick": 250,
         "event_type": "say",
         "actor": "visitor_x",
         "args": {

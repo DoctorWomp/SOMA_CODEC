@@ -9,7 +9,8 @@ extends Node
 ##  2. CAPABILITY_DENIED   this session does not control that agent
 ##  3. STALE_OBSERVATION   based on an observation older than STALE_AFTER_TICKS
 ##  4. RATE_LIMITED        more than RATE_LIMIT requests from one agent in one second
-##  5. per action: TARGET_UNKNOWN, CAPABILITY_DENIED (gesture or voice the body lacks),
+##  5. per action: TARGET_UNKNOWN, CAPABILITY_DENIED (gesture, voice or expression part the body
+##     lacks), RATE_LIMITED (an expression change within 1/3 s, D-14),
 ##     GROUP_NOT_MEMBER, PA_UNAUTHORIZED, PRIVACY_SCOPE_DENIED (someone who could hear is
 ##     outside the declared disclosure scope, D-12)
 ##
@@ -21,7 +22,8 @@ const STALE_AFTER_TICKS := 60
 const RATE_LIMIT := 10
 const ID_PATTERN := "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
 const ACTIONS := ["MOVE_TO", "LOOK_AT", "TURN_TO", "SPEAK", "GESTURE", "WAIT", "YIELD", "INTERACT", "JOIN_QUEUE",
-	"REQUEST_CLARIFICATION", "CREATE_GROUP", "INVITE_GROUP", "ACCEPT_GROUP", "DECLINE_GROUP", "LEAVE_GROUP", "NO_OP"]
+	"REQUEST_CLARIFICATION", "CREATE_GROUP", "INVITE_GROUP", "ACCEPT_GROUP", "DECLINE_GROUP", "LEAVE_GROUP", "NO_OP",
+	"EXPRESS"]
 ## Allowed argument names per action: [required, optional].
 const ARGS := {
 	"MOVE_TO": [[], ["destination", "target_id"]],
@@ -40,15 +42,20 @@ const ARGS := {
 	"DECLINE_GROUP": [["group_id"], []],
 	"LEAVE_GROUP": [["group_id"], []],
 	"NO_OP": [[], []],
+	"EXPRESS": [["expression_id"], ["target_id"]],
 }
 const GESTURES := ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD", "OPEN_PALM", "BOW",
 	"HEAD_TILT", "SIT_IN_PLACE", "HAND_OVER"]
 const SCOPES := ["PUBLIC", "GROUP", "ONE_TO_ONE", "SEALED"]
+const EXPRESSION_ID_PATTERN := "^[a-z][a-z0-9_]{1,31}$"
 
 var world: RangeWorld
 var resolved: Array = []    # [{"request", "result"}] in order (evaluator, tests)
 var _recent: Dictionary = {}  # agent id -> ticks of its recent requests
 var _id_regex := RegEx.create_from_string(ID_PATTERN)
+var _expression_regex := RegEx.create_from_string(EXPRESSION_ID_PATTERN)
+## Host requests (the scenario's event tape) may name avatars by their real ids (D-48).
+var _host_request := false
 
 
 func _init() -> void:
@@ -57,6 +64,15 @@ func _init() -> void:
 
 func setup(target_world: RangeWorld) -> void:
 	world = target_world
+
+
+## A request from the host itself (the scenario's event tape, D-48): same checks and body limits,
+## but it may name avatars by their real ids.
+func submit_host(request: Dictionary, actor_id: String) -> Dictionary:
+	_host_request = true
+	var result := submit(request, [actor_id])
+	_host_request = false
+	return result
 
 
 ## Validate and, if allowed, carry out one request for a session controlling `controlled`.
@@ -142,6 +158,9 @@ func _check_shape(req: Dictionary) -> String:
 		"REQUEST_CLARIFICATION":
 			if not _is_text(args["text"]):
 				return "INVALID_SCHEMA"
+		"EXPRESS":
+			if not args["expression_id"] is String or _expression_regex.search(args["expression_id"]) == null:
+				return "INVALID_SCHEMA"
 	return "OK"
 
 
@@ -162,7 +181,7 @@ func resolve(agent: Avatar, ref) -> Avatar:
 	if not ref is String:
 		return null
 	var entity := world.senses.entity_for_track(agent.avatar_id, ref)
-	if entity == "" and world.comms.known_ids(agent.avatar_id).has(ref):
+	if entity == "" and (world.comms.known_ids(agent.avatar_id).has(ref) or _host_request):
 		entity = ref
 	return world.avatars.get(entity)
 
@@ -210,6 +229,14 @@ func _execute(agent: Avatar, action: String, args: Dictionary) -> Dictionary:
 				var p: Dictionary = args["point"]
 				agent.turn_to(atan2(-(float(p["x"]) - agent.global_position.x), -(float(p["z"]) - agent.global_position.z)))
 			return ok
+		"EXPRESS":
+			var addressee = null
+			if args.has("target_id") and args["target_id"] != null:
+				var who := resolve(agent, args["target_id"])
+				if who == null:
+					return {"reason_code": "TARGET_UNKNOWN"}
+				addressee = who.avatar_id
+			return world.comms.send_expression(agent, String(args["expression_id"]), addressee)
 		"WAIT", "NO_OP":
 			return ok
 		"YIELD":

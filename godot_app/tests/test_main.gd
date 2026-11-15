@@ -48,6 +48,12 @@ const TESTS := [
 	"test_link_wrong_token",
 	"test_link_slow_sidecar",
 	"test_link_no_sidecar",
+	"test_hold_is_invisible_deterministic",
+	"test_expression_capabilities",
+	"test_expression_sight_rules",
+	"test_beacon_rendering_and_rate",
+	"test_scenario_tape_and_world_view",
+	"test_live_slow_model_t25_t27",
 ]
 
 ## Where tests write journals and packets for tools/godot_check.py to validate in Python.
@@ -194,9 +200,10 @@ func test_project_settings() -> String:
 	var engine_name := String(ProjectSettings.get_setting("physics/3d/physics_engine"))
 	if engine_name != "Jolt Physics":
 		return "3D physics engine is '%s', expected 'Jolt Physics' (D-33)" % engine_name
-	for setting in ["navigation/world/map_use_async_iterations", "navigation/world/region_use_async_iterations"]:
+	for setting in ["navigation/world/map_use_async_iterations", "navigation/world/region_use_async_iterations",
+			"navigation/avoidance/thread_model/avoidance_use_multiple_threads"]:
 		if bool(ProjectSettings.get_setting(setting)):
-			return "%s must be off: background navigation updates make runs differ (D-47)" % setting
+			return "%s must be off: navigation work on other threads makes runs differ (D-47)" % setting
 	if int(ProjectSettings.get_setting("application/run/max_fps")) != 60:
 		return "frame rate must be capped at 60 (ART_DIRECTION §3)"
 	# D-38: every GDScript warning that is on by default is an error, so none can slip in.
@@ -1562,3 +1569,261 @@ func test_link_no_sidecar() -> String:
 	if status != "REFUSED" or w.clock.tick == before or longest > 50.0:
 		return "with no sidecar the link should report REFUSED and the world keep ticking (%s, %.1f ms)" % [status, longest]
 	return ""
+
+
+# ---------- G3a: stepped runs, expressions, scenarios ----------
+
+## Stepped runs (D-48): holding the world between ticks, for any number of frames, must change
+## nothing. Two robots cross head-on (local avoidance at work) twice: once held for one frame at
+## every sample, once held for a random 1-6 frames. Their positions must match tick for tick.
+func test_hold_is_invisible_deterministic() -> String:
+	var traces: Array = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99
+	for variant in ["one_frame", "random_frames"]:
+		var w := await _world(["wheeled_humanoid", "quadruped"])
+		var a := w.spawn_avatar("wheeled", "wheeled_humanoid", Vector3(11.0, 0, 16.5), -PI / 2)
+		var b := w.spawn_avatar("quad", "quadruped", Vector3(20.0, 0, 16.5), PI / 2)
+		a.navigate_to(w.ground_point(20.0, 16.5))
+		b.navigate_to(w.ground_point(11.0, 16.5))
+		var trace := {}
+		var last_tick := -1
+		while w.clock.tick < 600 + 60:
+			await get_tree().physics_frame
+			if w.clock.tick == last_tick:
+				continue
+			last_tick = w.clock.tick
+			trace[w.clock.tick] = [a.global_position, b.global_position, a.rotation.y, b.rotation.y]
+			if w.clock.tick % 6 == 0:
+				w.hold("step")
+				var frames := 1 if variant == "one_frame" else rng.randi_range(1, 6)
+				for i in frames:
+					await get_tree().process_frame
+				w.release("step")
+		traces.append(trace)
+		await _cleanup()
+	for tick in traces[0]:
+		if not traces[1].has(tick):
+			return "tick %d is missing from the second run" % tick
+		if traces[0][tick] != traces[1][tick]:
+			return "holding for a different number of frames changed the world at tick %d: %s vs %s (D-48)" % [
+				tick, traces[0][tick], traces[1][tick]]
+	return ""
+
+
+func _express(w: RangeWorld, agent_id: String, expression_id: String, n: int) -> Dictionary:
+	return w.actions.submit({"schema_version": "1.0", "action_request_id": "act_%s_x%03d" % [agent_id, n], "agent_id": agent_id,
+		"based_on_tick_id": w.clock.tick, "action": "EXPRESS", "args": {"expression_id": expression_id}}, [agent_id])
+
+
+func _seen_expressions(into: Dictionary, observer_id: String, event_id: String) -> Array:
+	var out := []
+	for item in into.get(observer_id, {"observations": []})["observations"]:
+		if item["kind"] == "VISUAL_EXPRESSION" and item["event_id"] == event_id:
+			out.append(item)
+	return out
+
+
+## Expressions are refused whole for bodies that lack a part (D-52): the quadruped cannot wave,
+## a person has no Beacon, an unknown id is invalid; a refused expression is never perceived.
+func test_expression_capabilities() -> String:
+	var w := await _world(["wheeled_humanoid", "quadruped", "human_walker"])
+	w.spawn_avatar("wheeled", "wheeled_humanoid", Vector3(15, 0, 17), 0.0)
+	w.spawn_avatar("quad", "quadruped", Vector3(12, 0, 17), 0.0)
+	w.spawn_avatar("person", "human_walker", Vector3(18, 0, 17), 0.0)
+	w.spawn_avatar("watcher", "human_walker", Vector3(15, 0, 13.5), PI)
+	var seen := {}
+	_collect(w, seen)
+	var cases := [["quad", "greeting", "CAPABILITY_DENIED"], ["quad", "acknowledge", "CAPABILITY_DENIED"],
+		["person", "listening", "CAPABILITY_DENIED"], ["wheeled", "not_in_catalog", "INVALID_SCHEMA"],
+		["quad", "greeting_light", "OK"], ["wheeled", "greeting", "OK"], ["quad", "acknowledge_tilt", "CAPABILITY_DENIED"]]
+	var n := 0
+	for c in cases:
+		n += 1
+		# acknowledge_tilt on the quadruped is fine by body, but it comes 0 ticks after greeting_light: RATE_LIMITED
+		# would hide the capability check, so it is tested after a pause.
+		if c[1] == "acknowledge_tilt":
+			await _ticks(30)
+			c = ["quad", "acknowledge_tilt", "OK"]
+		var r := _express(w, String(c[0]), String(c[1]), n)
+		if r["reason_code"] != c[2]:
+			return "%s showing %s: expected %s, got %s" % [c[0], c[1], c[2], r["reason_code"]]
+	if w.avatars["quad"].current_expression != "acknowledge_tilt" or w.avatars["person"].current_expression != "":
+		return "refused expressions must leave nothing shown"
+	await _ticks(12)
+	for item in seen.get("watcher", {"observations": []})["observations"]:
+		if item["kind"] == "VISUAL_EXPRESSION" and item["track_id"] == w.senses.track_id_for("watcher", "person"):
+			return "the person's refused expression was perceived"
+	return ""
+
+
+## Expressions are perceived under the same sight rules as everything else (D-39, D-52).
+func test_expression_sight_rules() -> String:
+	var w := await _world(["wheeled_humanoid", "quadruped", "human_walker"])
+	w.spawn_avatar("robot", "wheeled_humanoid", Vector3(15, 0, 17), 0.0)          # faces -z
+	w.spawn_avatar("front", "human_walker", Vector3(15, 0, 13.5), PI)            # 3.5 m in front
+	w.spawn_avatar("behind", "human_walker", Vector3(15, 0, 19.5), 0.0)          # 2.5 m behind
+	w.spawn_avatar("far", "human_walker", Vector3(12.5, 0, 7.0), PI - 0.24)      # ~10.3 m in front
+	w.spawn_avatar("quad", "quadruped", Vector3(19, 0, 15.2), 0.0)               # faces partition_b
+	w.spawn_avatar("hidden", "human_walker", Vector3(19, 0, 11.0), PI)           # behind partition_b
+	w.spawn_avatar("quad_back", "human_walker", Vector3(19, 0, 18.0), 0.0)        # behind the quadruped
+	var seen := {}
+	_collect(w, seen)
+	var r1 := _express(w, "robot", "listening", 1)
+	var r2 := _express(w, "quad", "greeting_light", 2)
+	if r1["reason_code"] != "OK" or r2["reason_code"] != "OK":
+		return "expressions refused: %s %s" % [r1["reason_code"], r2["reason_code"]]
+	var robot_event: String = r1["resulting_event_ids"][0]
+	var quad_event: String = r2["resulting_event_ids"][0]
+	await _ticks(13)
+	var front := _seen_expressions(seen, "front", robot_event)
+	if front.is_empty() or front[0]["value"].get("glyph") != "attentive" or front[0]["value"].get("light") != "CALM" \
+			or front[0]["value"].get("display") != "VISOR":
+		return "the observer in front should read the visor glyph and light: %s" % [front]
+	var behind := _seen_expressions(seen, "behind", robot_event)
+	if behind.is_empty() or behind[0]["value"].has("glyph") or behind[0]["value"].get("display") != "EAR_PODS":
+		return "from behind only the ear-pod light shows, no glyph: %s" % [behind]
+	var far := _seen_expressions(seen, "far", robot_event)
+	if far.is_empty() or far[0]["value"].has("glyph"):
+		return "beyond 8 m the light shows but the glyph is not readable: %s" % [far]
+	if not _seen_expressions(seen, "hidden", quad_event).is_empty():
+		return "an expression behind a partition was perceived"
+	if not _seen_expressions(seen, "quad_back", quad_event).is_empty():
+		return "the quadruped's front light strip was seen from behind it"
+	for c in w.comms.events:
+		if c["source_event_id"] == robot_event:
+			if not c["delivered_to"].has("front") or c["expression"].get("glyph") != "attentive":
+				return "the comms_event should list the observer in front: %s" % [c]
+	var f := FileAccess.open(artifacts_dir.path_join("expressions.observations.json"), FileAccess.WRITE)
+	var packets := []
+	for id in ["front", "behind", "far"]:
+		packets.append(w.senses.latest[id])
+	f.store_string(JSON.stringify(packets, "", true))
+	f.close()
+	return ""
+
+
+## The Beacon renders glyph and light on the right parts, clears after hold_ms, and expression
+## changes faster than 3 per second are refused (D-14).
+func test_beacon_rendering_and_rate() -> String:
+	var w := await _world(["legged_humanoid", "quadruped"])
+	var h := w.spawn_avatar("legged", "legged_humanoid", Vector3(15, 0, 17), 0.0)
+	var q := w.spawn_avatar("quad", "quadruped", Vector3(12, 0, 17), 0.0)
+	if _express(w, "legged", "stop", 1)["reason_code"] != "OK" or _express(w, "quad", "waiting", 2)["reason_code"] != "OK":
+		return "expressions refused"
+	if _express(w, "legged", "listening", 3)["reason_code"] != "RATE_LIMITED":
+		return "a second expression in the same tick must be RATE_LIMITED (3 per second at most)"
+	var hb := h.beacon()
+	var qb := q.beacon()
+	if hb == null or qb == null:
+		return "robots need a Beacon"
+	if hb.glyph.text != "STOP" or not hb.glyph.visible or hb.light_state != "STOP":
+		return "the legged humanoid should show STOP on its visor and a red light (got '%s', %s)" % [hb.glyph.text, hb.light_state]
+	if qb.glyph.text != "..." or qb.light_state != "CALM" or qb.pattern != "SLOW_PULSE":
+		return "the quadruped strip should show '...' with a slow calm pulse (got '%s', %s)" % [qb.glyph.text, qb.light_state]
+	if BeaconRules.PULSE_HZ > BeaconRules.MAX_FLASH_HZ:
+		return "the slow pulse must stay under 3 Hz (D-14)"
+	var lit: StandardMaterial3D = hb.lights[0].material_override
+	if not lit.emission_enabled or not lit.emission.is_equal_approx(BeaconRules.LIGHT_COLORS["STOP"]):
+		return "the ear pods should glow in the STOP color"
+	await _ticks(BeaconRules.MIN_CHANGE_TICKS + 1)   # physics_frame fires before the tick runs
+	if _express(w, "legged", "listening", 4)["reason_code"] != "OK":
+		return "after 1/3 s a new expression must be allowed"
+	await _ticks(int(4000.0 / 1000.0 * SimClock.TICK_HZ) + 2)
+	if hb.glyph.visible or hb.light_state != "OFF" or h.active_expression(w.clock.tick) != {}:
+		return "the display should clear after hold_ms"
+	return ""
+
+
+## The scenario player builds the cast from the world-only scenario file and plays the tape
+## through the action gate (D-48); Godot never sees evaluator-only fields.
+func test_scenario_tape_and_world_view() -> String:
+	var scen := WorldData.load_scenario("SB04_POLITE_BID")
+	for key in ["evaluator_only", "measure"]:
+		if scen.has(key):
+			return "the scenario Godot reads must not carry '%s'" % key
+	for entry in scen["cast"].values():
+		if entry.has("persona"):
+			return "Godot's scenario copy must not name personas"
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	main.scenario_id = "SB04_POLITE_BID"
+	main.run_mode = "LIVE"
+	main.journal_path = artifacts_dir.path_join("scenario_tape.jsonl")
+	add_child(main)
+	_node = main
+	for i in 60 * 30:
+		await get_tree().physics_frame
+		if main.scenario_player.results.size() >= 5:
+			break
+	var results: Array = main.scenario_player.results
+	if results.size() < 5:
+		return "the tape did not play (%d events)" % results.size()
+	for r in results:
+		if r["reason_code"] != "OK":
+			return "tape event %s refused: %s" % [r, r["reason_code"]]
+	var start: int = main.scenario_player.start_tick
+	var first_say := -1
+	for c in main.world.comms.events:
+		if c["channel"] == "LOCAL" and c["sender_id"] == "visitor_x":
+			first_say = int(c["emitted_at_tick"])
+			break
+	if first_say != start + 20 * 6:
+		return "the first line should be spoken at scenario tick 20 = world tick start+120 (got %d, start %d)" % [first_say, start]
+	main.world.end_run()
+	return ""
+
+
+## T25 and T27 in a live run. The sidecar's fake model takes 1.5 s per call (godot_check starts
+## it as RANGE_LINK_PORT_MODEL). The world must keep its tick every frame with no frame over 50 ms,
+## avatars keep moving, and Robot R's late actions are rejected as STALE_OBSERVATION.
+func test_live_slow_model_t25_t27() -> String:
+	var port := int(OS.get_environment("RANGE_LINK_PORT_MODEL"))
+	if port <= 0:
+		return "RANGE_LINK_PORT_MODEL is not set: run the tests through tools/godot_check.py"
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	main.scenario_id = "SB04_POLITE_BID"
+	main.run_mode = "LIVE"
+	main.link_port = port
+	main.journal_path = artifacts_dir.path_join("live_model.jsonl")
+	add_child(main)
+	_node = main
+	var started_ms := Time.get_ticks_msec()
+	var last_us := Time.get_ticks_usec()
+	var worst_ms := 0.0
+	var last_tick := -1
+	var skipped := 0
+	var stale := 0
+	var moved_from := Vector3.INF
+	while Time.get_ticks_msec() - started_ms < 20000:
+		await get_tree().physics_frame
+		var now_us := Time.get_ticks_usec()
+		worst_ms = maxf(worst_ms, (now_us - last_us) / 1000.0)
+		last_us = now_us
+		var w: RangeWorld = main.world
+		if w == null or w.clock == null:
+			continue
+		if last_tick >= 0 and w.clock.tick != last_tick + 1 and not w.held:
+			skipped += 1
+		last_tick = w.clock.tick
+		if moved_from == Vector3.INF and main.scenario_player.start_tick >= 0:
+			moved_from = w.avatars["visitor_y"].global_position
+		stale = 0
+		for entry in w.actions.resolved:
+			if entry["result"]["agent_id"] == "robot_r" and entry["result"]["reason_code"] == "STALE_OBSERVATION":
+				stale += 1
+		if stale > 0 and w.avatars["visitor_y"].global_position.distance_to(moved_from) > 2.0:
+			break
+	var world: RangeWorld = main.world
+	if main.link == null or main.link.stats["connects"] < 1:
+		return "the sidecar never connected"
+	if skipped > 0:
+		return "the world tick skipped or stalled %d times while the model was slow" % skipped
+	if worst_ms > 50.0:
+		return "a frame took %.1f ms while the model was slow (limit 50 ms, T25)" % worst_ms
+	if world.avatars["visitor_y"].global_position.distance_to(moved_from) <= 2.0:
+		return "visitor_y should keep walking (the tape) while Robot R's model is slow"
+	if stale == 0:
+		return "Robot R's 1.5 s-late actions should be rejected as STALE_OBSERVATION (T27)"
+	world.end_run()
+	return ""
+

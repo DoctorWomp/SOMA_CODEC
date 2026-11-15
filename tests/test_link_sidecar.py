@@ -113,10 +113,12 @@ def test_greeter_answers_a_wave_with_valid_action_requests(tmp_path):
         async with connect(url(sidecar), additional_headers={TOKEN_HEADER: TOKEN}) as ws:
             await ws.send(envelope("link.hello", HELLO))
             await ws.send(envelope("world.observation", packet("robot_legged", [wave("anon_visitor0001")])))
-            replies = [json.loads(await asyncio.wait_for(ws.recv(), 2)) for _ in range(2)]
+            replies = [json.loads(await asyncio.wait_for(ws.recv(), 2)) for _ in range(3)]
         await sidecar.stop()
         return replies
-    replies = run(go())
+    hello, *replies = run(go())
+    # The sidecar answers link.hello with the agents it runs (G3a, D-48).
+    assert hello["type"] == "link.hello" and hello["payload"]["agents"] == ["robot_legged", "robot_quadruped"]
     assert [r["payload"]["action"] for r in replies] == ["GESTURE", "SPEAK"]
     for r in replies:
         assert r["type"] == "agent.action_request" and contracts.problems("envelope", r) == []

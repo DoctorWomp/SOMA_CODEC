@@ -44,6 +44,7 @@ var speed := 0.0                     # current forward speed, m/s
 var contacts: Dictionary = {}        # other avatar id -> ticks in contact (from physics)
 var current_gesture := ""            # last gesture the body accepted (no animation yet)
 var refused_gestures: Array[String] = []
+var current_expression := ""         # last expression shown (G3a, D-52)
 var avoidance_enabled := true
 var world: RangeWorld
 var nav_agent: NavigationAgent3D
@@ -52,6 +53,8 @@ var model: Node3D
 var _direct_velocity := Vector3.ZERO
 var _turn_yaw := 0.0
 var _gesture := {}                   # {"gesture", "event_id", "until_tick"} while one is shown
+var _expression := {}                # {"expression_id", "event_id", "until_tick", "glyph_id", "light", ...}
+var _last_expression_tick := -1000
 var _avoid_rid: RID
 var _safe_velocity := Vector3.ZERO
 var _has_safe_velocity := false
@@ -219,7 +222,7 @@ func turn_to(yaw: float) -> void:
 
 ## Host-side gesture check (D-36): a body only performs gestures its config lists. Returns
 ## false and records the refusal otherwise. No animation yet (V0 greybox).
-func perform_gesture(gesture: String) -> bool:
+func perform_gesture(gesture: String, event_id := "") -> bool:
 	if not Bodies.supports_gesture(body, gesture):
 		refused_gestures.append(gesture)
 		if world != null:
@@ -228,7 +231,8 @@ func perform_gesture(gesture: String) -> bool:
 		return false
 	current_gesture = gesture
 	if world != null:
-		var event_id := world.next_event_id()
+		if event_id == "":
+			event_id = world.next_event_id()
 		_gesture = {"gesture": gesture, "event_id": event_id, "until_tick": world.clock.tick + GESTURE_DURATION_TICKS}
 		world.journal_write("GESTURE_PERFORMED", avatar_id, {"avatar_id": avatar_id, "event_id": event_id,
 			"gesture": gesture, "duration_ms": SimClock.ms_at(GESTURE_DURATION_TICKS)})
@@ -240,6 +244,45 @@ func active_gesture(tick: int) -> Dictionary:
 	if _gesture.is_empty() or tick > int(_gesture["until_tick"]):
 		return {}
 	return _gesture
+
+
+## Show an expression from the catalog (EXPRESS; EXPRESSION_PRINCIPLES §1, D-14, D-52): its
+## gesture, glyph and light together, or nothing. Returns "OK", "CAPABILITY_DENIED" (the body
+## lacks a part) or "RATE_LIMITED" (less than 1/3 s since the last change: light safety, D-14).
+## The gesture shares the expression's event id, so observers' reports tie together.
+func show_expression(expression: Dictionary, event_id: String) -> String:
+	if BeaconRules.refusal(body, expression) != "":
+		return "CAPABILITY_DENIED"
+	var tick := world.clock.tick if world != null else 0
+	if tick - _last_expression_tick < BeaconRules.MIN_CHANGE_TICKS:
+		return "RATE_LIMITED"
+	if expression.has("gesture") and not perform_gesture(String(expression["gesture"]), event_id):
+		return "CAPABILITY_DENIED"
+	_last_expression_tick = tick
+	current_expression = String(expression["expression_id"])
+	var glyph_text := BeaconRules.glyph_text(body, expression)
+	_expression = {"expression_id": current_expression, "event_id": event_id,
+		"until_tick": tick + int(roundf(float(expression["hold_ms"]) * SimClock.TICK_HZ / 1000.0)),
+		"glyph_id": String(expression["glyph"]["glyph_id"]) if expression.has("glyph") else "",
+		"glyph_text": glyph_text, "light": String(expression["light"]),
+		"light_pattern": String(expression["light_pattern"])}
+	var b := beacon()
+	if b != null:
+		b.show_expression(glyph_text, String(expression["light"]), String(expression["light_pattern"]))
+	return "OK"
+
+
+## The expression being shown at `tick`, or {} if none.
+func active_expression(tick: int) -> Dictionary:
+	if _expression.is_empty() or tick > int(_expression["until_tick"]):
+		return {}
+	return _expression
+
+
+func beacon() -> Beacon:
+	if model != null and "beacon" in model:
+		return model.beacon
+	return null
 
 
 ## Say something out loud (LOCAL speech). Who hears it is decided by the observer filter at the
@@ -264,6 +307,11 @@ func horizontal_distance_to(p: Vector3) -> float:
 
 
 func _physics_process(delta: float) -> void:
+	if not _expression.is_empty() and world != null and world.clock.tick > int(_expression["until_tick"]):
+		_expression = {}
+		var b := beacon()
+		if b != null:
+			b.clear()
 	var dir := Vector3.ZERO
 	var wanted_speed := 0.0
 	match mode:

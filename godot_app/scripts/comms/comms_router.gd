@@ -56,6 +56,34 @@ func send_gesture(sender: Avatar, gesture: String, addressee_id = null, sign_tex
 	return _ok(shown["event_id"])
 
 
+## Show an expression from the catalog (EXPRESS, D-52) on the GESTURE channel: its gesture, glyph
+## and light together. Whoever perceives any part (VISUAL_GESTURE or VISUAL_EXPRESSION, same
+## event id) received it. Refused whole (CAPABILITY_DENIED) if the body lacks any part.
+func send_expression(sender: Avatar, expression_id: String, addressee_id = null) -> Dictionary:
+	var expression: Dictionary = world.expressions.get(expression_id, {})
+	if expression.is_empty():
+		return _reject(sender, "GESTURE", "INVALID_SCHEMA")
+	var event_id := world.next_event_id()
+	var outcome := sender.show_expression(expression, event_id)
+	if outcome != "OK":
+		return _reject(sender, "GESTURE", outcome)
+	var shown: Dictionary = sender.active_expression(world.clock.tick)
+	var obj := {"light": String(expression["light"]), "light_pattern": String(expression["light_pattern"])}
+	if expression.has("gesture"):
+		obj["gesture"] = String(expression["gesture"])
+	if expression.has("glyph"):
+		obj["glyph"] = String(expression["glyph"]["glyph_id"])
+		obj["display"] = BeaconRules.glyph_display(sender.body)
+	elif BeaconRules.light_display(sender.body) != "":
+		obj["display"] = BeaconRules.light_display(sender.body)
+	var comm := _comm("GESTURE", sender, addressee_id, "(%s)" % expression_id, event_id)
+	comm["expression"] = obj
+	_pending.append({"comm": comm, "event_id": event_id, "until_tick": int(shown["until_tick"]), "seen": {}})
+	world.journal_write("EXPRESSION_SHOWN", sender.avatar_id, {"avatar_id": sender.avatar_id, "event_id": event_id,
+		"expression_id": expression_id, "expression": obj, "hold_ms": int(expression["hold_ms"])})
+	return _ok(event_id)
+
+
 func send_local(sender: Avatar, text: String, addressee_id = null) -> Dictionary:
 	var event_id := sender.say(text, addressee_id)
 	if event_id == "":

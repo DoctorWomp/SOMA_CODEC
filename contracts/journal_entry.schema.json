@@ -564,7 +564,9 @@
             "GROUP_NOT_MEMBER",
             "PA_UNAUTHORIZED",
             "PRIVACY_SCOPE_DENIED",
-            "TARGET_UNKNOWN"
+            "TARGET_UNKNOWN",
+            "RATE_LIMITED",
+            "INVALID_SCHEMA"
           ]
         }
       }

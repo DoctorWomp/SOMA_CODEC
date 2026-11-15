@@ -545,17 +545,20 @@ So that G3 can add visor and light-strip glyphs and light states (docs/EXPRESSIO
 
 **Reproduced** in a cloud session (4 cores) by looping the test while 6 busy processes loaded the CPU: **6 of 12** runs failed. Each journal's SHA-256 matched exactly one value of the tick at which navigation became ready (tick 3, 4, 5 or 6), so that tick explained every difference.
 
-**Cause.** Godot 4.7 updates navigation maps and regions on a **background thread** by default (`navigation/world/map_use_async_iterations` and `region_use_async_iterations`). The world waits until every navigation map can answer queries before the demo (and any scenario) starts, and the background update finished one or two ticks earlier or later depending on CPU load. The demo then started on a different tick, which shifted every later tick in the journal and the phase of the 10 Hz observation samples. Jolt's job system and the avoidance callbacks were suspects but are not involved: with the fix, results are identical under the same load.
+**Cause 1 (the CI failure).** Godot 4.7 updates navigation maps and regions on a **background thread** by default (`navigation/world/map_use_async_iterations` and `region_use_async_iterations`). The world waits until every navigation map can answer queries before the demo (and any scenario) starts, and the background update finished one or two ticks earlier or later depending on CPU load. The demo then started on a different tick, which shifted every later tick in the journal and the phase of the 10 Hz observation samples.
+
+**Cause 2 (found while building stepped runs, G3a).** Godot's **multithreaded local-avoidance solver** (`navigation/avoidance/thread_model/avoidance_use_multiple_threads`, on by default) gives results that depend on thread timing: two robots crossing head-on ended a few hundredths of a millimetre to centimetres apart from one run to the next once the timing changed. A test that holds the world for a random number of frames at each sample (`test_hold_is_invisible_deterministic`) failed by tick 138; with single-threaded avoidance it passes. The demo was probably exposed too, more rarely, whenever avatars avoided each other. Jolt's job system was a suspect and is not involved: turning the physics server off while holding changed nothing, turning avoidance off made the difference disappear.
 
 **Fix.**
-- Both settings are **off** in `project.godot`, and every navigation map (each body size's map and the shared avoidance map) is also set to synchronous updates in code. Updates now land at the navigation server's next sync on the main thread, the same tick every run. Cost: the one-time map build blocks the main thread for a few milliseconds at start-up; maps do not change during a run.
+- All three settings are **off** in `project.godot`, and every navigation map (each body size's map and the shared avoidance map) is also set to synchronous updates in code. Map updates now land at the navigation server's next sync on the main thread, the same tick every run; avoidance is solved on one thread. Cost: the one-time map build blocks the main thread for a few milliseconds at start-up (maps do not change during a run); avoidance for a few dozen agents is cheap on one thread (to re-measure with the expo crowd at G6).
 - `RangeWorld.navigation_ready_tick` records when navigation became ready.
 
 **Regression guards.**
 - `test_journal_is_deterministic` runs the demo **three** times and also fails if navigation became ready on different ticks, with a message naming D-47. With the fix reverted it failed 3 of 4 loops under load, naming the ready ticks (for example `[4, 3, 5]`).
-- `test_project_settings` fails if either async setting is turned back on.
+- `test_project_settings` fails if any of the three settings is turned back on.
+- `test_hold_is_invisible_deterministic`: holding the world for 1 frame or a random 1–6 frames at every sample gives identical positions, tick for tick, while two robots avoid each other (D-48).
 - `tools/godot_check.py` gains `--repeat N` and `--cpu-load K`; CI runs every determinism test (`--filter determinis`) **5 times with 4 busy processes**.
-- Measured after the fix: 15 loops × 3 demo runs under the same load, all identical.
+- Measured after the fix: 15 loops × 3 demo runs under the same load, all identical; SB-04 run end to end in stepped mode with and without random 0–30 ms delays in the sidecar gives the same journal bytes.
 
 **Rule from now on:** anything that decides *when* something happens in a run must count world ticks, never wall-clock time or thread completion. If a future engine feature runs on a thread (pathfinding queries, baking), its result must be applied at a fixed tick.
 

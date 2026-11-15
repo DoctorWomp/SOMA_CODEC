@@ -18,8 +18,12 @@ Steps:
   4. Tests:   runs godot_app/tests/test_main.tscn at a fixed 60 frames per simulated second.
   5. Outputs: every journal line, observation packet and action result the tests wrote, and
               every message that crossed the Python link, is validated against contracts/ in
-              Python (D-41). No message to the sidecar may carry an NPC's private goal or any
-              evaluator-only value (T17).
+              Python (D-41). No message to the sidecar and no agent context may carry an NPC's
+              private goal or any evaluator-only value (T17).
+  6. Scenarios (G3a, D-48): SB-04 and SB-05 run end to end from their files through
+              tools/run_scenario.py's runner, in stepped mode. SB-04 runs twice, the second
+              time with random delays in the sidecar, and must write the same journal bytes.
+              Runs with --filter only if the filter is part of "scenario_determinism".
 
 For the link tests, two sidecars run on 127.0.0.1 with a fresh session token for the duration
 of the Godot tests: a normal one (which drops the connection once, to test reconnecting) and a
@@ -124,7 +128,11 @@ EXPECTED_ARTIFACTS = ("sampling.jsonl", "sampling.observations.json", "demo_a.js
 SIDECARS = {
     "RANGE_LINK_PORT": ["--agent", "robot_legged=probe", "--agent", "robot_quadruped=greeter", "--drop-after", "25"],
     "RANGE_LINK_PORT_SLOW": ["--agent", "robot_legged=greeter", "--delay-ms", "1500"],
+    # G3a: agent runtimes for SB-04 with a fake model that takes 1.5 s per call (T25, T27).
+    "RANGE_LINK_PORT_MODEL": ["--scenario", "SB04_POLITE_BID", "--model", "fake-slow:1500"],
 }
+SIDECAR_FOLDERS = {"RANGE_LINK_PORT": "sidecar", "RANGE_LINK_PORT_SLOW": "sidecar_slow",
+                   "RANGE_LINK_PORT_MODEL": "sidecar_model"}
 
 
 def private_strings() -> list[str]:
@@ -177,6 +185,9 @@ def validate_artifacts(folder: Path, require_all: bool = True) -> tuple[int, lis
             for p in contracts.problems("action_result", result)[:3]:
                 problems.append(f"{path.name} result {index}: {p}")
     secrets_list = private_strings()
+    c, found = check_agent_records(folder)
+    checked += c
+    problems += found
     for path in sorted(folder.glob("sidecar*/sidecar_*.jsonl")):
         if "deliberately_invalid" in path.name:
             continue
@@ -197,11 +208,34 @@ def validate_artifacts(folder: Path, require_all: bool = True) -> tuple[int, lis
     return checked, problems
 
 
+def check_agent_records(folder: Path) -> tuple[int, list[str]]:
+    """Decision records match their contract; no assembled context carries private text (T17)."""
+    from range_service import contracts
+
+    checked, problems = 0, []
+    secrets_list = private_strings()
+    for path in sorted(folder.glob("**/decision_records.jsonl")):
+        rel = path.relative_to(folder).as_posix()
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            checked += 1
+            for p in contracts.problems("decision_record", json.loads(line))[:3]:
+                problems.append(f"{rel} line {number}: {p}")
+    for path in sorted(folder.glob("**/prompts.jsonl")):
+        rel = path.relative_to(folder).as_posix()
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            checked += 1
+            prompt = json.loads(line)["prompt"]
+            for secret in secrets_list:
+                if secret in prompt:
+                    problems.append(f"{rel} line {number}: private text in an agent's context (T17): {secret[:40]!r}")
+    return checked, problems
+
+
 def start_sidecars(record_root: Path, token: str) -> tuple[list[subprocess.Popen], dict[str, str]]:
     """Start the test sidecars; returns the processes and the environment for Godot."""
     procs, env = [], {}
     for env_name, extra in SIDECARS.items():
-        folder = record_root / ("sidecar" if env_name == "RANGE_LINK_PORT" else "sidecar_slow")
+        folder = record_root / SIDECAR_FOLDERS[env_name]
         proc = subprocess.Popen([sys.executable, "-m", "range_service.link", "--record", str(folder), *extra],
                                 cwd=REPO, env=dict(os.environ, RANGE_SESSION_TOKEN=token),
                                 stdout=subprocess.PIPE, text=True)
@@ -299,6 +333,10 @@ def main(argv: list[str] | None = None) -> int:
             result = run_tests(godot, test_filter)
             if result != EXIT_PASSED:
                 return result
+            if not test_filter or test_filter in "scenario_determinism":
+                result = scenario_checks(godot)
+                if result != EXIT_PASSED:
+                    return result
     finally:
         _stop_cpu_load(load_procs)
     return EXIT_PASSED
@@ -333,6 +371,71 @@ def _stop_cpu_load(procs: list[multiprocessing.Process]) -> None:
         proc.join(timeout=10)
 
 
+def _scenario_run(godot: str, scenario_id: str, out: Path, jitter_ms: int = 0):
+    import asyncio
+
+    from range_service.eval.runner import RunOptions, run_scenario
+    return asyncio.run(run_scenario(RunOptions(scenario_id, godot, out_dir=out, jitter_ms=jitter_ms, timeout_s=600)))
+
+
+def scenario_checks(godot: str) -> int:
+    """Step 6: SB-04 and SB-05 end to end; SB-04 twice (random sidecar delays the second time)."""
+    from range_service import contracts
+    from range_service.eval.runner import RunError, read_journal
+
+    root = Path(tempfile.mkdtemp(prefix="scenario_runs_"))
+    problems: list[str] = []
+    try:
+        runs = {"SB04_a": ("SB04_POLITE_BID", 0), "SB04_b": ("SB04_POLITE_BID", 25), "SB05": ("SB05_RAMP_VS_STAIRS", 0)}
+        results = {}
+        for name, (scenario_id, jitter) in runs.items():
+            try:
+                results[name] = _scenario_run(godot, scenario_id, root / name, jitter)
+            except RunError as exc:
+                print(f"  FAIL  scenario {scenario_id}: {exc}")
+                return EXIT_FAILED
+        for name, r in results.items():
+            s = r.summary
+            if r.exit_code != 0 or r.godot_errors or s["sidecar_problems"] or s["step_timeouts"]:
+                problems.append(f"{name}: exit {r.exit_code}, errors {r.godot_errors[:2]}, sidecar {s['sidecar_problems'][:2]}, "
+                                f"step timeouts {s['step_timeouts']}")
+            if s["tape"]["refused"]:
+                problems.append(f"{name}: tape events refused: {s['tape']['refused'][:2]}")
+            journal = read_journal(r.run_dir / "journal.jsonl")
+            for number, entry in enumerate(journal, start=1):
+                for p in contracts.problems("journal_entry", entry)[:2]:
+                    problems.append(f"{name} journal line {number}: {p}")
+            manifest = json.loads((r.run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+            problems += [f"{name} run manifest: {p}" for p in contracts.problems("run_manifest", manifest)[:2]]
+            _, found = check_agent_records(r.run_dir)
+            problems += [f"{name}: {p}" for p in found]
+        a, b = results["SB04_a"], results["SB04_b"]
+        if a.journal_sha256 != b.journal_sha256:
+            problems.append(f"SB-04 is not deterministic: same seed, different journals ({a.journal_sha256[:12]} vs "
+                            f"{b.journal_sha256[:12]}) with random sidecar delays in the second run (D-48)")
+        sb04 = a.summary
+        if sb04["actions_by_agent"].get("robot_r", {}).keys() - {"OK"}:
+            problems.append(f"SB-04: Robot R had refused actions: {sb04['actions_by_agent']['robot_r']}")
+        if sb04["agents"]["robot_r"]["open_commitments"] != 0 or not sb04["expressions_shown"]:
+            problems.append("SB-04: Robot R should keep its promise to Y and show expressions")
+        states = {st["avatar_id"]: st for st in results["SB05"].summary["final_states"]}
+        for robot in ("robot_legged", "robot_quadruped", "robot_wheeled"):
+            if states.get(robot, {}).get("y", 0) < 0.5:
+                problems.append(f"SB-05: {robot} did not reach the platform ({states.get(robot)})")
+        if "platform_stairs" in states.get("robot_wheeled", {}).get("links_used", ["platform_stairs"]):
+            problems.append("SB-05: the wheeled humanoid used the stairs")
+        if problems:
+            print(f"  FAIL  {len(problems)} problem(s) in the scenario runs:")
+            for line in problems[:20]:
+                print(f"        {line}")
+            return EXIT_FAILED
+        print(f"  PASS  scenarios: SB-04 deterministic (journal {a.journal_sha256[:12]}, twice, one with random "
+              f"sidecar delays); SB-05 robots on the platform by the links their bodies allow")
+        return EXIT_PASSED
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def run_tests(godot: str, test_filter: str) -> int:
     """Steps 4 and 5: run the Godot test scene once and validate what it wrote."""
     artifacts = Path(tempfile.mkdtemp(prefix="godot_artifacts_"))
@@ -364,6 +467,10 @@ def run_tests(godot: str, test_filter: str) -> int:
         for line in out.strip().splitlines()[-20:]:
             print(f"        {line}")
         return EXIT_FAILED
+    if test_filter and code == 0 and not report.passed and not report.failed and not report.errors:
+        print(f"  no Godot test name contains {test_filter!r}")
+        shutil.rmtree(artifacts, ignore_errors=True)
+        return EXIT_PASSED
     if code != 0 or not report.ok:
         print(f"  {len(report.passed)} passed, {len(report.failed)} failed, {len(report.errors)} error line(s)")
         shutil.rmtree(artifacts, ignore_errors=True)
