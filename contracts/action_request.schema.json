@@ -258,6 +258,22 @@
       "if": {
         "properties": {
           "action": {
+            "const": "EXPRESS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "args": {
+            "$ref": "#/$defs/args_express"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
             "const": "NO_OP"
           }
         }
@@ -535,6 +551,22 @@
       "properties": {
         "group_id": {
           "$ref": "common.schema.json#/$defs/id"
+        }
+      }
+    },
+    "args_express": {
+      "description": "Show an expression from the catalog: its gesture, glyph and light together (D-14, EXPRESSION_PRINCIPLES §1). The host refuses it if the body lacks any part.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expression_id"
+      ],
+      "properties": {
+        "expression_id": {
+          "$ref": "common.schema.json#/$defs/expression_id"
+        },
+        "target_id": {
+          "$ref": "common.schema.json#/$defs/nullable_id"
         }
       }
     }

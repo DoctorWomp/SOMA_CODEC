@@ -28,9 +28,25 @@ from range_service.configs import CONFIGS_DIR, load_and_check  # noqa: E402
 
 GODOT_DATA_DIR = REPO / "godot_app" / "data"
 
-# Config folders Godot reads at G1. Others (personas, scenarios, presets) are
-# Python-side until the transport arrives (G2-G3).
-EXPORTED_KINDS = ("maps", "bodies")
+# Config folders Godot reads. Personas, presets and directives stay on the Python side: Godot
+# never needs a persona (private goals included) or a directive.
+EXPORTED_KINDS = ("maps", "bodies", "expressions", "scenarios")
+
+# Scenarios are exported as a world-only view (G3a, D-48): what the host needs to build and run
+# the world. Evaluator-only labels, measures and personas never reach Godot.
+SCENARIO_WORLD_FIELDS = ("schema_version", "scenario_id", "title", "map", "default_seed", "tick_hz",
+                         "duration_ticks", "events", "pa_operators")
+CAST_WORLD_FIELDS = ("body", "controller", "spawn")
+
+
+def world_view(kind: str, data: dict[str, Any]) -> dict[str, Any]:
+    """The part of a config Godot may see."""
+    if kind != "scenarios":
+        return data
+    view = {k: data[k] for k in SCENARIO_WORLD_FIELDS if k in data}
+    view["cast"] = {avatar_id: {k: entry[k] for k in CAST_WORLD_FIELDS}
+                    for avatar_id, entry in data["cast"].items()}
+    return view
 
 
 def render(kind: str, source_rel: str, data: dict[str, Any]) -> str:
@@ -53,7 +69,7 @@ def expected_files(config_dir: Path = CONFIGS_DIR) -> tuple[dict[Path, str], lis
     for kind in EXPORTED_KINDS:
         for config_id, data in sorted(config_set.items[kind].items()):
             source_rel = config_set.files[(kind, config_id)]
-            out[GODOT_DATA_DIR / kind / f"{config_id}.json"] = render(kind, source_rel, data)
+            out[GODOT_DATA_DIR / kind / f"{config_id}.json"] = render(kind, source_rel, world_view(kind, data))
     return out, []
 
 

@@ -1,0 +1,32 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/scenarios/SB05_RAMP_VS_STAIRS.yaml",
+  "kind": "scenarios",
+  "data": {
+    "schema_version": "1.0",
+    "scenario_id": "SB05_RAMP_VS_STAIRS",
+    "title": "Ramp vs stairs",
+    "map": "sandbox_flats",
+    "default_seed": 505,
+    "tick_hz": 10,
+    "duration_ticks": 600,
+    "events": [],
+    "cast": {
+      "robot_quadruped": {
+        "body": "quadruped",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_stairs_side_1"
+      },
+      "robot_legged": {
+        "body": "legged_humanoid",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_stairs_side_2"
+      },
+      "robot_wheeled": {
+        "body": "wheeled_humanoid",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_stairs_side_3"
+      }
+    }
+  }
+}

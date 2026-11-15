@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/expression.schema.json",
+  "title": "Expression catalog entry",
+  "description": "configs/expressions/*.yaml (EXPRESSION_PRINCIPLES §1, D-14, D-52). One expression a robot can show: an optional gesture, an optional glyph (visor text for humanoids, a simpler symbol for the quadruped light strip) and a light state from the public palette. Only channels a real chassis has.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "expression_id",
+    "meaning",
+    "light",
+    "light_pattern",
+    "hold_ms"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "expression_id": {
+      "$ref": "common.schema.json#/$defs/expression_id"
+    },
+    "meaning": {
+      "description": "What it shows, in words (the stance shown, never a claimed feeling).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "gesture": {
+      "$ref": "common.schema.json#/$defs/gesture"
+    },
+    "glyph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "glyph_id"
+      ],
+      "minProperties": 2,
+      "properties": {
+        "glyph_id": {
+          "description": "Shared id: the same glyph_id must have the same texts in every file.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,31}$"
+        },
+        "visor": {
+          "description": "Text on a humanoid's visor (needs the FACE channel).",
+          "type": "string",
+          "pattern": "^[\\x20-\\x7E]{1,8}$"
+        },
+        "strip": {
+          "description": "Symbol on a quadruped's light strip (needs the LIGHT channel).",
+          "type": "string",
+          "pattern": "^[\\x20-\\x7E]{1,5}$"
+        }
+      }
+    },
+    "light": {
+      "$ref": "common.schema.json#/$defs/light_state"
+    },
+    "light_pattern": {
+      "description": "SLOW_PULSE is 0.5 Hz; nothing flashes faster than 3 Hz (D-14).",
+      "enum": [
+        "STEADY",
+        "SLOW_PULSE"
+      ]
+    },
+    "hold_ms": {
+      "description": "How long the expression is shown before the display returns to off.",
+      "type": "integer",
+      "minimum": 500,
+      "maximum": 10000
+    }
+  }
+}

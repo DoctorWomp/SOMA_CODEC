@@ -1,0 +1,18 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/thank_you_light.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "thank_you_light",
+    "meaning": "Thank you (for bodies that cannot bow).",
+    "glyph": {
+      "glyph_id": "grateful",
+      "visor": "^-^",
+      "strip": "^ ^"
+    },
+    "light": "CONSIDERED",
+    "light_pattern": "STEADY",
+    "hold_ms": 3000
+  }
+}

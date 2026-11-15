@@ -1,0 +1,9 @@
+# Expression catalog entry (EXPRESSION_PRINCIPLES §1, D-14, D-52). The light is always paired
+# with words or a gesture by the agent; nothing flashes faster than 3 Hz.
+schema_version: "1.0"
+expression_id: excuse_me_light
+meaning: "Excuse me, passing (for bodies without a hand)."
+glyph: {glyph_id: passing, visor: "->", strip: "->"}
+light: CAUTION
+light_pattern: STEADY
+hold_ms: 3000

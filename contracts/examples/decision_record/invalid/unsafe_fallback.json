@@ -1,0 +1,125 @@
+{
+  "schema_version": "1.0",
+  "decision_id": "dec_robot_r_000001",
+  "agent_id": "robot_r",
+  "based_on_tick_id": 120,
+  "cognition_level": "C2",
+  "tier": "FOCAL",
+  "policy": "MODEL",
+  "triggers": [
+    "ADDRESSED_SPEECH"
+  ],
+  "context": {
+    "tokenizer": "approx_chars_v1",
+    "budget_tokens": 3750,
+    "total_tokens": 1210,
+    "prompt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sections": [
+      {
+        "section": "GUARDRAILS",
+        "tokens": 100,
+        "budget": 400,
+        "items": 1,
+        "cut_items": 0,
+        "never_cut": true
+      },
+      {
+        "section": "IDENTITY",
+        "tokens": 100,
+        "budget": 400,
+        "items": 1,
+        "cut_items": 0,
+        "never_cut": true
+      },
+      {
+        "section": "COMMITMENTS",
+        "tokens": 100,
+        "budget": 400,
+        "items": 1,
+        "cut_items": 0,
+        "never_cut": true
+      },
+      {
+        "section": "SETTING",
+        "tokens": 100,
+        "budget": 400,
+        "items": 1,
+        "cut_items": 0,
+        "never_cut": false
+      },
+      {
+        "section": "FACTS",
+        "tokens": 100,
+        "budget": 400,
+        "items": 1,
+        "cut_items": 0,
+        "never_cut": false
+      },
+      {
+        "section": "EPISODES",
+        "tokens": 100,
+        "budget": 400,
+        "items": 1,
+        "cut_items": 0,
+        "never_cut": false
+      },
+      {
+        "section": "CONVERSATION",
+        "tokens": 100,
+        "budget": 400,
+        "items": 1,
+        "cut_items": 0,
+        "never_cut": false
+      },
+      {
+        "section": "OBSERVATIONS",
+        "tokens": 100,
+        "budget": 400,
+        "items": 1,
+        "cut_items": 0,
+        "never_cut": false
+      },
+      {
+        "section": "DECISION",
+        "tokens": 100,
+        "budget": 400,
+        "items": 1,
+        "cut_items": 0,
+        "never_cut": true
+      }
+    ],
+    "compression_steps": [
+      "DEDUPLICATE",
+      "EXPIRE"
+    ]
+  },
+  "model_calls": [
+    {
+      "call_id": "call_robot_r_000001",
+      "attempt": 0,
+      "provider": "FAKE",
+      "model_id": "fake-demo-v1",
+      "prompt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "response_text": "{\"action\": \"WAIT\", \"args\": {\"duration_ms\": 1000}}",
+      "outcome": "VALID",
+      "error": null,
+      "deadline_ms": 4000,
+      "timings": {
+        "queue_ms": 0,
+        "prefill_ms": null,
+        "generation_ms": null,
+        "total_ms": 3
+      },
+      "prompt_tokens": 1210,
+      "cached_tokens": null,
+      "generated_tokens": null
+    }
+  ],
+  "action_request_ids": [
+    "act_robot_r_0001"
+  ],
+  "fallback": {
+    "action": "MOVE_TO",
+    "reason": "TIMEOUT"
+  }
+}

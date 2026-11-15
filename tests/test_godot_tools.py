@@ -20,8 +20,31 @@ def test_exported_godot_data_is_up_to_date():
 def test_export_covers_the_map_and_every_body():
     expected, _ = export_godot_data.expected_files()
     names = sorted(p.relative_to(export_godot_data.GODOT_DATA_DIR).as_posix() for p in expected)
-    assert names == ["bodies/human_walker.json", "bodies/legged_humanoid.json", "bodies/quadruped.json",
-                     "bodies/quadruped_arm.json", "bodies/wheeled_humanoid.json", "maps/sandbox_flats.json"]
+    assert [n for n in names if not n.startswith("expressions/")] == [
+        "bodies/human_walker.json", "bodies/legged_humanoid.json", "bodies/quadruped.json",
+        "bodies/quadruped_arm.json", "bodies/wheeled_humanoid.json", "maps/sandbox_flats.json",
+        "scenarios/SB04_POLITE_BID.json", "scenarios/SB05_RAMP_VS_STAIRS.json"]
+    assert len([n for n in names if n.startswith("expressions/")]) == len(list((export_godot_data.REPO / "configs" / "expressions").glob("*.yaml")))
+
+
+def test_scenario_exports_are_world_only():
+    """Godot gets what it needs to run the world, never evaluator labels, measures or personas (D-48)."""
+    from range_service.configs import load_and_check
+
+    config_set, _ = load_and_check()
+    expected, _ = export_godot_data.expected_files()
+    for scenario_id, scenario in config_set.items["scenarios"].items():
+        text = expected[export_godot_data.GODOT_DATA_DIR / "scenarios" / f"{scenario_id}.json"]
+        data = json.loads(text)["data"]
+        assert "evaluator_only" not in data and "measure" not in data
+        for entry in data["cast"].values():
+            assert set(entry) == {"body", "controller", "spawn"}
+        for value in scenario["evaluator_only"].values():
+            if isinstance(value, str):
+                assert value not in text
+        for persona in config_set.items["personas"].values():
+            if persona["private_goal"]:
+                assert persona["private_goal"] not in text
 
 
 def test_export_is_deterministic_and_wraps_the_config_unchanged():

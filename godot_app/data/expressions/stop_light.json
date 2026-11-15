@@ -1,0 +1,18 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/stop_light.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "stop_light",
+    "meaning": "Stop: a firm boundary (for bodies without a hand).",
+    "glyph": {
+      "glyph_id": "stop",
+      "visor": "STOP",
+      "strip": "!"
+    },
+    "light": "STOP",
+    "light_pattern": "STEADY",
+    "hold_ms": 3000
+  }
+}

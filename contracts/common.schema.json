@@ -107,6 +107,11 @@
         }
       }
     },
+    "expression_id": {
+      "description": "Id of an expression in the expression catalog (configs/expressions/, G3a).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,31}$"
+    },
     "id": {
       "description": "Stable identifier: letters, digits, '_', '-', '.', ':'.",
       "type": "string",
@@ -200,7 +205,7 @@
       ]
     },
     "action_name": {
-      "description": "Structured action vocabulary (Blueprint §10.3).",
+      "description": "Structured action vocabulary (Blueprint §10.3), plus EXPRESS (an expression from the catalog, G3a).",
       "enum": [
         "MOVE_TO",
         "LOOK_AT",
@@ -217,7 +222,8 @@
         "ACCEPT_GROUP",
         "DECLINE_GROUP",
         "LEAVE_GROUP",
-        "NO_OP"
+        "NO_OP",
+        "EXPRESS"
       ]
     },
     "layer_mask": {

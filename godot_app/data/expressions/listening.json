@@ -1,0 +1,18 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/listening.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "listening",
+    "meaning": "Listening to you.",
+    "glyph": {
+      "glyph_id": "attentive",
+      "visor": "o_o",
+      "strip": "o o"
+    },
+    "light": "CALM",
+    "light_pattern": "STEADY",
+    "hold_ms": 4000
+  }
+}

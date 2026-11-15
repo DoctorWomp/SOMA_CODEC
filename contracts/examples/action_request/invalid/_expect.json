@@ -10,5 +10,7 @@
   "unknown_arg": "additionalProperties",
   "unknown_disclosure_scope": "enum",
   "unknown_field": "additionalProperties",
-  "wait_too_long": "maximum"
+  "wait_too_long": "maximum",
+  "express_unknown_arg": "additionalProperties",
+  "express_bad_id": "pattern"
 }

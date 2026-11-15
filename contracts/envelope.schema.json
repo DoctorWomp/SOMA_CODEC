@@ -32,7 +32,8 @@
         "comms.event",
         "director.intervention",
         "link.hello",
-        "link.heartbeat"
+        "link.heartbeat",
+        "link.step"
       ]
     },
     "tick_id": {
@@ -199,11 +200,27 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "link.step"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/link_step"
+          }
+        }
+      }
     }
   ],
   "$defs": {
     "link_hello": {
-      "description": "Sent by Godot after connecting: which agents this session controls and the run's timing. The session token is never in an envelope (D-29).",
+      "description": "Sent by Godot after connecting: which agents this session controls and the run's timing. The sidecar answers with a link.hello listing the agents it runs. The session token is never in an envelope (D-29).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -237,6 +254,13 @@
         },
         "map_id": {
           "$ref": "common.schema.json#/$defs/id"
+        },
+        "run_mode": {
+          "description": "STEPPED: Godot holds the world after each sample until the sidecar sends link.step AGENTS_DONE for it. LIVE (default): the world never waits (D-44). See D-48.",
+          "enum": [
+            "LIVE",
+            "STEPPED"
+          ]
         }
       }
     },
@@ -244,6 +268,26 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {}
+    },
+    "link_step": {
+      "description": "Stepped runs (D-48): Godot sends SAMPLE_SENT after the observation packets of one sample; the sidecar sends AGENTS_DONE once every agent has answered that sample.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_tick_id",
+        "phase"
+      ],
+      "properties": {
+        "sample_tick_id": {
+          "$ref": "common.schema.json#/$defs/tick"
+        },
+        "phase": {
+          "enum": [
+            "SAMPLE_SENT",
+            "AGENTS_DONE"
+          ]
+        }
+      }
     }
   }
 }

@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "directive_id": "expo_assistant",
+  "title": "Expo Assistant",
+  "default_for_roles": [
+    "expo_assistant"
+  ],
+  "allows_not_engaging": true
+}

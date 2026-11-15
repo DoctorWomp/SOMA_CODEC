@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "expression_id": "listening_light",
+  "meaning": "Listening.",
+  "light": "CALM",
+  "light_pattern": "SLOW_PULSE",
+  "hold_ms": 4000
+}

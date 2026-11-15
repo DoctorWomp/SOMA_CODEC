@@ -1,0 +1,7 @@
+# Directive template (INTERACTION_MODES §8, D-53). Guardrails are added by the runtime and are
+# not part of the template; a template cannot change them. Choosing not to engage is always allowed.
+schema_version: "1.0"
+directive_id: quiet_observer
+title: Quiet Observer
+directive: "Observe and learn the venue; engage only if someone addresses you."
+allows_not_engaging: true
