@@ -194,6 +194,9 @@ func test_project_settings() -> String:
 	var engine_name := String(ProjectSettings.get_setting("physics/3d/physics_engine"))
 	if engine_name != "Jolt Physics":
 		return "3D physics engine is '%s', expected 'Jolt Physics' (D-33)" % engine_name
+	for setting in ["navigation/world/map_use_async_iterations", "navigation/world/region_use_async_iterations"]:
+		if bool(ProjectSettings.get_setting(setting)):
+			return "%s must be off: background navigation updates make runs differ (D-47)" % setting
 	if int(ProjectSettings.get_setting("application/run/max_fps")) != 60:
 		return "frame rate must be capped at 60 (ART_DIRECTION §3)"
 	# D-38: every GDScript warning that is on by default is an error, so none can slip in.
@@ -1100,10 +1103,14 @@ func test_sampling_and_packets() -> String:
 	return ""
 
 
-## Two runs of the demo with the same seed write the same journal, byte for byte (T28 groundwork).
+## Three runs of the demo with the same seed write the same journal, byte for byte (T28
+## groundwork). Navigation must become ready on the same tick every time: it used to depend on
+## a background thread, so under CPU load a run sometimes started a tick late (D-47). CI also
+## runs this test repeatedly under CPU load (tools/godot_check.py --repeat, --cpu-load).
 func test_journal_is_deterministic() -> String:
 	var digests: Array[String] = []
-	for run in ["demo_a", "demo_b"]:
+	var ready_ticks: Array[int] = []
+	for run in ["demo_a", "demo_b", "demo_c"]:
 		var main: Node = load("res://scenes/main.tscn").instantiate()
 		main.journal_path = artifacts_dir.path_join(run + ".jsonl")
 		main.run_seed = 11
@@ -1115,10 +1122,13 @@ func test_journal_is_deterministic() -> String:
 				break
 		if main.demo == null or not main.demo.finished:
 			return "the demo did not finish in %s" % run
+		ready_ticks.append(main.world.navigation_ready_tick)
 		digests.append(main.world.end_run())
 		await _cleanup()
-	if digests[0] == "" or digests[0] != digests[1]:
-		return "two runs with the same seed gave different journals (%s vs %s)" % digests
+	if ready_ticks[0] < 0 or ready_ticks.count(ready_ticks[0]) != ready_ticks.size():
+		return "navigation became ready on different ticks %s: map updates must not depend on thread timing (D-47)" % [ready_ticks]
+	if digests[0] == "" or digests.count(digests[0]) != digests.size():
+		return "runs with the same seed gave different journals %s" % [digests]
 	var kinds := {}
 	for line in FileAccess.get_file_as_string(artifacts_dir.path_join("demo_a.jsonl")).split("\n", false):
 		kinds[JSON.parse_string(line)["kind"]] = true

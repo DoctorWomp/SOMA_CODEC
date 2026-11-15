@@ -143,3 +143,24 @@ def test_godot_outputs_are_checked_against_the_contracts(tmp_path):
     assert any("run.jsonl line 2" in p and "private_goal" in p for p in problems)
     assert any("x.observations.json packet 0" in p for p in problems)
     assert any("sampling.jsonl was not written" in p for p in problems)
+
+
+def test_repeat_and_cpu_load_options_parse():
+    # D-47: CI runs the determinism tests several times under CPU load.
+    assert godot_check._int_option(["--repeat", "5"], "--repeat", 1) == 5
+    assert godot_check._int_option([], "--repeat", 1) == 1
+    assert godot_check._int_option(["--cpu-load", "-3"], "--cpu-load", 0) == 0
+    with pytest.raises(SystemExit):
+        godot_check._int_option(["--repeat"], "--repeat", 1)
+
+
+def test_ci_runs_the_determinism_tests_repeatedly_under_load():
+    workflow = (godot_check.REPO / ".github" / "workflows" / "check.yml").read_text(encoding="utf-8")
+    assert "--filter determinis --repeat 5 --cpu-load 4" in workflow
+
+
+def test_busy_processes_start_and_stop():
+    procs = godot_check._start_cpu_load(2)
+    assert all(p.is_alive() for p in procs)
+    godot_check._stop_cpu_load(procs)
+    assert not any(p.is_alive() for p in procs)

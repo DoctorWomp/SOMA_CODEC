@@ -50,10 +50,11 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-40 | Hearing: local speech | APPROVED (owner, 2026-11-15) |
 | D-41 | Godot event journal and contract checks of Godot output | APPROVED (owner, 2026-11-15) |
 | D-42 | Shared local avoidance | APPROVED (owner, 2026-11-15) |
-| D-43 | COMMS router: channels, groups and PA | PROPOSED (G2b, 2026-11-15) |
-| D-44 | The Godot ↔ Python link and the action gate | PROPOSED (G2b, 2026-11-15) |
-| D-45 | The disclosure gate in practice | PROPOSED (G2b, 2026-11-15) |
-| D-46 | Expression-ready gesture events | PROPOSED (G2b, 2026-11-15) |
+| D-43 | COMMS router: channels, groups and PA | APPROVED (owner, 2026-11-15) |
+| D-44 | The Godot ↔ Python link and the action gate | APPROVED (owner, 2026-11-15) |
+| D-45 | The disclosure gate in practice | APPROVED (owner, 2026-11-15) |
+| D-46 | Expression-ready gesture events | APPROVED (owner, 2026-11-15) |
+| D-47 | Deterministic runs: navigation updates on the main thread | PROPOSED (G3a, 2026-11-15) |
 
 ---
 
@@ -498,7 +499,7 @@ What an avatar sees is computed in Godot from world state through its own sensor
 Paths are planned per body size (D-37), but every avatar must steer around every other. Godot's avoidance works per map, so each avatar also has an **avoidance agent on one shared avoidance map** (no navigation mesh, just agents): radius = turning radius + 0.15 m, neighbours within 5 m, a 2 s time horizon. While navigating, an avatar follows the safe velocity returned for the previous tick (a one-tick delay), still within its own speed, acceleration and turn limits; idle avatars count as obstacles. Direct drive (used by collision tests) bypasses avoidance. Measured in tests: a wheeled humanoid and a quadruped crossing head-on and at right angles both arrive without touching; the demo has no contacts.
 
 ## D-43 — COMMS router: channels, groups and PA
-**Status:** PROPOSED (G2b, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-15). Proposed at G2b.
 
 The four channels (D-07, Blueprint §8) sit on top of the G2a senses, in Godot (`scripts/comms/comms_router.gd`):
 
@@ -510,7 +511,7 @@ The four channels (D-07, Blueprint §8) sit on top of the G2a senses, in Godot (
 - Every avatar is assumed to carry a messaging device; a body flag for "has a device" can come later if a scenario needs it.
 
 ## D-44 — The Godot ↔ Python link and the action gate
-**Status:** PROPOSED (G2b, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-15). Proposed at G2b.
 
 - **Shape:** the Python sidecar is a WebSocket **server bound to 127.0.0.1 only**; Godot connects to it (later, Godot's launcher starts the sidecar first, D-21). One client at a time.
 - **Session token:** a fresh random token per run, passed to both programs through the `RANGE_SESSION_TOKEN` environment variable (never on a command line, in an envelope or in a log, D-29). Godot sends it in the `X-Range-Session-Token` handshake header. A missing or wrong token gets **no data**: the sidecar closes the connection at once with close code **4401** (a second client: **4409**). Close codes are used instead of an HTTP 401 because Godot reports a failed HTTP handshake as an engine error. Tokens shorter than 16 characters are not accepted.
@@ -521,7 +522,7 @@ The four channels (D-07, Blueprint §8) sit on top of the G2a senses, in Godot (
 - **Windows Firewall:** binding to 127.0.0.1 needs no firewall rule; if Windows asks anyway, allowing on private networks or cancelling are both safe.
 
 ## D-45 — The disclosure gate in practice
-**Status:** PROPOSED (G2b, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-15). Proposed at G2b.
 
 D-12 made concrete (`range_service/comms/disclosure.py`; the host repeats the check in Godot):
 
@@ -533,7 +534,28 @@ D-12 made concrete (`range_service/comms/disclosure.py`; the host repeats the ch
 - **Contract additions** (backward-compatible): `memory_item` gains optional `shared_by` and `group_id`; `action_request` `SPEAK` gains optional `disclosure_scope`.
 
 ## D-46 — Expression-ready gesture events
-**Status:** PROPOSED (G2b, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-15). Proposed at G2b.
 
 So that G3 can add visor and light-strip glyphs and light states (docs/EXPRESSION_PRINCIPLES.md) without an incompatible contract change, contracts now define one **`expression`** object (`common.schema.json`): `gesture`, `glyph` (an id from the expression catalog G3 will add), `light` (the D-14 states `OFF`, `NEUTRAL`, `WARM`, `CALM`, `CONSIDERED`, `CAUTION`, `STOP`), `light_pattern` (`STEADY` or `SLOW_PULSE`, never faster than 3 Hz), `display` (`VISOR`, `LIGHT_STRIP`, `EAR_PODS`, `BODY`) and `sign_text`; at least one of gesture, glyph or light. It is used by GESTURE-channel `comms_event`s and by a new observation kind **`VISUAL_EXPRESSION`**. G2b emits gestures only (as `VISUAL_GESTURE`, unchanged); G3 starts emitting `VISUAL_EXPRESSION` with glyphs and light, filling fields that already exist. There is no `STROBE` or color-hue field: lights carry only the six public states.
+
+## D-47 — Deterministic runs: navigation updates on the main thread
+**Status:** PROPOSED (G3a, 2026-11-15). A bug fix; recorded because it changes an engine setting.
+
+**Symptom.** After the G2b merge, CI's Python 3.14 job failed `test_journal_is_deterministic` once ("two runs with the same seed gave different journals"); it passed on re-run and in 16 local runs.
+
+**Reproduced** in a cloud session (4 cores) by looping the test while 6 busy processes loaded the CPU: **6 of 12** runs failed. Each journal's SHA-256 matched exactly one value of the tick at which navigation became ready (tick 3, 4, 5 or 6), so that tick explained every difference.
+
+**Cause.** Godot 4.7 updates navigation maps and regions on a **background thread** by default (`navigation/world/map_use_async_iterations` and `region_use_async_iterations`). The world waits until every navigation map can answer queries before the demo (and any scenario) starts, and the background update finished one or two ticks earlier or later depending on CPU load. The demo then started on a different tick, which shifted every later tick in the journal and the phase of the 10 Hz observation samples. Jolt's job system and the avoidance callbacks were suspects but are not involved: with the fix, results are identical under the same load.
+
+**Fix.**
+- Both settings are **off** in `project.godot`, and every navigation map (each body size's map and the shared avoidance map) is also set to synchronous updates in code. Updates now land at the navigation server's next sync on the main thread, the same tick every run. Cost: the one-time map build blocks the main thread for a few milliseconds at start-up; maps do not change during a run.
+- `RangeWorld.navigation_ready_tick` records when navigation became ready.
+
+**Regression guards.**
+- `test_journal_is_deterministic` runs the demo **three** times and also fails if navigation became ready on different ticks, with a message naming D-47. With the fix reverted it failed 3 of 4 loops under load, naming the ready ticks (for example `[4, 3, 5]`).
+- `test_project_settings` fails if either async setting is turned back on.
+- `tools/godot_check.py` gains `--repeat N` and `--cpu-load K`; CI runs every determinism test (`--filter determinis`) **5 times with 4 busy processes**.
+- Measured after the fix: 15 loops × 3 demo runs under the same load, all identical.
+
+**Rule from now on:** anything that decides *when* something happens in a run must count world ticks, never wall-clock time or thread completion. If a future engine feature runs on a thread (pathfinding queries, baking), its result must be applied at a fixed tick.
 

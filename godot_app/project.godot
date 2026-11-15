@@ -141,6 +141,13 @@ hud_toggle={
 3d_navigation/layer_2="ramp"
 3d_navigation/layer_3="stairs"
 
+[navigation]
+
+; Navigation map and region updates run on the main thread, not a background thread, so they
+; land on the same tick on every run whatever the CPU load (D-47, runs must be deterministic).
+world/map_use_async_iterations=false
+world/region_use_async_iterations=false
+
 [physics]
 
 common/physics_ticks_per_second=60

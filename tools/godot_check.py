@@ -3,6 +3,8 @@
     uv run python tools/godot_check.py                  # import the project, run all Godot tests
     uv run python tools/godot_check.py --filter sb05    # only tests whose name contains "sb05"
     uv run python tools/godot_check.py --require        # fail (instead of skip) if Godot is missing
+    uv run python tools/godot_check.py --filter determinis --repeat 5 --cpu-load 4
+        # run the determinism tests 5 times while 4 busy processes load the CPU (D-47)
 
 Godot is found from, in order: the GODOT_BIN environment variable, the copy installed by
 tools/install_godot.py (.tools/godot/), or `godot` / `godot4` on the PATH. On Windows,
@@ -23,6 +25,10 @@ For the link tests, two sidecars run on 127.0.0.1 with a fresh session token for
 of the Godot tests: a normal one (which drops the connection once, to test reconnecting) and a
 deliberately slow one.
 
+`--repeat N` runs step 4 (and 5) N times; `--cpu-load K` keeps K busy processes running
+meanwhile. CI uses both on the determinism tests: a run that depends on thread timing only
+differs now and then, and mostly under load (D-47).
+
 Any engine or script ERROR line fails the check, even if every test passed.
 Exit code: 0 passed, 1 failed, 2 skipped (Godot not found and --require not given).
 """
@@ -30,6 +36,7 @@ Exit code: 0 passed, 1 failed, 2 skipped (Godot not found and --require not give
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 import re
 import shutil
@@ -110,7 +117,7 @@ def compile_report(output: str) -> tuple[int, list[str]]:
 
 
 # Files the full test run must leave behind (a filtered run may write fewer).
-EXPECTED_ARTIFACTS = ("sampling.jsonl", "sampling.observations.json", "demo_a.jsonl", "demo_b.jsonl",
+EXPECTED_ARTIFACTS = ("sampling.jsonl", "sampling.observations.json", "demo_a.jsonl", "demo_b.jsonl", "demo_c.jsonl",
                       "gate.action_results.json", "sidecar/sidecar_received.jsonl", "sidecar/sidecar_sent.jsonl")
 
 # The two sidecars started for the Godot link tests: name, extra arguments.
@@ -283,6 +290,51 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_FAILED
     print(f"  {scripts} GDScript files compiled with no errors or warnings")
 
+    repeat = _int_option(args, "--repeat", 1)
+    load_procs = _start_cpu_load(_int_option(args, "--cpu-load", 0))
+    try:
+        for attempt in range(1, repeat + 1):
+            if repeat > 1:
+                print(f"  run {attempt} of {repeat}" + (f" with {len(load_procs)} busy processes" if load_procs else ""))
+            result = run_tests(godot, test_filter)
+            if result != EXIT_PASSED:
+                return result
+    finally:
+        _stop_cpu_load(load_procs)
+    return EXIT_PASSED
+
+
+def _int_option(args: list[str], name: str, default: int) -> int:
+    if name not in args:
+        return default
+    i = args.index(name)
+    try:
+        return max(0, int(args[i + 1]))
+    except (IndexError, ValueError):
+        raise SystemExit(f"{name} needs a whole number")
+
+
+def _busy() -> None:
+    while True:
+        pass
+
+
+def _start_cpu_load(count: int) -> list[multiprocessing.Process]:
+    procs = [multiprocessing.Process(target=_busy, daemon=True) for _ in range(count)]
+    for proc in procs:
+        proc.start()
+    return procs
+
+
+def _stop_cpu_load(procs: list[multiprocessing.Process]) -> None:
+    for proc in procs:
+        proc.terminate()
+    for proc in procs:
+        proc.join(timeout=10)
+
+
+def run_tests(godot: str, test_filter: str) -> int:
+    """Steps 4 and 5: run the Godot test scene once and validate what it wrote."""
     artifacts = Path(tempfile.mkdtemp(prefix="godot_artifacts_"))
     cmd = [godot, "--headless", "--path", str(PROJECT_DIR), "--fixed-fps", "60", TEST_SCENE,
            "--", f"--artifacts-dir={artifacts.as_posix()}"]

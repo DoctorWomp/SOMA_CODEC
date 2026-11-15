@@ -42,3 +42,9 @@ jobs:
 
       - name: Run all checks (Godot required)
         run: uv run --locked python tools/check.py --require-godot
+
+      # A run that depends on thread timing only differs now and then, mostly under CPU load:
+      # the demo journal once differed between two same-seed runs in CI (D-47). Run the
+      # determinism tests several times while busy processes load the CPU.
+      - name: Determinism under CPU load (repeated)
+        run: uv run --locked python tools/godot_check.py --require --filter determinis --repeat 5 --cpu-load 4

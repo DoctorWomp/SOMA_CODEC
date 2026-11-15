@@ -33,6 +33,9 @@ var actions: ActionGate
 var journal: Journal
 ## One avoidance map shared by every avatar, whatever navigation map its size uses (D-42).
 var avoidance_map: RID
+## The tick at which every navigation map could answer queries (-1 until then). Map updates run
+## on the main thread (async iterations are off, D-47), so this is the same tick on every run.
+var navigation_ready_tick := -1
 var _avatar_root: Node3D
 var _nav_ready := false
 var _event_counter := 0
@@ -63,6 +66,7 @@ func build(map_id: String, body_ids: Array) -> bool:
 	_build_navigation()
 	avoidance_map = NavigationServer3D.map_create()
 	NavigationServer3D.map_set_up(avoidance_map, Vector3.UP)
+	NavigationServer3D.map_set_use_async_iterations(avoidance_map, false)
 	NavigationServer3D.map_set_active(avoidance_map, true)
 	_zones_by_size = map_data["zones"].duplicate()
 	_zones_by_size.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _area(a) < _area(b))
@@ -178,7 +182,8 @@ func _notification(what: int) -> void:
 
 
 ## Navigation is ready once every map can answer queries: the baked polygons and every link
-## are in the map's current iteration. Map updates are asynchronous, so this takes a few ticks.
+## are in the map's current iteration. Map updates are synchronous (D-47) but still applied at
+## the navigation server's next sync, so this takes a tick or two, always the same number.
 func _physics_process(_delta: float) -> void:
 	if _nav_ready or nav_sizes.is_empty():
 		return
@@ -192,6 +197,7 @@ func _physics_process(_delta: float) -> void:
 		if NavigationServer3D.map_get_closest_point_owner(map, probe) != (size["region"] as NavigationRegion3D).get_rid():
 			return
 	_nav_ready = true
+	navigation_ready_tick = clock.tick
 	navigation_ready.emit()
 
 
@@ -251,6 +257,9 @@ func _build_navigation() -> void:
 		NavigationServer3D.map_set_up(map, Vector3.UP)
 		NavigationServer3D.map_set_cell_size(map, NAV_CELL_SIZE)
 		NavigationServer3D.map_set_cell_height(map, NAV_CELL_HEIGHT)
+		# Synchronous map updates: a background-thread update finishes a tick earlier or later
+		# depending on CPU load, which made runs with the same seed differ (D-47).
+		NavigationServer3D.map_set_use_async_iterations(map, false)
 		NavigationServer3D.map_set_active(map, true)
 		var group := Node3D.new()
 		group.name = "Nav_" + key
