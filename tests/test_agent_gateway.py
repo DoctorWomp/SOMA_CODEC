@@ -31,7 +31,7 @@ def decide(gateway: ModelGateway, **kw):
     ('{"actions": [{"action": "FLY", "args": {}}]}', "not one of your actions"),
     ('{"actions": [{"action": "SPEAK", "args": {"channel": "LOCAL"}}]}', "SPEAK"),
     ('{"actions": [{"action": "WAIT", "args": {"duration_ms": 10}}], "secret": 1}', "object with"),
-    ('{"actions": [{"action": "WAIT", "args": {"duration_ms": 10}, "commitment": "x"}]}', "only SPEAK"),
+    ('{"actions": [{"action": "WAIT", "args": {"duration_ms": 10}, "commitment": "x"}]}', "only SPEAK, GESTURE or EXPRESS"),
     ('[1, 2]', "object with"),
 ])
 def test_invalid_outputs_are_named(text, error):
@@ -120,6 +120,25 @@ def test_replay_from_a_file(tmp_path):
     replayed = robot(gateway=gateway_from_spec(f"replay:{path}"))
     out = step(replayed, Scene().see(X, 15, 8.5).hear(X, "Where is the demo?").packet())
     assert [r["action"] for r in out] == ["TURN_TO", "EXPRESS", "SPEAK"]
+
+
+def test_a_nod_can_carry_a_promise():
+    text = '{"actions": [{"action": "EXPRESS", "args": {"expression_id": "acknowledge", "target_id": "anon_y0000001"}, "commitment": "Help them next"}]}'
+    actions, _, problem = parse_output(text, ALLOWED, "robot_r", 60)
+    assert problem is None and actions[0]["commitment"] == "Help them next"
+
+
+def test_fake_model_path_keeps_the_polite_bid_promise_with_no_fallback():
+    """The whole model path (context, gateway, parsing) on the SB-04 story, with a fake model."""
+    rt = robot(gateway=ModelGateway(FakeModel()))
+    s = Scene()
+    step(rt, s.see(X, 15, 8.5).hear(X, "Tell me about the demo?").packet())
+    s.tick += 30
+    step(rt, s.see(X, 15, 8.5).see("anon_y0000001", 17, 8.3).wave("anon_y0000001", 17, 8.3).packet())
+    assert rt.memory.commitments_to("anon_y0000001")
+    step(rt, s.see(X, 15, 8.5).see("anon_y0000001", 17, 8.3).hear(X, "Bye!").packet())
+    step(rt, s.see("anon_y0000001", 17, 8.3).packet())
+    assert rt.memory.open_commitments() == [] and rt.stats["fallbacks"] == 0
 
 
 def test_model_specs():

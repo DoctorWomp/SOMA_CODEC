@@ -403,7 +403,7 @@ def _proposal_entry(p: Proposal) -> dict[str, Any]:
 
 def _proposal_from_model(action: dict[str, Any], memory: AgentMemory, conv: Conversation) -> Proposal:
     fulfills: list[str] = []
-    target = action["args"].get("addressee_id")
+    target = action["args"].get("addressee_id", action["args"].get("target_id"))
     if action.get("fulfills_commitment") and target is not None:
         fulfills = [c["memory_id"] for c in memory.commitments_to(target)]
     return Proposal(action["action"], action["args"], action.get("commitment"), fulfills)

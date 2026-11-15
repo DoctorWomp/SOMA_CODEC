@@ -7,7 +7,8 @@ A provider-neutral interface between agents and models. Agents never call a mode
   ``llama-server`` (OpenAI-compatible HTTP on 127.0.0.1) and Ollama behind the same interface.
   Nothing here opens a network connection.
 - **Output** is one JSON object ``{"actions": [{"action", "args"}], "reason_summary"}`` with 1–3
-  actions. Each becomes an ``action_request`` checked against contracts/action_request and the
+  actions. A SPEAK, GESTURE or EXPRESS may add ``"commitment"`` (what it promises) or
+  ``"fulfills_commitment": true``. Each becomes an ``action_request`` checked against contracts/action_request and the
   agent's allowed actions. Model text is only ever parsed as data; nothing in it is executed.
 - **Invalid output** gets exactly one repair request that quotes the problem; still invalid →
   ``WAIT`` with a machine-readable error (T26).
@@ -34,6 +35,8 @@ from range_service import contracts
 
 DEADLINES_MS = {"FOCAL": 4000, "C2": 6000, "C1": 3000}
 MAX_ACTIONS = 3
+# Actions that can carry a promise: words, or a nod/expression toward someone (a nonverbal "I'll be with you").
+PROMISE_ACTIONS = frozenset({"SPEAK", "GESTURE", "EXPRESS"})
 FALLBACK_WAIT_MS = 1000
 REPAIR_NOTE = ("Your previous answer could not be used: {error}. Answer again with one JSON object only, "
                "using only the listed actions.")
@@ -173,10 +176,10 @@ def parse_output(text: str, allowed_actions: list[str], agent_id: str, tick: int
     for i, entry in enumerate(actions):
         if not isinstance(entry, dict) or not {"action", "args"} <= set(entry) \
                 or set(entry) - {"action", "args", "commitment", "fulfills_commitment"}:
-            return None, None, f'action {i + 1} must have "action" and "args" (and, for SPEAK, optionally "commitment")'
+            return None, None, f'action {i + 1} must have "action" and "args" (and optionally "commitment")'
         extra = set(entry) - {"action", "args"}
-        if extra and entry["action"] != "SPEAK":
-            return None, None, f'action {i + 1}: only SPEAK may carry "commitment" or "fulfills_commitment"'
+        if extra and entry["action"] not in PROMISE_ACTIONS:
+            return None, None, f'action {i + 1}: only SPEAK, GESTURE or EXPRESS may carry "commitment" or "fulfills_commitment"'
         if "commitment" in entry and (not isinstance(entry["commitment"], str) or not 1 <= len(entry["commitment"]) <= 200):
             return None, None, f'action {i + 1}: "commitment" must be text of 1 to 200 characters'
         if "fulfills_commitment" in entry and not isinstance(entry["fulfills_commitment"], bool):

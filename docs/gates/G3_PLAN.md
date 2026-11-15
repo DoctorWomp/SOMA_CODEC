@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a IN PROGRESS (cloud session, 2026-11-15) · G3b and G3c planned
+**Status:** G3a BUILT, IN REVIEW (draft PR, 2026-11-15) · G3b and G3c planned · owner checks: [G3a_OWNER_CHECKLIST.md](G3a_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -111,7 +111,26 @@ The link gains one envelope type, `link.step` (`SAMPLE_SENT` from Godot after a 
 3. Python: `range_service/agents/` (memory, context, tokenizer estimate, cognition, Demo policy, gateway, runtime, directives, expressions, guardrails); the sidecar driving runtimes in live and stepped mode; `range_service/eval/runner.py` and `tools/run_scenario.py` writing a run folder (journal, run manifest, model calls, context logs, agent memories).
 4. Godot: scenario player (`--scenario=`), stepped hold, Beacon rendering, `VISUAL_EXPRESSION`, `EXPRESS` in the action gate and comms router.
 5. Checks: Godot tests for expressions, T25, T27 and stepped determinism; a scenario step in `tools/godot_check.py`; Python tests for everything else.
-6. Docs: this plan, decisions D-48 to D-52 (proposed), D-36 amended, CHANGELOG, BUILD_AND_RUN, owner checklist.
+6. Docs: this plan, decisions D-48 to D-53 (proposed), D-47 (the flaky-test fix), D-36 amended, CHANGELOG, BUILD_AND_RUN, owner checklist, Beacon screenshots.
+
+## G3a result (2026-11-15)
+
+**Works, and was run in this session** (cloud, 4 CPU cores, Godot 4.7.2 headless, Python 3.14):
+
+- `tools/check.py --require-godot`: all five steps pass; 596 Python tests, 45 Godot tests, plus the scenario step.
+- SB-04 from its file, stepped, Demo policy: R answers X's three questions (saying "I don't know the demo schedule" when it doesn't), nods at Y when Y waves (a stored promise) without interrupting X, says goodbye to X, turns to Y ("Thanks for waiting. How can I help?"), and answers Y's café question honestly. 9/9 tape events accepted, 0 refused actions, 0 open promises at the end.
+- SB-04 twice, once with random 0–30 ms delays before every sidecar answer: identical journal bytes. Holding the world for 1 or a random 1–6 frames at every sample: identical positions tick for tick.
+- SB-05 from its file: the wheeled humanoid reaches the platform by the ramp; the legged humanoid and the quadruped by the stairs.
+- T18 (simulated two-hour run within budget, commitments always present), T25 (live run, 1.5 s model: no frame over 50 ms, the tick never stalls, avatars keep moving), T26 (malformed output: one repair, then WAIT), T27 (late actions rejected as stale, one replan), no private goal or evaluator value in any context, expressions refused for bodies that lack a part, record and replay.
+
+- The model path end to end with the fake model (`--model fake`): the same SB-04 story with no fallbacks (the fake model answers `WAIT` where the Demo policy would do nothing, since a model must always give an action); replaying that run from its recorded decisions (`--model replay:…`) gives the identical journal.
+- `--watch --mode live` on SB-05 under a virtual display with the OpenGL renderer: the window runs, the robots reach the platform, the run ends by itself.
+
+**Built but only partly exercised:** NPC cognition in real runs (visitors promote to C1/C2 in SB-04, but NPC behavior at every level is still templates, by design until G3c); the C2 tier budget (only focal and C1 appear in today's scenarios; covered by unit tests).
+
+**Planned, not built:** a real model (G3b), the real tokenizer (budgets are estimates), the priority scheduler and slot pinning (G3b), two servers and persona snapshots (G3c), adaptive expression (G5).
+
+**Needs the owner's PC:** watching SB-04 and SB-05 with `--watch` (Forward+ renderer, real GPU), the Beacon's look, and everything in G3b.
 
 ## G3b plan (owner's PC; nothing to do yet)
 

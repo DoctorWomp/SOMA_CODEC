@@ -11,6 +11,7 @@ var light_state := "OFF"
 var pattern := "STEADY"
 var _original: Array[Material] = []
 var _material: StandardMaterial3D
+var _glyph_size := 0.0
 
 
 ## `glyph_pos`/`glyph_facing` place the glyph (in `parent` space); `light_meshes` light up.
@@ -20,6 +21,7 @@ static func attach(parent: Node3D, glyph_pos: Vector3, glyph_size_m: float, ligh
 	parent.add_child(b)
 	b.glyph = MeshKit.label("", 48, false)
 	b.glyph.name = "Glyph"
+	b._glyph_size = glyph_size_m
 	b.glyph.pixel_size = glyph_size_m / 40.0
 	b.glyph.outline_size = 0
 	b.glyph.modulate = Color(0.95, 0.97, 1.0)
@@ -42,6 +44,8 @@ static func attach(parent: Node3D, glyph_pos: Vector3, glyph_size_m: float, ligh
 
 func show_expression(glyph_text: String, light: String, light_pattern: String) -> void:
 	glyph.text = glyph_text
+	# Longer glyphs ("STOP") shrink to stay on the display.
+	glyph.pixel_size = _glyph_size / 40.0 * minf(1.0, 2.5 / maxf(1.0, glyph_text.length()))
 	glyph.visible = glyph_text != ""
 	light_state = light
 	pattern = light_pattern
@@ -54,7 +58,7 @@ func show_expression(glyph_text: String, light: String, light_pattern: String) -
 	_material.emission_energy_multiplier = 1.5
 	for m in lights:
 		m.material_override = _material
-	glyph.modulate = c.lerp(Color.WHITE, 0.5)
+	glyph.modulate = c.lerp(Color.WHITE, 0.3)
 
 
 func clear() -> void:

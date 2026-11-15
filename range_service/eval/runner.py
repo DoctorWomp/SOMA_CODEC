@@ -53,6 +53,7 @@ class RunOptions:
     headless: bool = True
     jitter_ms: int = 0
     timeout_s: float = 900.0
+    godot_args: list[str] = field(default_factory=list)   # extra engine options, e.g. a renderer
 
 
 @dataclass
@@ -92,7 +93,8 @@ def check_options(opts: RunOptions, cs: ConfigSet) -> dict[str, Any]:
 
 
 def godot_command(opts: RunOptions, scenario: dict[str, Any], run_dir: Path, port: int, seed: int) -> list[str]:
-    cmd = [opts.godot, "--path", str(GODOT_PROJECT)]
+    # RANGE plays no sound yet: the dummy audio driver avoids audio-device errors on machines without one.
+    cmd = [opts.godot, "--path", str(GODOT_PROJECT), "--audio-driver", "Dummy", *opts.godot_args]
     if opts.headless:
         cmd += ["--headless", "--fixed-fps", "60"]
     cmd += ["res://scenes/main.tscn", "--", f"--scenario={opts.scenario_id}", f"--run-mode={opts.mode}",
@@ -163,7 +165,8 @@ def manifest(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: in
         persona = cs.items["personas"][entry["persona"]]
         preset = cs.items["presets"][entry["preset"]]
         llm = entry["controller"] == "LLM_AGENT"
-        model_id = opts.model if (llm and opts.model != "none") else None
+        model_id = (opts.model.split(":", 1)[0] if opts.model.startswith("replay:") else opts.model) \
+            if (llm and opts.model != "none") else None
         brain = f"LLM: {opts.model}" if model_id else ("LLM: none (Demo policy)" if llm else "SCRIPTED")
         avatars.append({
             "avatar_id": avatar_id, "controller": entry["controller"], "policy": entry["policy"],
@@ -174,7 +177,7 @@ def manifest(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: in
             "capability_card": f"[{avatar_id} | {brain} | HORIZON: {entry['preset']} | memory: RCC | "
                                f"sensors: {entry['sensor_package']} | actions: v1]",
         })
-    settings: dict[str, Any] = {"run_mode": opts.mode, "model": opts.model, "tokenizer": "approx_chars_v1",
+    settings: dict[str, Any] = {"run_mode": opts.mode, "model": opts.model[-200:], "tokenizer": "approx_chars_v1",
                                 "jitter_ms": opts.jitter_ms, "headless": opts.headless}
     for avatar_id, body_id in sorted(opts.body_overrides.items()):
         settings[f"body_override.{avatar_id}"] = body_id

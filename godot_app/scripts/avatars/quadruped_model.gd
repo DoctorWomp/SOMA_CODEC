@@ -49,8 +49,10 @@ func _assemble(with_arm: bool, trim: String, bands: int, badge_text: String) -> 
 	var under := p.box(head, "VisorLight", Vector3(0.28, 0.012, 0.012), "robot_ear", Vector3(0, -0.05, -0.128))
 	# Beacon (EXPRESSION_PRINCIPLES §1, D-36 as amended): a narrow light strip above the camera
 	# cluster, never over the lenses, showing a few simple symbols plus light.
-	var strip := p.box(head, "LightStrip", Vector3(0.30, 0.03, 0.012), "robot_joint", Vector3(0, 0.078, -0.128))
-	beacon = Beacon.attach(head, Vector3(0, 0.078, -0.136), 0.05, [strip, under] as Array[MeshInstance3D])
+	# The strip stays dark and its symbol lights up in the Beacon color, like an LED band; the thin
+	# bar under the visor carries the light itself.
+	p.box(head, "LightStrip", Vector3(0.30, 0.03, 0.012), "robot_joint", Vector3(0, 0.078, -0.128))
+	beacon = Beacon.attach(head, Vector3(0, 0.078, -0.136), 0.07, [under] as Array[MeshInstance3D])
 
 	# Identity: side trim panels with 1-3 stripes, and a badge on each side.
 	for side in [["L", -1.0], ["R", 1.0]]:

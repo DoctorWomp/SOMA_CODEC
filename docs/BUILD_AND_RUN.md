@@ -31,7 +31,7 @@ It runs five steps and prints a summary:
 2. **Configs**: every file in `configs/` matches its contract, and everything it refers to exists.
 3. **Godot data**: the JSON copies in `godot_app/data/` match `configs/` (D-30).
 4. **Tests**: the full `pytest` suite.
-5. **Godot**: imports the Godot project, compiles every GDScript file (a GDScript warning counts as an error, D-38), runs the headless tests with two test Python sidecars, and checks every journal line, packet, action result and link message against the contracts (needs Godot; see below).
+5. **Godot**: imports the Godot project, compiles every GDScript file (a GDScript warning counts as an error, D-38), runs the headless tests with three test Python sidecars, checks every journal line, packet, action result, link message and agent decision record against the contracts, scans every agent context for private text, and runs SB-04 (twice, to prove it is deterministic) and SB-05 end to end (needs Godot; see below).
 
 `All checks passed.` and exit code 0 means green. If Godot is not found, step 5 shows **SKIP** (never PASS) and the summary says so. CI uses `--require-godot`, which turns a missing Godot into a failure.
 
@@ -83,9 +83,43 @@ uv run python tools/run_link_demo.py
 
 This starts the Python sidecar on 127.0.0.1 with a fresh session token and opens the Godot demo connected to it. Robot_legged and robot_quadruped are then driven by scripted Python agents: when the visitor below the platform waves at them, they wave back and say hello (the quadruped's wave is refused: it has no arm). The panel shows `Python link: CONNECTED`. Close the Godot window to finish; a summary of what crossed the link is printed. To run the sidecar on its own: `RANGE_SESSION_TOKEN=<16+ characters> uv run python -m range_service.link --agent robot_legged=greeter`.
 
-### After editing a map or body file
+### Run a scenario (G3a)
 
-Godot reads JSON copies of `configs/maps/` and `configs/bodies/` (D-30). Body files follow body contract 2.0 (D-37); `tools/validate_configs.py` explains any problem, including contradictions such as a gesture that needs an arm on a body without one. After changing one of those YAML files, refresh the copies and commit both:
+```bash
+uv run python tools/run_scenario.py SB04_POLITE_BID
+```
+
+Runs the scenario from its file, end to end: the Python agent runtimes (Demo policy, no model) and Godot (headless) connected through the link, in **stepped** mode (exactly repeatable, D-48). It prints a summary and writes a run folder under `runs/` with the journal, the run manifest, every decision record and what each agent was shown. Useful variants:
+
+```bash
+uv run python tools/run_scenario.py SB04_POLITE_BID --watch
+```
+
+```bash
+uv run python tools/run_scenario.py SB05_RAMP_VS_STAIRS --watch
+```
+
+```bash
+uv run python tools/run_scenario.py SB04_POLITE_BID --body robot_r=quadruped
+```
+
+```bash
+uv run python tools/run_scenario.py SB04_POLITE_BID --model fake --mode live --watch
+```
+
+`--watch` opens the Godot window (it closes by itself when the scenario ends). `--model` takes `none` (Demo policy), `fake`, `fake-slow:MS`, `fake-malformed` or `replay:<run folder>/sidecar/decision_records.jsonl`; no real model is called before G3b. `--mode live` never holds the world (not repeatable).
+
+### Repeat the determinism checks under CPU load
+
+```bash
+uv run python tools/godot_check.py --filter determinis --repeat 5 --cpu-load 4
+```
+
+CI runs this on every push (D-47).
+
+### After editing a map, body, expression or scenario file
+
+Godot reads JSON copies of `configs/maps/`, `configs/bodies/`, `configs/expressions/` and a world-only view of `configs/scenarios/` (D-30, D-48). Body files follow body contract 2.0 (D-37); `tools/validate_configs.py` explains any problem, including contradictions such as a gesture that needs an arm on a body without one. After changing one of those YAML files, refresh the copies and commit both:
 
 ```bash
 uv run python tools/export_godot_data.py
@@ -99,6 +133,12 @@ Render under a virtual display with the Compatibility renderer:
 
 ```bash
 xvfb-run -a -s "-screen 0 1600x900x24" .tools/godot/Godot_v4.7.2-stable_linux.x86_64 --path godot_app --rendering-method gl_compatibility --rendering-driver opengl3 --fixed-fps 60 --resolution 1600x900 res://dev/capture.tscn -- --out=$PWD/docs/gates/G1_screenshots
+```
+
+The Beacon (G3a) has its own capture scene:
+
+```bash
+xvfb-run -a -s "-screen 0 1600x900x24" .tools/godot/Godot_v4.7.2-stable_linux.x86_64 --path godot_app --rendering-method gl_compatibility --rendering-driver opengl3 --fixed-fps 60 --resolution 1600x900 res://dev/beacon_capture.tscn -- --out=$PWD/docs/gates/G3a_screenshots
 ```
 
 ## Smaller commands

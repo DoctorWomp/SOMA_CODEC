@@ -30,7 +30,7 @@ GUARDRAILS_SHORT = (
 
 OUTPUT_FORMAT = (
     'Answer with one JSON object only: {"actions": [{"action": "...", "args": {...}}], '
-    '"reason_summary": "..."} with 1 to 3 actions. A SPEAK may add "commitment": "what you promise" '
+    '"reason_summary": "..."} with 1 to 3 actions. A SPEAK, GESTURE or EXPRESS may add "commitment": "what you promise" '
     'or "fulfills_commitment": true.'
 )
 

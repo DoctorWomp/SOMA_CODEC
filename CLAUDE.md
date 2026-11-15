@@ -19,8 +19,9 @@ Main specs: the [Master Build Blueprint](docs/sources/range/SOMA_RANGE_Master_Bu
 **G0 complete** (merged 2026-11-14): contracts v1, headless test world, ΔP module, config validator, one check command, CI. Decision D-29 (contract conventions) is APPROVED.
 **G1 complete** (merged 2026-11-14): Sandbox Flats in Godot 4.7.2, capability-gated ramp/stairs, free/orbit camera, headless Godot tests in `tools/check.py` and CI. Decisions D-30, D-31, D-33, D-34, D-35 APPROVED.
 **G1b complete** (merged 2026-11-14): robot body family (legged humanoid, wheeled humanoid, quadruped + arm variant); Robot R is a role. D-36, D-37, D-38 APPROVED.
-**G2 complete** ([docs/gates/G2_PLAN.md](docs/gates/G2_PLAN.md)): G2a merged 2026-11-14 (observer filter, hearing, journal, avoidance; D-39 to D-42 APPROVED); G2b built 2026-11-15 and in review as a draft PR (COMMS router with GESTURE/LOCAL/GROUP/PA, action gate, disclosure gate, Godot ↔ Python link on 127.0.0.1 with a session token, scripted Python agents; D-43 to D-46 PROPOSED).
-Next gate after merge: **G3** (agent runtime: scripted policy, then one local LLM agent; expression catalog and Beacon output per docs/EXPRESSION_PRINCIPLES.md). Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
+**G2 complete** ([docs/gates/G2_PLAN.md](docs/gates/G2_PLAN.md)): G2a and G2b merged 2026-11-15 (observer filter, hearing, journal, avoidance, COMMS router, action gate, disclosure gate, Godot ↔ Python link; D-39 to D-46 APPROVED).
+**G3 in progress** ([docs/gates/G3_PLAN.md](docs/gates/G3_PLAN.md)): G3a built 2026-11-15, in review as a draft PR (scenario runner with stepped and live runs, agent runtime with the Demo policy and C0/C1/C2 levels, model gateway with a fake model and record/replay, context assembly, expression catalog and Beacon; flaky determinism fixed; D-47 to D-53 PROPOSED). Next: **G3b** on the owner's PC (llama-server, model downloads, bake-off), then G3c (two servers, NPC promotion).
+Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
 
 ## Rules that never bend
 
@@ -54,6 +55,7 @@ Full details: [docs/BUILD_AND_RUN.md](docs/BUILD_AND_RUN.md).
 - `uv run python tools/godot_check.py [--filter NAME]`: only the Godot import, compile, headless tests and the contract check of what Godot wrote.
 - `uv run pytest`: run only the Python tests.
 - `uv run python tools/run_link_demo.py`: open the Godot demo connected to the Python sidecar.
+- `uv run python tools/run_scenario.py SB04_POLITE_BID [--watch]`: run a scenario end to end (stepped, Demo policy); writes a run folder under `runs/`.
 
 Layout: contracts in `contracts/` (see [contracts/README.md](contracts/README.md)), Python in `range_service/`, Godot in `godot_app/` (see [godot_app/README.md](godot_app/README.md)), content in `configs/`, tests in `tests/` and `godot_app/tests/`, scripts in `tools/`.
 

@@ -75,7 +75,7 @@ func _upper_body(hip: float, trim: String, bands: int, badge_text: String) -> vo
 		pod.rotation.z = PI / 2
 		pods.append(pod)
 	# Beacon (D-52): glyph just in front of the visor, light on the ear pods.
-	beacon = Beacon.attach(neck, Vector3(0, 0.118, -0.135), 0.09, pods)
+	beacon = Beacon.attach(neck, Vector3(0, 0.118, -0.147), 0.08, pods)
 
 	# Arms with a slight outward hang, like the concepts.
 	for side in [["L", -1.0], ["R", 1.0]]:
