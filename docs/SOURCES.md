@@ -113,6 +113,12 @@ Illustrations only. **Numbers shown in the art (confidence scores, rates, percen
 | [robot_avatar_lowpoly_concept](concept-art/robot_avatar_lowpoly_concept.jpg) | **Legged humanoid** robot body (one of three v0 robot bodies): faceted humanoid, black visor (Beacon face), colored identity variants (see ART_DIRECTION §2.1) |
 | [robot_wheeled_humanoid_concept](concept-art/robot_wheeled_humanoid_concept.jpg) | **Wheeled humanoid** robot body: same upper body on a four-wheeled base (front, back, headshot) |
 | [robot_quadruped_concept](concept-art/robot_quadruped_concept.jpg) | **Quadruped** robot body, Spot-like, with an optional dorsal-mounted arm and a front sensor visor. Labels on the sheet (model names, "ASE-AAA" protocol) are illustrative fiction |
+| [expression_atlas_legged_humanoid](concept-art/expression_atlas_legged_humanoid.webp) | **Expression reference** (not a spec): 16 gestures, each paired with a visor glyph and a light color, for the legged humanoid |
+| [expression_atlas_wheeled_humanoid](concept-art/expression_atlas_wheeled_humanoid.webp) | **Expression reference** (not a spec): the same 16 gestures for the wheeled humanoid |
+| [expression_atlas_quadruped](concept-art/expression_atlas_quadruped.webp) | **Expression reference** (not a spec): quadruped postures (sit, lie down, head tilt, bow, crouch) with front-panel glyphs and lights |
+| [expression_atlas_quadruped_arm](concept-art/expression_atlas_quadruped_arm.webp) | **Expression reference** (not a spec): quadruped with dorsal arm gesturing (wave, point, present, stop) with front-panel glyphs and lights |
+
+**Note on the expression sheets:** they use more light colors than the six-state public Beacon palette (D-14), give the quadruped a glyph display that D-36 does not (D-36 lists LIGHT only), show finger gestures on a gripper arm, and add comic effects (hearts, motion lines) that a physical robot cannot show. Treat them as mood and pose references; the expression catalog that maps gestures to glyphs and lights is decided when Beacon output is built.
 | [reference_lighting_language_atlas](concept-art/reference_lighting_language_atlas.webp) | Style reference: lighting styles → lighting presets |
 | [reference_atmosphere_environment_atlas](concept-art/reference_atmosphere_environment_atlas.webp) | Style reference: atmosphere and particles → atmosphere presets |
 | [reference_visual_styles_atlas](concept-art/reference_visual_styles_atlas.webp) | Style reference: target is style 5, low-poly 3D diorama |
