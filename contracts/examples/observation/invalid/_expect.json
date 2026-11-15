@@ -1,6 +1,7 @@
 {
   "bad_validity": "enum",
   "delivered_to_in_item": "additionalProperties",
+  "empty_expression": "minProperties",
   "fractional_tick": "type",
   "missing_required": "required",
   "missing_with_quality": "type",
@@ -9,6 +10,7 @@
   "private_goal_in_packet": "additionalProperties",
   "private_goal_in_value": "additionalProperties",
   "unknown_field": "additionalProperties",
+  "unknown_light_state": "enum",
   "unknown_validity_reason": "enum",
   "unknown_visible_part": "enum",
   "wrong_frame": "const",

@@ -46,10 +46,14 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-36 | Robot body family | APPROVED (owner, 2026-11-14) |
 | D-37 | Body contract 2.0, per-size navigation, legged colliders | APPROVED (owner, 2026-11-14) |
 | D-38 | GDScript warnings are errors | APPROVED (owner, 2026-11-14) |
-| D-39 | Sight: the observer filter | PROPOSED (G2a, 2026-11-14) |
-| D-40 | Hearing: local speech | PROPOSED (G2a, 2026-11-14) |
-| D-41 | Godot event journal and contract checks of Godot output | PROPOSED (G2a, 2026-11-14) |
-| D-42 | Shared local avoidance | PROPOSED (G2a, 2026-11-14) |
+| D-39 | Sight: the observer filter | APPROVED (owner, 2026-11-15) |
+| D-40 | Hearing: local speech | APPROVED (owner, 2026-11-15) |
+| D-41 | Godot event journal and contract checks of Godot output | APPROVED (owner, 2026-11-15) |
+| D-42 | Shared local avoidance | APPROVED (owner, 2026-11-15) |
+| D-43 | COMMS router: channels, groups and PA | PROPOSED (G2b, 2026-11-15) |
+| D-44 | The Godot ↔ Python link and the action gate | PROPOSED (G2b, 2026-11-15) |
+| D-45 | The disclosure gate in practice | PROPOSED (G2b, 2026-11-15) |
+| D-46 | Expression-ready gesture events | PROPOSED (G2b, 2026-11-15) |
 
 ---
 
@@ -458,7 +462,7 @@ The owner's editor showed six GDScript warnings that headless runs never print (
 - Reproduced first: with the levels raised, the check failed on exactly the six reported lines; it passes after the fixes. A deliberately added integer division makes the check fail with a clear message.
 
 ## D-39 — Sight: the observer filter
-**Status:** PROPOSED (G2a, 2026-11-14)
+**Status:** APPROVED (owner, 2026-11-15). Proposed at G2a.
 
 What an avatar sees is computed in Godot from world state through its own sensors (D-04, D-16); all values are labelled synthetic proxies, idealized to start (sensor realism is a dial).
 
@@ -471,16 +475,17 @@ What an avatar sees is computed in Godot from world state through its own sensor
 - **Contract additions** (backward-compatible; observation stays 1.0): optional `validity_reason` and `visible_parts`.
 
 ## D-40 — Hearing: local speech
-**Status:** PROPOSED (G2a, 2026-11-14)
+**Status:** APPROVED (owner, 2026-11-15). Proposed at G2a.
 
 - Speech starts at **62 dB at 1 m** (a conversational voice in a busy hall) from the speaker's mouth, falls **20·log10(distance)**, and loses **30 dB per wall that blocks sound** and **6 dB per wall sound passes over** (partitions, the low divider). The listener's zone **noise floor** masks it: heard if signal-to-noise ≥ 0 dB and within the body's acoustic range; **clear** (`OBSERVED`) from 6 dB; below that, or through any wall, `DEGRADED` (`LOW_SIGNAL_TO_NOISE`, `THROUGH_WALL`). Quality = SNR / 20, between 0.05 and 1.
 - **Heard without sight:** if the listener does not see the speaker, the observation is `UNKNOWN_SOURCE` with a direction (`bearing_rad`) but no track, position or range (reason `SPEAKER_NOT_IN_VIEW`, or `THROUGH_WALL` / `LOW_SIGNAL_TO_NOISE` when those apply). Reflections (SB-03) come later.
 - `addressed_to_observer` is true for the addressee, false when overheard (D-12), null when nobody was addressed.
 - Speech is an **event**: delivered once, at the first sample after it was spoken, to those who could hear it then. **Nothing is backfilled.** A body without `can_speak` cannot speak.
+- **Known limit (owner, 2026-11-15; record only, not built yet):** real expo halls are often 65–75 dB, where a fixed 62 dB voice would never be heard. Before the expo map (G6), speech level must rise with background noise (the Lombard effect: people speak louder in noise), or be set per scenario.
 - What these numbers give (from the formula, open floor, no walls): on the 45 dB main floor speech is clear to about 3.5 m and heard to about 7 m; in the 40 dB chair corner, clear to about 6.3 m and heard out to the 10 m acoustic range.
 
 ## D-41 — Godot event journal and contract checks of Godot output
-**Status:** PROPOSED (G2a, 2026-11-14)
+**Status:** APPROVED (owner, 2026-11-15). Proposed at G2a.
 
 - Godot writes the event journal as JSON lines in the `journal_entry` contract: `RUN_STARTED` (seed, map, `tick_hz` 60, `sample_hz`, poses), every `OBSERVATION_DELIVERED` packet, `GESTURE_PERFORMED`, `GESTURE_REFUSED` (`CAPABILITY_DENIED`), `SPEECH_EMITTED`, `RUN_ENDED`. Keys are sorted, so the same run gives the same bytes; a SHA-256 of the file identifies a run (two demo runs with the same seed match: T28 groundwork).
 - The main scene writes to `user://journals/` (on Windows: `%APPDATA%\Godot\app_userdata\SOMA RANGE\journals`), keeping the newest 10.
@@ -488,7 +493,47 @@ What an avatar sees is computed in Godot from world state through its own sensor
 - **Contract additions** (backward-compatible; versions unchanged): journal kinds `GESTURE_PERFORMED`, `GESTURE_REFUSED`, `SPEECH_EMITTED`, optional `sample_hz` in `RUN_STARTED`.
 
 ## D-42 — Shared local avoidance
-**Status:** PROPOSED (G2a, 2026-11-14)
+**Status:** APPROVED (owner, 2026-11-15). Proposed at G2a.
 
 Paths are planned per body size (D-37), but every avatar must steer around every other. Godot's avoidance works per map, so each avatar also has an **avoidance agent on one shared avoidance map** (no navigation mesh, just agents): radius = turning radius + 0.15 m, neighbours within 5 m, a 2 s time horizon. While navigating, an avatar follows the safe velocity returned for the previous tick (a one-tick delay), still within its own speed, acceleration and turn limits; idle avatars count as obstacles. Direct drive (used by collision tests) bypasses avoidance. Measured in tests: a wheeled humanoid and a quadruped crossing head-on and at right angles both arrive without touching; the demo has no contacts.
+
+## D-43 — COMMS router: channels, groups and PA
+**Status:** PROPOSED (G2b, 2026-11-15)
+
+The four channels (D-07, Blueprint §8) sit on top of the G2a senses, in Godot (`scripts/comms/comms_router.gd`):
+
+- **GESTURE**: shown with the body (only gestures it has, D-36), for 1.5 s; received by whoever can see the gesturing part during that time.
+- **LOCAL**: speech; received by whoever can hear it at the next sample (D-40).
+- **GROUP**: device messages, at any distance, to the current members only, never to anyone else, even standing next to the sender; not a sound. Membership needs an invitation **and** its acceptance (`CREATE_GROUP`, `INVITE_GROUP`, `ACCEPT_GROUP`, `DECLINE_GROUP`, `LEAVE_GROUP`); leaving stops delivery at once, including anything not yet delivered. Invitations arrive as a `GROUP_INVITE` observation. Group messages and invitations name the sender (`source_entity_id`): members are introduced to each other through the group.
+- **PA**: from authorized senders only: body capability `can_use_pa`, or listed as a PA operator for the run (scenarios will declare operators when the scenario runner arrives at G3). Delivered through the map's PA speaker to everyone in coverage (all of Sandbox Flats) as `AUDIO_SPEECH` on channel `PA`, located at the speaker, with no speaker identity. An unauthorized attempt is refused (`PA_UNAUTHORIZED`) and nobody hears anything.
+- Every message makes one **`comms_event`** record listing who received it and who did not, written to the journal. Those lists are evaluator-only and never go to an agent. A refused message makes a `COMMS_REJECTED` journal entry instead; membership changes make `GROUP_CHANGED` entries.
+- Every avatar is assumed to carry a messaging device; a body flag for "has a device" can come later if a scenario needs it.
+
+## D-44 — The Godot ↔ Python link and the action gate
+**Status:** PROPOSED (G2b, 2026-11-15)
+
+- **Shape:** the Python sidecar is a WebSocket **server bound to 127.0.0.1 only**; Godot connects to it (later, Godot's launcher starts the sidecar first, D-21). One client at a time.
+- **Session token:** a fresh random token per run, passed to both programs through the `RANGE_SESSION_TOKEN` environment variable (never on a command line, in an envelope or in a log, D-29). Godot sends it in the `X-Range-Session-Token` handshake header. A missing or wrong token gets **no data**: the sidecar closes the connection at once with close code **4401** (a second client: **4409**). Close codes are used instead of an HTTP 401 because Godot reports a failed HTTP handshake as an engine error. Tokens shorter than 16 characters are not accepted.
+- **Messages:** every message is a versioned envelope; the sidecar checks each one against the contracts and ignores (and records) anything invalid; Godot does a structural check. New envelope types `link.hello` (which agents this session controls) and `link.heartbeat`. Messages above 64 KiB close the connection.
+- **Never waiting:** Godot polls the link once per frame, caps its outgoing queue at 256 messages (dropping the oldest), and reconnects with back-off (0.5 s doubling to 8 s); the world keeps its 60 Hz tick whatever the link does. Tested: a dropped connection, a 1.5 s-slow Python side and a wrong token all leave the tick untouched, with no frame over 50 ms.
+- **Action gate** (Godot, `scripts/comms/action_gate.gd`): every `agent.action_request` is answered with an `action_result`. In order: `INVALID_SCHEMA` (shape, unknown action, unexpected argument, or a tick in the future), `CAPABILITY_DENIED` (the session does not control that agent), `STALE_OBSERVATION` (based on a tick more than **60 ticks / 1 s** old), `RATE_LIMITED` (more than **10 requests per agent per second**), then per action: `TARGET_UNKNOWN`, `CAPABILITY_DENIED` (a gesture or voice the body lacks), `GROUP_NOT_MEMBER`, `PA_UNAUTHORIZED`, `PRIVACY_SCOPE_DENIED`. `INTERACT` and `JOIN_QUEUE` answer `TARGET_UNKNOWN` until interactable objects and queues exist. Agents refer to people by the anonymous track ids they were given (or ids introduced through a group); the host resolves them and never tells the agent who a track is. Every request and result is journaled (`ACTION_RESOLVED`).
+- **Dependency:** the sidecar uses the `websockets` package (BSD, pure Python), the one dependency added for D-05.
+- **Windows Firewall:** binding to 127.0.0.1 needs no firewall rule; if Windows asks anyway, allowing on private networks or cancelling are both safe.
+
+## D-45 — The disclosure gate in practice
+**Status:** PROPOSED (G2b, 2026-11-15)
+
+D-12 made concrete (`range_service/comms/disclosure.py`; the host repeats the check in Godot):
+
+- The agent's estimate of **who could hear** comes only from its own latest packet: tracks it sees within 10 m, plus a count of listeners it **cannot identify** (an unplaced voice, or someone it saw and has now lost). Unidentified listeners count as untrusted (the earshot rule).
+- `PUBLIC`: always `CLEAR`. `SEALED`: always `WITHHOLD`. `ONE_TO_ONE`: `CLEAR` only when the person who shared it is the only one who could hear; if that person is present with others, `DEFER_TO_OWNER` (raise it with them privately later); otherwise `WITHHOLD`. `GROUP`: `CLEAR` only on the GROUP channel to that same group; spoken aloud it is `WITHHOLD`, since the agent cannot tell who else is in earshot.
+- **Overheard is not told:** speech not addressed to the agent is never stored, so it can never be retold. Speech addressed to it is stored as `REPORTED`, `ONE_TO_ONE` if nobody else could hear, otherwise `PUBLIC`, always marked untrusted text (D-09).
+- **WITHHOLD never hints:** the agent says a neutral line ("Is there anything else I can help you with?"); tests check every such line against a list of hinting phrases. The reason is for the journal only.
+- **Host check:** a `SPEAK` may declare `disclosure_scope`; Godot refuses it (`PRIVACY_SCOPE_DENIED`) if anyone who could actually hear is outside that scope. A PA announcement must be `PUBLIC`.
+- **Contract additions** (backward-compatible): `memory_item` gains optional `shared_by` and `group_id`; `action_request` `SPEAK` gains optional `disclosure_scope`.
+
+## D-46 — Expression-ready gesture events
+**Status:** PROPOSED (G2b, 2026-11-15)
+
+So that G3 can add visor and light-strip glyphs and light states (docs/EXPRESSION_PRINCIPLES.md) without an incompatible contract change, contracts now define one **`expression`** object (`common.schema.json`): `gesture`, `glyph` (an id from the expression catalog G3 will add), `light` (the D-14 states `OFF`, `NEUTRAL`, `WARM`, `CALM`, `CONSIDERED`, `CAUTION`, `STOP`), `light_pattern` (`STEADY` or `SLOW_PULSE`, never faster than 3 Hz), `display` (`VISOR`, `LIGHT_STRIP`, `EAR_PODS`, `BODY`) and `sign_text`; at least one of gesture, glyph or light. It is used by GESTURE-channel `comms_event`s and by a new observation kind **`VISUAL_EXPRESSION`**. G2b emits gestures only (as `VISUAL_GESTURE`, unchanged); G3 starts emitting `VISUAL_EXPRESSION` with glyphs and light, filling fields that already exist. There is no `STROBE` or color-hue field: lights carry only the six public states.
 

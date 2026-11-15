@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "action_request_id": "act_000031",
+  "agent_id": "robot_legged",
+  "based_on_tick_id": 600,
+  "action": "SPEAK",
+  "args": {
+    "channel": "LOCAL",
+    "text": "Your table is ready.",
+    "addressee_id": "anon_q8w2e4r6t1",
+    "disclosure_scope": "ONE_TO_ONE"
+  }
+}

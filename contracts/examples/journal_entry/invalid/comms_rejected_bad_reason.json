@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "seq": 40,
+  "tick_id": 606,
+  "sim_time_ms": 10100,
+  "actor_id": "visitor_y",
+  "kind": "COMMS_REJECTED",
+  "payload": {
+    "sender_id": "visitor_y",
+    "channel": "PA",
+    "reason_code": "TOO_LOUD"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "seq": 40,
+  "tick_id": 606,
+  "sim_time_ms": 10100,
+  "actor_id": null,
+  "kind": "LINK_STATUS",
+  "payload": {
+    "status": "REFUSED",
+    "detail": "session token rejected (HTTP 401)"
+  }
+}

@@ -3,6 +3,7 @@
   "missing_required": "required",
   "negative_tick": "minimum",
   "payload_mismatch": "required",
+  "token_in_hello": "additionalProperties",
   "unknown_field": "additionalProperties",
   "unknown_type": "enum",
   "wrong_version": "const"

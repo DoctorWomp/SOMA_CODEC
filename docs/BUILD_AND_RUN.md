@@ -31,7 +31,7 @@ It runs five steps and prints a summary:
 2. **Configs**: every file in `configs/` matches its contract, and everything it refers to exists.
 3. **Godot data**: the JSON copies in `godot_app/data/` match `configs/` (D-30).
 4. **Tests**: the full `pytest` suite.
-5. **Godot**: imports the Godot project, compiles every GDScript file (a GDScript warning counts as an error, D-38), runs the headless tests, and checks every journal line and observation packet they wrote against the contracts (needs Godot; see below).
+5. **Godot**: imports the Godot project, compiles every GDScript file (a GDScript warning counts as an error, D-38), runs the headless tests with two test Python sidecars, and checks every journal line, packet, action result and link message against the contracts (needs Godot; see below).
 
 `All checks passed.` and exit code 0 means green. If Godot is not found, step 5 shows **SKIP** (never PASS) and the summary says so. CI uses `--require-godot`, which turns a missing Godot into a failure.
 
@@ -74,6 +74,14 @@ From a terminal instead of the editor:
 ```bash
 godot --path godot_app
 ```
+
+### The demo connected to Python (G2b)
+
+```bash
+uv run python tools/run_link_demo.py
+```
+
+This starts the Python sidecar on 127.0.0.1 with a fresh session token and opens the Godot demo connected to it. Robot_legged and robot_quadruped are then driven by scripted Python agents: when the visitor below the platform waves at them, they wave back and say hello (the quadruped's wave is refused: it has no arm). The panel shows `Python link: CONNECTED`. Close the Godot window to finish; a summary of what crossed the link is printed. To run the sidecar on its own: `RANGE_SESSION_TOKEN=<16+ characters> uv run python -m range_service.link --agent robot_legged=greeter`.
 
 ### After editing a map or body file
 

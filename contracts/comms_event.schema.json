@@ -7,73 +7,178 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "comms_id", "channel", "sender_id", "addressee_id", "text",
-    "emitted_at_tick", "emitted_at_ms", "modality", "delivery_scope", "group_id",
-    "delivered_to", "not_delivered_to", "source_event_id"
+    "schema_version",
+    "comms_id",
+    "channel",
+    "sender_id",
+    "addressee_id",
+    "text",
+    "emitted_at_tick",
+    "emitted_at_ms",
+    "modality",
+    "delivery_scope",
+    "group_id",
+    "delivered_to",
+    "not_delivered_to",
+    "source_event_id"
   ],
   "properties": {
-    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
-    "comms_id": { "$ref": "common.schema.json#/$defs/id" },
-    "channel": { "$ref": "common.schema.json#/$defs/channel" },
-    "sender_id": { "$ref": "common.schema.json#/$defs/id" },
-    "addressee_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
-    "text": { "type": "string", "minLength": 1, "maxLength": 500 },
-    "emitted_at_tick": { "$ref": "common.schema.json#/$defs/tick" },
-    "emitted_at_ms": { "$ref": "common.schema.json#/$defs/time_ms" },
-    "modality": { "enum": ["SIMULATED_TEXT_SPEECH", "SIMULATED_GESTURE", "DEVICE_MESSAGE", "PA_ANNOUNCEMENT"] },
-    "delivery_scope": { "enum": ["VISUAL_FOV_LOS", "ACOUSTIC_AREA", "GROUP_MEMBERS", "PA_ZONES"] },
-    "group_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "comms_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "channel": {
+      "$ref": "common.schema.json#/$defs/channel"
+    },
+    "sender_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "addressee_id": {
+      "$ref": "common.schema.json#/$defs/nullable_id"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "emitted_at_tick": {
+      "$ref": "common.schema.json#/$defs/tick"
+    },
+    "emitted_at_ms": {
+      "$ref": "common.schema.json#/$defs/time_ms"
+    },
+    "modality": {
+      "enum": [
+        "SIMULATED_TEXT_SPEECH",
+        "SIMULATED_GESTURE",
+        "DEVICE_MESSAGE",
+        "PA_ANNOUNCEMENT"
+      ]
+    },
+    "delivery_scope": {
+      "enum": [
+        "VISUAL_FOV_LOS",
+        "ACOUSTIC_AREA",
+        "GROUP_MEMBERS",
+        "PA_ZONES"
+      ]
+    },
+    "group_id": {
+      "$ref": "common.schema.json#/$defs/nullable_id"
+    },
     "delivered_to": {
       "type": "array",
       "uniqueItems": true,
       "maxItems": 256,
-      "items": { "$ref": "common.schema.json#/$defs/id" }
+      "items": {
+        "$ref": "common.schema.json#/$defs/id"
+      }
     },
     "not_delivered_to": {
       "type": "array",
       "uniqueItems": true,
       "maxItems": 256,
-      "items": { "$ref": "common.schema.json#/$defs/id" }
+      "items": {
+        "$ref": "common.schema.json#/$defs/id"
+      }
     },
-    "source_event_id": { "$ref": "common.schema.json#/$defs/nullable_id" }
+    "source_event_id": {
+      "$ref": "common.schema.json#/$defs/nullable_id"
+    },
+    "expression": {
+      "description": "For the GESTURE channel: what was shown (G2b: a gesture; from G3 also glyphs and light states).",
+      "$ref": "common.schema.json#/$defs/expression"
+    }
   },
   "allOf": [
     {
-      "if": { "properties": { "channel": { "const": "GESTURE" } } },
-      "then": {
+      "if": {
         "properties": {
-          "text": { "maxLength": 160 },
-          "modality": { "const": "SIMULATED_GESTURE" },
-          "delivery_scope": { "const": "VISUAL_FOV_LOS" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "channel": { "const": "LOCAL" } } },
-      "then": {
-        "properties": {
-          "modality": { "const": "SIMULATED_TEXT_SPEECH" },
-          "delivery_scope": { "const": "ACOUSTIC_AREA" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "channel": { "const": "GROUP" } } },
-      "then": {
-        "properties": {
-          "group_id": { "$ref": "common.schema.json#/$defs/id" },
-          "modality": { "const": "DEVICE_MESSAGE" },
-          "delivery_scope": { "const": "GROUP_MEMBERS" }
+          "channel": {
+            "const": "GESTURE"
+          }
         }
       },
-      "else": { "properties": { "group_id": { "type": "null" } } }
-    },
-    {
-      "if": { "properties": { "channel": { "const": "PA" } } },
       "then": {
         "properties": {
-          "modality": { "const": "PA_ANNOUNCEMENT" },
-          "delivery_scope": { "const": "PA_ZONES" }
+          "text": {
+            "maxLength": 160
+          },
+          "modality": {
+            "const": "SIMULATED_GESTURE"
+          },
+          "delivery_scope": {
+            "const": "VISUAL_FOV_LOS"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "channel": {
+            "const": "LOCAL"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "modality": {
+            "const": "SIMULATED_TEXT_SPEECH"
+          },
+          "delivery_scope": {
+            "const": "ACOUSTIC_AREA"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "channel": {
+            "const": "GROUP"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "group_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "modality": {
+            "const": "DEVICE_MESSAGE"
+          },
+          "delivery_scope": {
+            "const": "GROUP_MEMBERS"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "group_id": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "channel": {
+            "const": "PA"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "modality": {
+            "const": "PA_ANNOUNCEMENT"
+          },
+          "delivery_scope": {
+            "const": "PA_ZONES"
+          }
         }
       }
     }

@@ -8,6 +8,7 @@
   "text_too_long": "maxLength",
   "unknown_action": "enum",
   "unknown_arg": "additionalProperties",
+  "unknown_disclosure_scope": "enum",
   "unknown_field": "additionalProperties",
   "wait_too_long": "maximum"
 }

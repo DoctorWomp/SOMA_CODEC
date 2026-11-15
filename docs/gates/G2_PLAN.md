@@ -1,6 +1,6 @@
 # G2 — Senses and communication
 
-**Status:** G2a BUILT, IN REVIEW (draft PR) · G2b PLANNED (next session, after G2a is reviewed) · owner checks: [G2a_OWNER_CHECKLIST.md](G2a_OWNER_CHECKLIST.md)
+**Status:** G2a COMPLETE (merged 2026-11-14) · G2b BUILT, IN REVIEW (draft PR) · owner checks: [G2b_OWNER_CHECKLIST.md](G2b_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G2 row) · Blueprint §8 (RANGE COMMS), §12 (wire contracts), §20 (G2 gate), tests T13–T17 · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §9 (who knows what) · [DECISIONS.md](../DECISIONS.md) D-04, D-05, D-07, D-12, D-29, D-33, D-36, D-37
 
 ## Goal
@@ -51,9 +51,33 @@ The cut follows the Blueprint's sequence (§8.3): G2a is the sensor adapter ("wh
 | A wheeled humanoid and a quadruped crossing head-on and at right angles both arrive, with no contact | Shared avoidance across size maps |
 | The full demo still runs with no contacts and nobody stuck; two runs give the same journal | Regression, determinism |
 
-## G2b outline (next session)
+## G2b deliverables
 
-COMMS router (Godot) producing `comms_event` records and per-recipient observations for all four channels; group membership by `CREATE_GROUP` / `INVITE_GROUP` / `ACCEPT_GROUP` / `DECLINE_GROUP` / `LEAVE_GROUP`; PA authorization from body capability `can_use_pa` and the scenario; the disclosure gate in Python with the earshot rule and `WITHHOLD` that never hints; the WebSocket link (127.0.0.1 only, session token at connection, size limits, heartbeat) with Python receiving observations and sending `agent.action_request`s that Godot validates (`CAPABILITY_DENIED`, `GROUP_NOT_MEMBER`, `PA_UNAUTHORIZED`, …); tests T13–T17 end to end.
+1. **COMMS router** (Godot, `scripts/comms/`), one entry point per channel, each producing a `comms_event` record (evaluator audience: it lists who received it) in the journal:
+   - `GESTURE`: delivered to whoever can see the gesturing part during the gesture (G2a observer filter); a body can only use gestures it has (D-36).
+   - `LOCAL`: speech, delivered to whoever can hear it at the next sample (G2a hearing).
+   - `GROUP`: device messages. Membership by invite **and** accept; declined invitations do nothing; leaving stops delivery at once. Delivered to every current member except the sender, at any distance, and **never** to anyone else, even standing next to the sender. Group messages are not sounds.
+   - `PA`: only senders authorized for it (body capability `can_use_pa`, or listed by the scenario as PA operators). Delivered through the map's PA coverage as `AUDIO_SPEECH` on channel `PA`, sourced at the PA speaker. Unauthorized: rejected with `PA_UNAUTHORIZED`, nobody hears it.
+2. **Expression-ready gesture events.** A shared `expression` object in `common.schema.json` (gesture, visor/strip glyph, light state from the D-14 palette, light pattern, where it is shown) is used by `comms_event` and by a new observation kind `VISUAL_EXPRESSION`. G2b emits only gestures; G3 adds glyphs and light states (docs/EXPRESSION_PRINCIPLES.md) by filling the same fields, so no incompatible contract change is needed.
+3. **Action gate** (Godot): validates every `agent.action_request` (schema, the session controls that agent, freshness, rate, capability, group membership, PA authorization, disclosure scope against who can actually hear) and answers with `action_result` and a reason code from Blueprint §12.3.
+4. **Disclosure gate** (Python, `range_service/comms/disclosure.py`, D-12): `PUBLIC` / `GROUP` / `ONE_TO_ONE` / `SEALED`; the earshot rule (who could hear decides, and an unidentified or unseen listener counts as untrusted); overheard speech is never stored or retold; `WITHHOLD` never hints that something is withheld. Godot repeats the check on `SPEAK` with a disclosure scope (defence in depth).
+5. **Loopback WebSocket link** (D-05): the Python sidecar listens on 127.0.0.1 only; Godot connects with the session token in the handshake (from an environment variable, never logged or put in an envelope); every message is a versioned envelope checked against the contracts on the Python side and by a small structural check on the Godot side; size limit, capped outgoing queue, heartbeat, automatic reconnect. Godot never waits for Python: the world keeps its 60 Hz tick whatever the link does.
+6. **Scripted Python agents** (no LLM): each controlled avatar gets its observations only, keeps its own memory, and answers with action requests (for example: wave back and say hello when waved at).
+7. `tools/run_link_demo.py`: starts the sidecar and opens the Godot demo connected to it, for the owner.
+
+## G2b acceptance tests
+
+| Test | Proves |
+|---|---|
+| A gesture's `comms_event` lists as received only those who could see it | T13 through the router |
+| Speech's `comms_event` lists listeners in earshot, not those behind an outer wall or out of range | T14 through the router |
+| A group message reaches a far member and never a non-member standing next to the sender; invite without accept, decline and leave all stop delivery; a non-member cannot post | T15 |
+| A PA announcement from an unauthorized sender is rejected and heard by nobody; an authorized one reaches everyone in coverage | T16 |
+| A secret told one-to-one stays in that agent's memory; other agents' observations and memories never contain it; no evaluator-only field or NPC private goal ever crosses the link | T17 |
+| Disclosure gate: each scope against each audience; overheard is not stored or told; `WITHHOLD` text never hints | D-12 |
+| A wrong or missing session token is refused; the sidecar binds 127.0.0.1 only; oversized and malformed messages are refused without a crash | D-05, Blueprint §12 |
+| Invalid, stale, unauthorized, rate-limited and capability-denied action requests get the right reason code; a valid one executes | Action gate |
+| End to end: Godot sends observations, a scripted Python agent waves back and speaks; the sidecar disconnects and is slow, and Godot keeps ticking smoothly and reconnects | The link works and fails safely |
 
 ## Out of scope for G2
 

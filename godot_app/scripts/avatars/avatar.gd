@@ -9,7 +9,7 @@ extends CharacterBody3D
 
 signal goal_reached(avatar: Avatar)
 
-enum Mode { IDLE, NAVIGATE, DIRECT }
+enum Mode { IDLE, NAVIGATE, DIRECT, TURN }
 
 const GRAVITY := 9.8
 const ARRIVE_DISTANCE_M := 0.25
@@ -50,6 +50,7 @@ var nav_agent: NavigationAgent3D
 var model: Node3D
 
 var _direct_velocity := Vector3.ZERO
+var _turn_yaw := 0.0
 var _gesture := {}                   # {"gesture", "event_id", "until_tick"} while one is shown
 var _avoid_rid: RID
 var _safe_velocity := Vector3.ZERO
@@ -210,6 +211,12 @@ func stop() -> void:
 	_direct_velocity = Vector3.ZERO
 
 
+## Turn on the spot to face `yaw` (D-29), at the body's turn rate.
+func turn_to(yaw: float) -> void:
+	_turn_yaw = wrapf(yaw, -PI, PI)
+	mode = Mode.TURN
+
+
 ## Host-side gesture check (D-36): a body only performs gestures its config lists. Returns
 ## false and records the refusal otherwise. No animation yet (V0 greybox).
 func perform_gesture(gesture: String) -> bool:
@@ -270,6 +277,11 @@ func _physics_process(delta: float) -> void:
 					dir = to_next.normalized()
 					var remaining := horizontal_distance_to(goal)
 					wanted_speed = minf(max_speed, sqrt(2.0 * max_accel * maxf(remaining - 0.05, 0.0)))
+		Mode.TURN:
+			if absf(wrapf(_turn_yaw - rotation.y, -PI, PI)) < 0.02:
+				mode = Mode.IDLE
+			else:
+				dir = Vector3(-sin(_turn_yaw), 0, -cos(_turn_yaw))
 		Mode.DIRECT:
 			if _direct_velocity.length() > 0.001:
 				dir = _direct_velocity.normalized()

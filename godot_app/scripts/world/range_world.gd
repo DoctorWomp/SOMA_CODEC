@@ -28,6 +28,8 @@ var avatars: Dictionary = {}      # avatar_id -> Avatar
 var sample_hz := 10
 var seed_value := 1
 var senses: ObserverFilter
+var comms: CommsRouter
+var actions: ActionGate
 var journal: Journal
 ## One avoidance map shared by every avatar, whatever navigation map its size uses (D-42).
 var avoidance_map: RID
@@ -67,6 +69,12 @@ func build(map_id: String, body_ids: Array) -> bool:
 	senses = ObserverFilter.new()
 	senses.setup(self, seed_value)
 	add_child(senses)
+	comms = CommsRouter.new()
+	add_child(comms)
+	comms.setup(self)
+	actions = ActionGate.new()
+	add_child(actions)
+	actions.setup(self)
 	return true
 
 

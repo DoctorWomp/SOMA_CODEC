@@ -7,6 +7,7 @@ extends CanvasLayer
 var world: RangeWorld
 var rig: CameraRig
 var demo: DemoRoutes
+var link: LinkClient
 var label: Label
 var _panel: PanelContainer
 
@@ -57,6 +58,9 @@ func status_text() -> String:
 	var target: Node3D = rig.selected_target() if rig != null else null
 	var mode_name := "ORBIT" if rig != null and rig.mode == CameraRig.Mode.ORBIT else "FREE"
 	lines.append("Camera: %s" % mode_name)
+	if link != null:
+		lines.append("Python link: %s · agents %s · sent %d · received %d" % [link.status, ", ".join(link.agents),
+			link.stats["sent"], link.stats["received"]])
 	if target is Avatar:
 		var a := target as Avatar
 		lines.append("Selected: %s · %s · %.2f m/s" % [a.avatar_id, Bodies.display_name(a.body), a.speed])

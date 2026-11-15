@@ -1,4 +1,5 @@
 {
+  "comms_rejected_bad_reason": "enum",
   "gesture_not_in_vocabulary": "enum",
   "missing_required": "required",
   "negative_seq": "minimum",

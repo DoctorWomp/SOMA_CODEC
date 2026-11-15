@@ -39,6 +39,15 @@ const TESTS := [
 	"test_sampling_and_packets",
 	"test_journal_is_deterministic",
 	"test_avoidance_crossing",
+	"test_router_gesture_t13",
+	"test_router_local_t14",
+	"test_group_messages_t15",
+	"test_pa_authorization_t16",
+	"test_action_gate_reason_codes",
+	"test_link_end_to_end",
+	"test_link_wrong_token",
+	"test_link_slow_sidecar",
+	"test_link_no_sidecar",
 ]
 
 ## Where tests write journals and packets for tools/godot_check.py to validate in Python.
@@ -1146,4 +1155,400 @@ func test_avoidance_crossing() -> String:
 		if closest > 3.0:
 			return "%s: the robots never came near each other (closest %.2f m); the test did not exercise avoidance" % [c[0], closest]
 		await _cleanup()
+	return ""
+
+
+# ---------- G2b: COMMS router, action gate, Python link ----------
+
+func _comm_for(w: RangeWorld, event_id: String) -> Dictionary:
+	for c in w.comms.events:
+		if c["source_event_id"] == event_id:
+			return c
+	return {}
+
+
+func _ticks(n: int) -> void:
+	for i in n:
+		await get_tree().physics_frame
+
+
+## Collect every observation each avatar receives, across samples, into `into`.
+func _collect(w: RangeWorld, into: Dictionary) -> void:
+	w.senses.sampled.connect(func(_tick: int, p: Dictionary) -> void:
+		for id in p:
+			if not into.has(id):
+				into[id] = {"observations": []}
+			into[id]["observations"].append_array(p[id]["observations"]))
+
+
+func _saw_text(packets: Dictionary, avatar_id: String, kind: String, text: String) -> bool:
+	for item in packets.get(avatar_id, {"observations": []})["observations"]:
+		if item["kind"] == kind and item["value"].get("text", "") == text:
+			return true
+	return false
+
+
+## T13 through the router: a gesture's comms_event lists only those who could see it.
+func test_router_gesture_t13() -> String:
+	var w := await _world(["legged_humanoid", "human_walker", "quadruped"])
+	var av := await _place(w, [
+		["waver", "human_walker", 15.0, 12.5, PI],
+		["seer", "legged_humanoid", 15.0, 15.5, 0.0],
+		["turned", "human_walker", 13.5, 15.5, PI],        # faces away from the waver
+		["walled", "human_walker", 8.5, 10.0, -PI / 2],    # partition_a in between
+		["quad", "quadruped", 18.0, 17.5, 0.0],
+	])
+	if w.comms.send_gesture(av["quad"], "WAVE")["reason_code"] != "CAPABILITY_DENIED":
+		return "an armless quadruped's wave must be refused"
+	var sent := w.comms.send_gesture(av["waver"], "WAVE")
+	if not sent["ok"]:
+		return "the visitor could not wave: %s" % [sent]
+	await _ticks(Avatar.GESTURE_DURATION_TICKS + 12)
+	var comm := _comm_for(w, sent["event_id"])
+	if comm.is_empty() or comm["channel"] != "GESTURE" or comm["expression"] != {"gesture": "WAVE"}:
+		return "expected a GESTURE comms_event with the expression, got %s" % [comm]
+	if not comm["delivered_to"].has("seer"):
+		return "the observer facing the visitor should receive the wave: %s" % [comm["delivered_to"]]
+	for id in ["turned", "walled"]:
+		if not comm["not_delivered_to"].has(id):
+			return "%s could not see the wave and must not receive it: %s" % [id, comm]
+	if w.comms.events.size() != 1:
+		return "the refused wave must not produce a comms_event"
+	return ""
+
+
+## T14 through the router: speech reaches listeners in earshot, not those too far away.
+func test_router_local_t14() -> String:
+	var w := await _world(["legged_humanoid", "human_walker"])
+	var av := await _place(w, [
+		["speaker", "human_walker", 15.0, 13.5, PI],
+		["near", "legged_humanoid", 15.0, 15.5, 0.0],
+		["behind", "human_walker", 13.5, 15.5, PI],     # can't see the speaker, can hear
+		["far", "human_walker", 15.0, 4.0, 0.0],        # 9.5 m: below the noise floor
+		["walled", "human_walker", 8.5, 10.0, -PI / 2],
+	])
+	var sent := w.comms.send_local(av["speaker"], "Is the cafe this way?", "near")
+	await _ticks(12)
+	var comm := _comm_for(w, sent["event_id"])
+	if comm.is_empty() or comm["channel"] != "LOCAL" or comm["addressee_id"] != "near":
+		return "expected a LOCAL comms_event addressed to near, got %s" % [comm]
+	if not comm["delivered_to"].has("near") or not comm["delivered_to"].has("behind"):
+		return "listeners in earshot should receive the speech, seen or not: %s" % [comm["delivered_to"]]
+	if not comm["not_delivered_to"].has("far"):
+		return "a listener 9.5 m away on a 45 dB floor should not receive it: %s" % [comm]
+	return ""
+
+
+## T15: group messages reach members anywhere, never non-members, even right next to the sender.
+func test_group_messages_t15() -> String:
+	var w := await _world(["legged_humanoid", "human_walker"])
+	var av := await _place(w, [
+		["a", "legged_humanoid", 5.0, 3.0, 0.0],
+		["b", "human_walker", 25.0, 17.0, 0.0],      # far member
+		["c", "human_walker", 5.8, 3.0, 0.0],        # right next to the sender, never a member
+		["d", "human_walker", 10.0, 17.0, 0.0],      # invited, never accepts
+		["e", "human_walker", 12.0, 17.0, 0.0],      # invited, declines
+	])
+	var packets := {}
+	_collect(w, packets)
+	var group_id := String(w.comms.create_group(av["a"], "Cafe meetup")["event_id"])
+	w.comms.invite(av["a"], group_id, "b")
+	w.comms.invite(av["a"], group_id, "d")
+	w.comms.invite(av["a"], group_id, "e")
+	await _ticks(7)
+	var got_invite := false
+	for item in packets["b"]["observations"]:
+		if item["kind"] == "GROUP_INVITE" and item["value"]["group_id"] == group_id and item["source_entity_id"] == "a":
+			got_invite = true
+	if not got_invite:
+		return "b should receive the invitation on its device, from a"
+	if w.comms.accept(av["c"], group_id)["reason_code"] != "GROUP_NOT_MEMBER":
+		return "accepting without an invitation must be refused"
+	w.comms.accept(av["b"], group_id)
+	w.comms.decline(av["e"], group_id)
+	packets.clear()
+	var first := w.comms.send_group(av["a"], group_id, "Meet at the cafe at noon.")
+	await _ticks(7)
+	if not _saw_text(packets, "b", "GROUP_MESSAGE", "Meet at the cafe at noon."):
+		return "the far member should receive the group message"
+	for id in ["c", "d", "e"]:
+		if _saw_text(packets, id, "GROUP_MESSAGE", "Meet at the cafe at noon.") \
+				or _saw_text(packets, id, "AUDIO_SPEECH", "Meet at the cafe at noon."):
+			return "%s is not a member and must not receive the group message" % id
+	if _comm_for(w, first["event_id"])["delivered_to"] != ["b"]:
+		return "comms_event should list only b: %s" % [_comm_for(w, first["event_id"])]
+	if w.comms.send_group(av["c"], group_id, "Can I come?")["reason_code"] != "GROUP_NOT_MEMBER":
+		return "a non-member must not be able to post to the group"
+	w.comms.leave(av["b"], group_id)
+	packets.clear()
+	var second := w.comms.send_group(av["a"], group_id, "Changed to one o'clock.")
+	await _ticks(7)
+	if _saw_text(packets, "b", "GROUP_MESSAGE", "Changed to one o'clock."):
+		return "after leaving, b must not receive group messages"
+	if not _comm_for(w, second["event_id"])["delivered_to"].is_empty():
+		return "nobody else is a member, so nobody should receive the second message"
+	return ""
+
+
+## T16: the PA is refused for unauthorized senders (and nobody hears it); authorized reach everyone.
+func test_pa_authorization_t16() -> String:
+	var w := await _world(["legged_humanoid", "human_walker"])
+	var av := await _place(w, [
+		["robot", "legged_humanoid", 15.0, 15.5, 0.0],
+		["staff", "human_walker", 3.0, 8.0, 0.0],
+		["visitor_1", "human_walker", 25.0, 17.0, 0.0],
+		["visitor_2", "human_walker", 26.0, 4.0, 0.0],
+	])
+	var packets := {}
+	_collect(w, packets)
+	if w.comms.send_pa(av["robot"], "Everyone to the exit!")["reason_code"] != "PA_UNAUTHORIZED":
+		return "a robot without PA permission must be refused"
+	await _ticks(7)
+	for id in ["staff", "visitor_1", "visitor_2"]:
+		if _saw_text(packets, id, "AUDIO_SPEECH", "Everyone to the exit!"):
+			return "an unauthorized announcement must reach nobody"
+	if not w.comms.events.is_empty():
+		return "a refused announcement must not produce a comms_event"
+	w.comms.pa_operators["staff"] = true
+	packets.clear()
+	var sent := w.comms.send_pa(av["staff"], "The demo starts in five minutes.")
+	await _ticks(7)
+	for id in ["robot", "visitor_1", "visitor_2"]:
+		var heard := {}
+		for item in packets[id]["observations"]:
+			if item["kind"] == "AUDIO_SPEECH" and item["value"]["text"] == "The demo starts in five minutes.":
+				heard = item
+		if heard.is_empty() or heard["value"]["channel"] != "PA" or absf(float(heard["position_estimate"]["x"]) - 1.0) > 0.01:
+			return "%s should hear the announcement on channel PA from the speaker, got %s" % [id, heard]
+	if _comm_for(w, sent["event_id"])["delivered_to"] != ["robot", "visitor_1", "visitor_2"]:
+		return "the PA comms_event should list everyone in coverage"
+	return ""
+
+
+func _req(agent_id: String, tick: int, action: String, args: Dictionary, n: int) -> Dictionary:
+	return {"schema_version": "1.0", "action_request_id": "act_t_%04d" % n, "agent_id": agent_id,
+		"based_on_tick_id": tick, "action": action, "args": args}
+
+
+## The action gate answers each request with the right reason code (Blueprint §12.3).
+func test_action_gate_reason_codes() -> String:
+	var w := await _world(["legged_humanoid", "quadruped", "human_walker"])
+	var av := await _place(w, [
+		["agent", "legged_humanoid", 15.0, 15.5, 0.0],
+		["quad", "quadruped", 12.0, 17.5, 0.0],
+		["friend", "human_walker", 15.0, 14.0, PI],
+		["bystander", "human_walker", 16.5, 15.0, PI],
+	])
+	await _ticks(130)
+	w.senses.sample()
+	var friend_track := w.senses.track_id_for("agent", "friend")
+	var mine := ["agent", "quad"]
+	var now := w.clock.tick
+	var cases := [
+		["INVALID_SCHEMA", _req("agent", now, "FLY", {}, 1)],
+		["INVALID_SCHEMA", _req("agent", now, "GESTURE", {"gesture": "NOD", "color": "red"}, 2)],
+		["INVALID_SCHEMA", {"schema_version": "1.0", "action_request_id": "act_t_0003", "agent_id": "agent"}],
+		["INVALID_SCHEMA", _req("agent", now + 30, "NO_OP", {}, 4)],
+		["CAPABILITY_DENIED", _req("bystander", now, "NO_OP", {}, 5)],
+		["STALE_OBSERVATION", _req("agent", now - 120, "NO_OP", {}, 6)],
+		["CAPABILITY_DENIED", _req("quad", now, "GESTURE", {"gesture": "WAVE"}, 7)],
+		["PA_UNAUTHORIZED", _req("agent", now, "SPEAK", {"channel": "PA", "text": "Attention."}, 8)],
+		["GROUP_NOT_MEMBER", _req("agent", now, "SPEAK", {"channel": "GROUP", "text": "Hi.", "group_id": "grp_999999"}, 9)],
+		["PRIVACY_SCOPE_DENIED", _req("agent", now, "SPEAK", {"channel": "LOCAL", "text": "Your table is ready.",
+			"addressee_id": friend_track, "disclosure_scope": "ONE_TO_ONE"}, 10)],
+		["PRIVACY_SCOPE_DENIED", _req("agent", now, "SPEAK", {"channel": "LOCAL", "text": "x", "disclosure_scope": "SEALED"}, 11)],
+		["TARGET_UNKNOWN", _req("agent", now, "MOVE_TO", {"target_id": "anon_nobody00000"}, 12)],
+		["TARGET_UNKNOWN", _req("agent", now, "MOVE_TO", {"destination": {"x": 45.0, "z": 3.0}}, 13)],
+		["OK", _req("agent", now, "GESTURE", {"gesture": "NOD", "target_id": friend_track}, 14)],
+		["OK", _req("agent", now, "CREATE_GROUP", {"group_name": "Tour"}, 15)],
+		["GROUP_NOT_MEMBER", _req("quad", now, "ACCEPT_GROUP", {"group_id": "grp_000001"}, 16)],
+	]
+	var results: Array = []
+	var failures: Array[String] = []
+	for c in cases:
+		var result := w.actions.submit(c[1], mine)
+		results.append(result)
+		if result["reason_code"] != c[0]:
+			failures.append("%s: expected %s, got %s" % [c[1].get("action_request_id", "?"), c[0], result["reason_code"]])
+	var not_a_dict := w.actions.submit("hello", mine)
+	results.append(not_a_dict)
+	if not_a_dict["reason_code"] != "INVALID_SCHEMA":
+		failures.append("a request that is not an object must be INVALID_SCHEMA")
+	if results[13]["resulting_event_ids"].is_empty() or not results[13]["executed"]:
+		failures.append("an accepted gesture should report its event id")
+	# Alone with the friend, the one-to-one sentence is allowed.
+	av["bystander"].global_position = Vector3(27.0, 0.0, 18.0)
+	av["quad"].global_position = Vector3(3.0, 0.0, 18.0)
+	await _ticks(3)
+	var alone := w.actions.submit(_req("agent", w.clock.tick, "SPEAK", {"channel": "LOCAL", "text": "Your table is ready.",
+		"addressee_id": friend_track, "disclosure_scope": "ONE_TO_ONE"}, 20), mine)
+	results.append(alone)
+	if alone["reason_code"] != "OK":
+		failures.append("with nobody else in earshot, one-to-one speech should be allowed, got %s" % alone["reason_code"])
+	# Rate limit: an eleventh request within one second is refused.
+	await _ticks(61)
+	var burst: Array = []
+	for i in 11:
+		burst.append(w.actions.submit(_req("quad", w.clock.tick, "NO_OP", {}, 30 + i), mine)["reason_code"])
+	if burst.slice(0, 10).has("RATE_LIMITED") or burst[10] != "RATE_LIMITED":
+		failures.append("expected ten accepted then RATE_LIMITED, got %s" % [burst])
+	var f := FileAccess.open(artifacts_dir.path_join("gate.action_results.json"), FileAccess.WRITE)
+	f.store_string(JSON.stringify(results, "", true))
+	f.close()
+	return "; ".join(failures)
+
+
+# ----- the live link (sidecars started by tools/godot_check.py) -----
+
+func _link_port(env_name: String) -> int:
+	return int(OS.get_environment(env_name))
+
+
+## Run frames at a real-time pace (the link talks to another process) and track how long the
+## engine's own work per frame takes. Returns the longest such frame, in milliseconds.
+func _run_linked(frames: int, done: Callable) -> float:
+	var longest := 0.0
+	for i in frames:
+		var start := Time.get_ticks_usec()
+		await get_tree().physics_frame
+		longest = maxf(longest, (Time.get_ticks_usec() - start) / 1000.0)
+		OS.delay_msec(3)
+		if done.call():
+			break
+	return longest
+
+
+func _results_by_label(w: RangeWorld) -> Dictionary:
+	var by := {}
+	for r in w.actions.resolved:
+		var id := String(r["result"]["action_request_id"])
+		for label in ["stale", "invalid", "pa", "group", "privacy", "unknowntarget", "notmine", "valid", "burst", "greet"]:
+			if id.contains("_%s_" % label):
+				var key := "%s:%s" % [r["result"]["agent_id"], label]
+				if not by.has(key):
+					by[key] = []
+				by[key].append(r["result"]["reason_code"])
+	return by
+
+
+## End to end: observations to Python, scripted replies back, every refusal with its reason code;
+## the sidecar drops the connection once and Godot reconnects while the world keeps ticking.
+func test_link_end_to_end() -> String:
+	if _link_port("RANGE_LINK_PORT") == 0:
+		return "no test sidecar: run the Godot tests through tools/godot_check.py"
+	var w := await _world(["legged_humanoid", "quadruped", "human_walker"])
+	var av := await _place(w, [
+		["robot_legged", "legged_humanoid", 15.0, 15.5, 0.0],
+		["robot_quadruped", "quadruped", 13.5, 15.5, 0.0],
+		["visitor", "human_walker", 14.3, 12.5, PI],
+	])
+	w.start_run(5, artifacts_dir.path_join("link.jsonl"))
+	var link := LinkClient.new()
+	add_child(link)
+	link.setup(w, _link_port("RANGE_LINK_PORT"), ["robot_legged", "robot_quadruped"])
+	var waved := {"done": false, "probed_at": -1}
+	var ticks_before := w.clock.tick
+	var frames := {"n": 0}
+	var longest := await _run_linked(60 * 60, func() -> bool:
+		frames["n"] += 1
+		var seen := _results_by_label(w)
+		if waved["probed_at"] < 0 and seen.has("robot_legged:valid"):
+			waved["probed_at"] = w.clock.tick
+		# Wave once the probes are answered and their burst has left the one-second rate window.
+		if not waved["done"] and waved["probed_at"] >= 0 and w.clock.tick > int(waved["probed_at"]) + 90:
+			av["visitor"].perform_gesture("WAVE")
+			waved["done"] = true
+		return seen.has("robot_legged:valid") and seen.has("robot_quadruped:greet") and seen.has("robot_legged:greet"))
+	var ticks_linked := w.clock.tick - ticks_before
+	await _ticks(12)   # the next sample delivers the robots' speech to the visitor
+	var by := _results_by_label(w)
+	link.queue_free()
+	w.end_run()
+	var expect := {"robot_legged:stale": "STALE_OBSERVATION", "robot_legged:invalid": "INVALID_SCHEMA",
+		"robot_legged:pa": "PA_UNAUTHORIZED", "robot_legged:group": "GROUP_NOT_MEMBER",
+		"robot_legged:privacy": "PRIVACY_SCOPE_DENIED", "robot_legged:unknowntarget": "TARGET_UNKNOWN",
+		"visitor:notmine": "CAPABILITY_DENIED", "robot_legged:valid": "OK"}
+	for key in expect:
+		if not by.has(key) or by[key][0] != expect[key]:
+			return "%s: expected %s, got %s (all: %s)" % [key, expect[key], by.get(key), by]
+	if not by.get("robot_legged:burst", []).has("RATE_LIMITED"):
+		return "the burst of requests should hit the rate limit: %s" % [by.get("robot_legged:burst")]
+	if by.get("robot_legged:greet", []) != ["OK", "OK"]:
+		return "the legged robot should wave back and say hello: %s" % [by.get("robot_legged:greet")]
+	if by.get("robot_quadruped:greet", []) != ["CAPABILITY_DENIED", "OK"]:
+		return "the quadruped cannot wave but can say hello: %s" % [by.get("robot_quadruped:greet")]
+	if w.senses.last_heard.get("visitor", {}).get("text") != "Hello!":
+		return "the visitor should have heard the robots' hello"
+	if link.stats["disconnects"] < 1 or link.stats["connects"] < 2:
+		return "the sidecar dropped the connection once; Godot should have reconnected: %s" % [link.stats]
+	if ticks_linked != frames["n"]:
+		return "the world must tick once per frame whatever the link does (%d ticks, %d frames)" % [ticks_linked, frames["n"]]
+	if longest > 50.0:
+		return "a frame took %.1f ms while linked; the world must not wait for Python" % longest
+	return ""
+
+
+func test_link_wrong_token() -> String:
+	if _link_port("RANGE_LINK_PORT") == 0:
+		return "no test sidecar: run the Godot tests through tools/godot_check.py"
+	var w := await _world(["legged_humanoid"])
+	await _place(w, [["robot_legged", "legged_humanoid", 15.0, 15.5, 0.0]])
+	var link := LinkClient.new()
+	add_child(link)
+	link.setup(w, _link_port("RANGE_LINK_PORT"), ["robot_legged"], "not-the-session-token-at-all-0000")
+	var before := w.clock.tick
+	var longest := await _run_linked(600, func() -> bool: return link.stats["refused"] >= 1)
+	var status := link.status
+	var stats := link.stats.duplicate()
+	link.queue_free()
+	if status != "REFUSED" or stats["received"] != 0:
+		return "a wrong token must be refused with nothing exchanged: %s %s" % [status, stats]
+	if w.clock.tick == before or longest > 50.0:
+		return "the world must keep ticking smoothly while refused"
+	return ""
+
+
+## A slow Python side: its answers arrive too late and are refused as stale; the world never waits.
+func test_link_slow_sidecar() -> String:
+	if _link_port("RANGE_LINK_PORT_SLOW") == 0:
+		return "no slow test sidecar: run the Godot tests through tools/godot_check.py"
+	var w := await _world(["legged_humanoid", "human_walker"])
+	var av := await _place(w, [
+		["robot_legged", "legged_humanoid", 15.0, 15.5, 0.0],
+		["visitor", "human_walker", 15.0, 12.5, PI],
+	])
+	var link := LinkClient.new()
+	add_child(link)
+	link.setup(w, _link_port("RANGE_LINK_PORT_SLOW"), ["robot_legged"])
+	var state := {"waved": false}
+	var before := w.clock.tick
+	var frames := {"n": 0}
+	var longest := await _run_linked(60 * 60, func() -> bool:
+		frames["n"] += 1
+		if not state["waved"] and link.is_connected_to_sidecar() and w.clock.tick > 60:
+			av["visitor"].perform_gesture("WAVE")
+			state["waved"] = true
+		return not w.actions.resolved.is_empty())
+	link.queue_free()
+	if w.actions.resolved.is_empty():
+		return "the slow sidecar's answer never arrived"
+	if w.actions.resolved[0]["result"]["reason_code"] != "STALE_OBSERVATION":
+		return "an answer 1.5 s late should be refused as stale, got %s" % w.actions.resolved[0]["result"]["reason_code"]
+	if w.clock.tick - before != frames["n"] or longest > 50.0:
+		return "the world must keep its tick while Python is slow (longest frame %.1f ms)" % longest
+	return ""
+
+
+func test_link_no_sidecar() -> String:
+	var w := await _world(["legged_humanoid"])
+	await _place(w, [["robot_legged", "legged_humanoid", 15.0, 15.5, 0.0]])
+	var link := LinkClient.new()
+	add_child(link)
+	link.setup(w, 9, ["robot_legged"], "a-token-for-a-port-nobody-listens-on")
+	var before := w.clock.tick
+	var longest := await _run_linked(300, func() -> bool: return link.stats["refused"] >= 1)
+	var status := link.status
+	link.queue_free()
+	if status != "REFUSED" or w.clock.tick == before or longest > 50.0:
+		return "with no sidecar the link should report REFUSED and the world keep ticking (%s, %.1f ms)" % [status, longest]
 	return ""

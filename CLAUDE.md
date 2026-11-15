@@ -19,8 +19,8 @@ Main specs: the [Master Build Blueprint](docs/sources/range/SOMA_RANGE_Master_Bu
 **G0 complete** (merged 2026-11-14): contracts v1, headless test world, ΔP module, config validator, one check command, CI. Decision D-29 (contract conventions) is APPROVED.
 **G1 complete** (merged 2026-11-14): Sandbox Flats in Godot 4.7.2, capability-gated ramp/stairs, free/orbit camera, headless Godot tests in `tools/check.py` and CI. Decisions D-30, D-31, D-33, D-34, D-35 APPROVED.
 **G1b complete** (merged 2026-11-14): robot body family (legged humanoid, wheeled humanoid, quadruped + arm variant); Robot R is a role. D-36, D-37, D-38 APPROVED.
-**G2 split in two** ([docs/gates/G2_PLAN.md](docs/gates/G2_PLAN.md)). **G2a built, in review** (draft PR): observer filter (multi-point sight from each body's sensor mount, hearing with walls and zone noise), observation packets at `tick_hz`, Godot event journal checked against the contracts in Python, shared local avoidance, low divider, F2 sense view. D-39 to D-42 PROPOSED.
-Next: **G2b** (COMMS router with GESTURE/LOCAL/GROUP/PA, disclosure gate, loopback WebSocket link with session token; T13–T17 end to end). Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
+**G2 complete** ([docs/gates/G2_PLAN.md](docs/gates/G2_PLAN.md)): G2a merged 2026-11-14 (observer filter, hearing, journal, avoidance; D-39 to D-42 APPROVED); G2b built 2026-11-15 and in review as a draft PR (COMMS router with GESTURE/LOCAL/GROUP/PA, action gate, disclosure gate, Godot ↔ Python link on 127.0.0.1 with a session token, scripted Python agents; D-43 to D-46 PROPOSED).
+Next gate after merge: **G3** (agent runtime: scripted policy, then one local LLM agent; expression catalog and Beacon output per docs/EXPRESSION_PRINCIPLES.md). Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
 
 ## Rules that never bend
 
@@ -53,6 +53,7 @@ Full details: [docs/BUILD_AND_RUN.md](docs/BUILD_AND_RUN.md).
 - `uv run python tools/export_godot_data.py`: refresh `godot_app/data/` after editing a map or body config (commit both).
 - `uv run python tools/godot_check.py [--filter NAME]`: only the Godot import, compile, headless tests and the contract check of what Godot wrote.
 - `uv run pytest`: run only the Python tests.
+- `uv run python tools/run_link_demo.py`: open the Godot demo connected to the Python sidecar.
 
 Layout: contracts in `contracts/` (see [contracts/README.md](contracts/README.md)), Python in `range_service/`, Godot in `godot_app/` (see [godot_app/README.md](godot_app/README.md)), content in `configs/`, tests in `tests/` and `godot_app/tests/`, scripts in `tools/`.
 
