@@ -20,8 +20,31 @@ def test_exported_godot_data_is_up_to_date():
 def test_export_covers_the_map_and_every_body():
     expected, _ = export_godot_data.expected_files()
     names = sorted(p.relative_to(export_godot_data.GODOT_DATA_DIR).as_posix() for p in expected)
-    assert names == ["bodies/human_walker.json", "bodies/legged_humanoid.json", "bodies/quadruped.json",
-                     "bodies/quadruped_arm.json", "bodies/wheeled_humanoid.json", "maps/sandbox_flats.json"]
+    assert [n for n in names if not n.startswith("expressions/")] == [
+        "bodies/human_walker.json", "bodies/legged_humanoid.json", "bodies/quadruped.json",
+        "bodies/quadruped_arm.json", "bodies/wheeled_humanoid.json", "maps/sandbox_flats.json",
+        "scenarios/SB04_POLITE_BID.json", "scenarios/SB05_RAMP_VS_STAIRS.json"]
+    assert len([n for n in names if n.startswith("expressions/")]) == len(list((export_godot_data.REPO / "configs" / "expressions").glob("*.yaml")))
+
+
+def test_scenario_exports_are_world_only():
+    """Godot gets what it needs to run the world, never evaluator labels, measures or personas (D-48)."""
+    from range_service.configs import load_and_check
+
+    config_set, _ = load_and_check()
+    expected, _ = export_godot_data.expected_files()
+    for scenario_id, scenario in config_set.items["scenarios"].items():
+        text = expected[export_godot_data.GODOT_DATA_DIR / "scenarios" / f"{scenario_id}.json"]
+        data = json.loads(text)["data"]
+        assert "evaluator_only" not in data and "measure" not in data
+        for entry in data["cast"].values():
+            assert set(entry) == {"body", "controller", "spawn"}
+        for value in scenario["evaluator_only"].values():
+            if isinstance(value, str):
+                assert value not in text
+        for persona in config_set.items["personas"].values():
+            if persona["private_goal"]:
+                assert persona["private_goal"] not in text
 
 
 def test_export_is_deterministic_and_wraps_the_config_unchanged():
@@ -143,3 +166,24 @@ def test_godot_outputs_are_checked_against_the_contracts(tmp_path):
     assert any("run.jsonl line 2" in p and "private_goal" in p for p in problems)
     assert any("x.observations.json packet 0" in p for p in problems)
     assert any("sampling.jsonl was not written" in p for p in problems)
+
+
+def test_repeat_and_cpu_load_options_parse():
+    # D-47: CI runs the determinism tests several times under CPU load.
+    assert godot_check._int_option(["--repeat", "5"], "--repeat", 1) == 5
+    assert godot_check._int_option([], "--repeat", 1) == 1
+    assert godot_check._int_option(["--cpu-load", "-3"], "--cpu-load", 0) == 0
+    with pytest.raises(SystemExit):
+        godot_check._int_option(["--repeat"], "--repeat", 1)
+
+
+def test_ci_runs_the_determinism_tests_repeatedly_under_load():
+    workflow = (godot_check.REPO / ".github" / "workflows" / "check.yml").read_text(encoding="utf-8")
+    assert "--filter determinis --repeat 5 --cpu-load 4" in workflow
+
+
+def test_busy_processes_start_and_stop():
+    procs = godot_check._start_cpu_load(2)
+    assert all(p.is_alive() for p in procs)
+    godot_check._stop_cpu_load(procs)
+    assert not any(p.is_alive() for p in procs)

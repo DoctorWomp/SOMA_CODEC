@@ -1,0 +1,10 @@
+# Expression catalog entry (EXPRESSION_PRINCIPLES §1, D-14, D-52). The light is always paired
+# with words or a gesture by the agent; nothing flashes faster than 3 Hz.
+schema_version: "1.0"
+expression_id: acknowledge
+meaning: "I see you; I will be with you soon."
+gesture: NOD
+glyph: {glyph_id: attentive, visor: "o_o", strip: "o o"}
+light: CALM
+light_pattern: STEADY
+hold_ms: 3000

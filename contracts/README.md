@@ -18,7 +18,8 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 | `intervention` | evaluator | A journaled Director action; taints the run unless pre-scheduled |
 | `run_manifest` | evaluator | How a run was set up: seed, versions, per-avatar policy/mask/sensors |
 | `journal_entry` | evaluator | One line of the JSONL event journal |
-| `map`, `persona`, `body`, `scenario`, `preset` | config | The YAML content files in `configs/` |
+| `decision_record` | evaluator | One agent decision: triggers, context sizes per section, model calls with responses (record and replay), the requests it made (G3a, D-49–D-51) |
+| `map`, `persona`, `body`, `scenario`, `preset`, `expression`, `directive` | config | The YAML content files in `configs/` |
 
 `x-audience` in each file records its audience. **Agent-facing contracts can never carry evaluator-only fields** (private goals, scenario labels, delivery lists; the list is `common.schema.json#/$defs/evaluator_only_field`). Tests insert every one of those names at every level of every agent-facing example and check that each is rejected.
 
@@ -31,7 +32,8 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 - Positions use Godot's frame: floor is x/z, y is up, yaw 0 faces −z, positive yaw and bearing turn left (D-29).
 - Every top-level contract has a `schema_version`. An incompatible change bumps it. All contracts are at `1.0` except **`body`, at `2.0`** (D-37); `common.schema.json` holds each version.
 - The link between Godot and Python (D-44) adds envelope types `link.hello` and `link.heartbeat`; the session token is never in an envelope.
-- Expressions (D-46): one shared `expression` object (gesture, glyph, light state) used by GESTURE-channel `comms_event`s and `VISUAL_EXPRESSION` observations, ready for G3.
+- Expressions (D-46, D-52): one shared `expression` object (gesture, glyph, light state) used by GESTURE-channel `comms_event`s and `VISUAL_EXPRESSION` observations. The `EXPRESS` action names an entry of the expression catalog (`configs/expressions/`, contract `expression`).
+- G3a (D-48): envelope type `link.step` for stepped runs; journal kinds `SCENARIO_EVENT` and `EXPRESSION_SHOWN`; optional scenario fields `pa_operators`, `directive`, `pin_cognition`, `task_goal`. All backward-compatible, versions unchanged.
 - Gestures come from one shared vocabulary, `common.schema.json#/$defs/gesture`, used by `body`, `action_request` and `observation` (D-36). Expression channels likewise (`SPEECH`, `FACE`, `LIGHT`).
 
 ## Examples

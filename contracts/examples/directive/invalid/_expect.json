@@ -1,0 +1,5 @@
+{
+  "must_engage": "const",
+  "carries_guardrails": "additionalProperties",
+  "missing_directive": "required"
+}

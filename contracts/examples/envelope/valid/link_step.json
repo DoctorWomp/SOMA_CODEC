@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "message_id": "gd_000042",
+  "type": "link.step",
+  "tick_id": 120,
+  "sim_time_ms": 2000,
+  "source": "godot_world",
+  "payload": {
+    "sample_tick_id": 120,
+    "phase": "SAMPLE_SENT"
+  }
+}

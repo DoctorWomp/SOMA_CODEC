@@ -1,0 +1,18 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/waiting.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "waiting",
+    "meaning": "Waiting; take your time.",
+    "glyph": {
+      "glyph_id": "patient",
+      "visor": "-_-",
+      "strip": "..."
+    },
+    "light": "CALM",
+    "light_pattern": "SLOW_PULSE",
+    "hold_ms": 5000
+  }
+}

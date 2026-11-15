@@ -113,10 +113,12 @@ def test_greeter_answers_a_wave_with_valid_action_requests(tmp_path):
         async with connect(url(sidecar), additional_headers={TOKEN_HEADER: TOKEN}) as ws:
             await ws.send(envelope("link.hello", HELLO))
             await ws.send(envelope("world.observation", packet("robot_legged", [wave("anon_visitor0001")])))
-            replies = [json.loads(await asyncio.wait_for(ws.recv(), 2)) for _ in range(2)]
+            replies = [json.loads(await asyncio.wait_for(ws.recv(), 2)) for _ in range(3)]
         await sidecar.stop()
         return replies
-    replies = run(go())
+    hello, *replies = run(go())
+    # The sidecar answers link.hello with the agents it runs (G3a, D-48).
+    assert hello["type"] == "link.hello" and hello["payload"]["agents"] == ["robot_legged", "robot_quadruped"]
     assert [r["payload"]["action"] for r in replies] == ["GESTURE", "SPEAK"]
     for r in replies:
         assert r["type"] == "agent.action_request" and contracts.problems("envelope", r) == []
@@ -193,3 +195,70 @@ def test_t17_agents_keep_private_memories(tmp_path):
     assert contracts.problems("memory_item", legged[0]) == []
     assert quad == []                                 # overheard: not stored
     assert "4417" not in json.dumps(quad)
+
+
+# ---------- G3a: agent runtimes, stepped and live (D-48) ----------
+
+def _runtimes(model: str = "none"):
+    from range_service.agents.gateway import gateway_from_spec
+    from .agent_helpers import scenario_runtimes
+    return scenario_runtimes("SB04_POLITE_BID", gateway=gateway_from_spec(model))
+
+
+SB04_HELLO = {"protocol": "range-link/1", "agents": ["robot_r", "visitor_x", "visitor_y"], "tick_hz": 60,
+              "sample_hz": 10, "map_id": "sandbox_flats"}
+
+
+def _robot_packet(tick: int) -> dict:
+    p = packet("robot_r", [presence("anon_visitor0001"), speech("Where is the demo?", True)], tick)
+    return p
+
+
+def test_stepped_mode_answers_every_agent_then_agents_done(tmp_path):
+    async def go():
+        sidecar = Sidecar(TOKEN, {}, record_dir=tmp_path, runtimes=_runtimes(), jitter_ms=5)
+        await sidecar.start()
+        async with connect(url(sidecar), additional_headers={TOKEN_HEADER: TOKEN}) as ws:
+            await ws.send(envelope("link.hello", dict(SB04_HELLO, run_mode="STEPPED")))
+            hello = json.loads(await asyncio.wait_for(ws.recv(), 2))
+            await ws.send(envelope("world.observation", _robot_packet(600)))
+            await ws.send(envelope("world.observation", packet("visitor_x", [], 600)))
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(ws.recv(), 0.3)          # nothing until the sample is complete
+            await ws.send(envelope("link.step", {"sample_tick_id": 600, "phase": "SAMPLE_SENT"}))
+            replies = []
+            while True:
+                r = json.loads(await asyncio.wait_for(ws.recv(), 2))
+                replies.append(r)
+                if r["type"] == "link.step":
+                    break
+        await sidecar.stop()
+        return hello, replies
+    hello, replies = run(go())
+    assert hello["payload"]["agents"] == ["robot_r", "visitor_x", "visitor_y"]
+    assert replies[-1]["payload"] == {"sample_tick_id": 600, "phase": "AGENTS_DONE"}
+    requests = [r["payload"] for r in replies[:-1]]
+    assert [r["action"] for r in requests] == ["TURN_TO", "EXPRESS", "SPEAK"]
+    assert all(r["based_on_tick_id"] == 600 and r["agent_id"] == "robot_r" for r in requests)
+    for r in replies:
+        assert contracts.problems("envelope", r) == []
+    assert (tmp_path / "decision_records.jsonl").is_file() and (tmp_path / "prompts.jsonl").is_file()
+
+
+def test_live_mode_slow_model_never_blocks_the_link(tmp_path):
+    """T25 on the Python side: while Robot R's model thinks for 0.5 s, heartbeats are answered."""
+    async def go():
+        sidecar = Sidecar(TOKEN, {}, record_dir=tmp_path, runtimes=_runtimes("fake-slow:500"))
+        await sidecar.start()
+        async with connect(url(sidecar), additional_headers={TOKEN_HEADER: TOKEN}) as ws:
+            await ws.send(envelope("link.hello", SB04_HELLO))
+            await asyncio.wait_for(ws.recv(), 2)
+            await ws.send(envelope("world.observation", _robot_packet(600)))
+            await ws.send(envelope("link.heartbeat", {}))
+            first = json.loads(await asyncio.wait_for(ws.recv(), 0.3))
+            later = [json.loads(await asyncio.wait_for(ws.recv(), 2)) for _ in range(3)]
+        await sidecar.stop()
+        return first, later
+    first, later = run(go())
+    assert first["type"] == "link.heartbeat"
+    assert [r["payload"]["action"] for r in later] == ["TURN_TO", "EXPRESS", "SPEAK"]

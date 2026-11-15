@@ -1,6 +1,6 @@
 # G2 — Senses and communication
 
-**Status:** G2a COMPLETE (merged 2026-11-14) · G2b BUILT, IN REVIEW (draft PR) · owner checks: [G2b_OWNER_CHECKLIST.md](G2b_OWNER_CHECKLIST.md)
+**Status:** G2 COMPLETE. G2a merged 2026-11-14 · G2b merged 2026-11-15 (D-43 to D-46 approved) · owner checks: [G2b_OWNER_CHECKLIST.md](G2b_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G2 row) · Blueprint §8 (RANGE COMMS), §12 (wire contracts), §20 (G2 gate), tests T13–T17 · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §9 (who knows what) · [DECISIONS.md](../DECISIONS.md) D-04, D-05, D-07, D-12, D-29, D-33, D-36, D-37
 
 ## Goal

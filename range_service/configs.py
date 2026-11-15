@@ -22,6 +22,8 @@ import yaml
 
 from . import bodies as body_rules
 from . import contracts
+from . import expressions as expression_rules
+from . import scenarios as scenario_rules
 
 CONFIGS_DIR = contracts.REPO_ROOT / "configs"
 
@@ -32,6 +34,8 @@ KINDS: dict[str, tuple[str, str]] = {
     "personas": ("persona", "persona_id"),
     "presets": ("preset", "preset_id"),
     "scenarios": ("scenario", "scenario_id"),
+    "expressions": ("expression", "expression_id"),
+    "directives": ("directive", "directive_id"),
 }
 
 
@@ -164,6 +168,20 @@ def _cross_checks(cs: ConfigSet) -> list[ConfigProblem]:
             for dup in sorted({i for i in ids if ids.count(i) > 1}):
                 found.append(ConfigProblem(f, f"{collection}: id {dup!r} is used more than once"))
 
+    for expression_id, problems in expression_rules.catalog_problems(cs.items["expressions"], cs.items["bodies"]).items():
+        for problem in problems:
+            found.append(ConfigProblem(cs.files[("expressions", expression_id)], problem))
+
+    directives = cs.items["directives"]
+    role_defaults: dict[str, list[str]] = {}
+    for directive_id, d in directives.items():
+        for role in d.get("default_for_roles", []):
+            role_defaults.setdefault(role, []).append(directive_id)
+    for role, ids in sorted(role_defaults.items()):
+        if len(ids) > 1:
+            found.append(ConfigProblem(cs.files[("directives", sorted(ids)[1])],
+                                       f"role {role!r} has more than one default directive ({', '.join(sorted(ids))})"))
+
     for persona_id, p in personas.items():
         if missing("bodies", p["default_body"]):
             found.append(ConfigProblem(cs.files[("personas", persona_id)],
@@ -191,6 +209,16 @@ def _cross_checks(cs: ConfigSet) -> list[ConfigProblem]:
             if game_map is not None and entry["spawn"] not in spawn_ids:
                 found.append(ConfigProblem(f, f"{where}.spawn {entry['spawn']!r} is not a spawn point of map "
                                               f"{s['map']!r}"))
+            if "directive" in entry and missing("directives", entry["directive"]):
+                found.append(ConfigProblem(f, f"{where}.directive {entry['directive']!r} not found in configs/directives/"))
+            goal = entry.get("task_goal", {})
+            if game_map is not None and "zone" in goal and goal["zone"] not in {z["zone_id"] for z in game_map["zones"]}:
+                found.append(ConfigProblem(f, f"{where}.task_goal.zone {goal['zone']!r} is not a zone of map {s['map']!r}"))
+            if game_map is not None and "point" in goal and not _inside(game_map["bounds"], goal["point"]):
+                found.append(ConfigProblem(f, f"{where}.task_goal.point is outside the map bounds"))
+        for operator in s.get("pa_operators", []):
+            if operator not in s["cast"]:
+                found.append(ConfigProblem(f, f"pa_operators: {operator!r} is not in the cast"))
         for i, event in enumerate(s["events"]):
             if event["at_tick"] >= s["duration_ticks"]:
                 found.append(ConfigProblem(f, f"events[{i}] at_tick {event['at_tick']} is after the scenario ends "
@@ -200,4 +228,10 @@ def _cross_checks(cs: ConfigSet) -> list[ConfigProblem]:
             if game_map is not None and "where" in event and event["where"] not in place_ids:
                 found.append(ConfigProblem(f, f"events[{i}].where {event['where']!r} is not a zone or spawn point "
                                               f"of map {s['map']!r}"))
+            for problem in scenario_rules.event_problems(s, i, event):
+                found.append(ConfigProblem(f, problem))
+            args = event.get("args", {})
+            if game_map is not None and "x" in args and "z" in args \
+                    and not _inside(game_map["bounds"], {"x": args["x"], "z": args["z"]}):
+                found.append(ConfigProblem(f, f"events[{i}]: args x/z is outside the map bounds"))
     return found

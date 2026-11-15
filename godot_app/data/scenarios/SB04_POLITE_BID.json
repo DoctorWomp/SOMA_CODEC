@@ -1,0 +1,109 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/scenarios/SB04_POLITE_BID.yaml",
+  "kind": "scenarios",
+  "data": {
+    "schema_version": "1.0",
+    "scenario_id": "SB04_POLITE_BID",
+    "title": "Polite bid",
+    "map": "sandbox_flats",
+    "default_seed": 4204,
+    "tick_hz": 10,
+    "duration_ticks": 900,
+    "events": [
+      {
+        "at_tick": 20,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi! Can you tell me about the demo on the platform?"
+        }
+      },
+      {
+        "at_tick": 90,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Does it start soon?"
+        }
+      },
+      {
+        "at_tick": 100,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 210,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 225,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 250,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Can anyone go up there?"
+        }
+      },
+      {
+        "at_tick": 380,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 400,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 560,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi. Where is the cafe?"
+        }
+      }
+    ],
+    "cast": {
+      "robot_r": {
+        "body": "wheeled_humanoid",
+        "controller": "LLM_AGENT",
+        "spawn": "spawn_robot"
+      },
+      "visitor_x": {
+        "body": "human_walker",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_talker"
+      },
+      "visitor_y": {
+        "body": "human_walker",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_entrance"
+      }
+    }
+  }
+}

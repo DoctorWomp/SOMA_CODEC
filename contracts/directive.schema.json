@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/directive.schema.json",
+  "title": "Directive template",
+  "description": "configs/directives/*.yaml (INTERACTION_MODES §8, D-53). An objective-level directive that leaves the agent free inside its action space. Guardrails are system text added by the runtime, never part of a template, and a template cannot change them.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "directive_id",
+    "title",
+    "directive",
+    "allows_not_engaging"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "directive_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "directive": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "default_for_roles": {
+      "description": "Persona roles that get this template when the scenario names none.",
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 16,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{1,31}$"
+      }
+    },
+    "allows_not_engaging": {
+      "description": "Every template allows choosing not to engage; silence and waiting are valid (INTERACTION_MODES §8).",
+      "const": true
+    }
+  }
+}

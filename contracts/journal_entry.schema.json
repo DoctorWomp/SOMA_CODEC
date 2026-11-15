@@ -44,6 +44,8 @@
         "GROUP_CHANGED",
         "ACTION_RESOLVED",
         "LINK_STATUS",
+        "SCENARIO_EVENT",
+        "EXPRESSION_SHOWN",
         "RUN_ENDED"
       ]
     },
@@ -264,6 +266,38 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "SCENARIO_EVENT"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/scenario_event"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "EXPRESSION_SHOWN"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/expression_shown"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -402,6 +436,19 @@
         "ticks_run": {
           "type": "integer",
           "minimum": 0
+        },
+        "avatars": {
+          "description": "Where each avatar ended (G3a; evaluator).",
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/final_state"
+          }
+        },
+        "held_ticks": {
+          "description": "Stepped runs: samples at which the world waited for the agents (D-48).",
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -517,7 +564,9 @@
             "GROUP_NOT_MEMBER",
             "PA_UNAUTHORIZED",
             "PRIVACY_SCOPE_DENIED",
-            "TARGET_UNKNOWN"
+            "TARGET_UNKNOWN",
+            "RATE_LIMITED",
+            "INVALID_SCHEMA"
           ]
         }
       }
@@ -594,6 +643,107 @@
         "detail": {
           "type": "string",
           "maxLength": 200
+        }
+      }
+    },
+    "scenario_event": {
+      "description": "One entry of the scenario's event tape, played by the host through the action gate (G3a).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "event_type",
+        "actor_id",
+        "reason_code"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event_type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,47}$"
+        },
+        "actor_id": {
+          "$ref": "common.schema.json#/$defs/nullable_id"
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z_]{1,40}$"
+        },
+        "resulting_event_ids": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
+        }
+      }
+    },
+    "expression_shown": {
+      "description": "A body showed an expression from the catalog (EXPRESS). Who perceived it is in the matching comms_event.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "avatar_id",
+        "event_id",
+        "expression_id",
+        "expression",
+        "hold_ms"
+      ],
+      "properties": {
+        "avatar_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "event_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "expression_id": {
+          "$ref": "common.schema.json#/$defs/expression_id"
+        },
+        "expression": {
+          "$ref": "common.schema.json#/$defs/expression"
+        },
+        "hold_ms": {
+          "$ref": "common.schema.json#/$defs/time_ms"
+        }
+      }
+    },
+    "final_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "avatar_id",
+        "x",
+        "y",
+        "z",
+        "yaw_rad",
+        "links_used"
+      ],
+      "properties": {
+        "avatar_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        },
+        "yaw_rad": {
+          "type": "number"
+        },
+        "links_used": {
+          "description": "Navigation links entered during the run, in order (evaluator).",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
         }
       }
     }

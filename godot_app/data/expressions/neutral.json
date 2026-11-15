@@ -1,0 +1,18 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/neutral.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "neutral",
+    "meaning": "Neutral: present, not engaged.",
+    "glyph": {
+      "glyph_id": "neutral",
+      "visor": "._.",
+      "strip": "- -"
+    },
+    "light": "NEUTRAL",
+    "light_pattern": "STEADY",
+    "hold_ms": 3000
+  }
+}

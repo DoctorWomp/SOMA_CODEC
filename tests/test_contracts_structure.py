@@ -14,9 +14,9 @@ EXPECTED = {
     "envelope", "observation", "delta_feature", "hypothesis", "action_request",
     "action_result", "comms_event", "intervention",
     # records
-    "memory_item", "run_manifest", "journal_entry",
+    "memory_item", "run_manifest", "journal_entry", "decision_record",
     # configs
-    "scenario", "persona", "body", "map", "preset",
+    "scenario", "persona", "body", "map", "preset", "expression", "directive",
     # shared definitions
     "common",
 }

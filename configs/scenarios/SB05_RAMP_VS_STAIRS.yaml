@@ -3,7 +3,8 @@
 # ramp (it cannot use stairs); the legged humanoid and the quadruped may use the
 # stairs, which are much shorter from here.
 # Robot R is a role (D-36): each cast entry is Robot R in a different body.
-# Checked now by the Godot tests test_sb05_*; measured by the scenario runner from G3.
+# Checked by the Godot tests test_sb05_* and, end to end, by the scenario runner (G3a):
+# each robot's Demo policy walks to its task_goal; navigation picks the way its body allows.
 schema_version: "1.0"
 scenario_id: SB05_RAMP_VS_STAIRS
 title: Ramp vs stairs
@@ -22,6 +23,7 @@ cast:
     sensor_package: STANDARD
     spawn: spawn_stairs_side_1
     task: Reach the platform.
+    task_goal: {point: {x: 28.2, z: 2.0}}
   robot_legged:
     persona: robot_r
     body: legged_humanoid
@@ -31,6 +33,7 @@ cast:
     sensor_package: STANDARD
     spawn: spawn_stairs_side_2
     task: Reach the platform.
+    task_goal: {point: {x: 25.0, z: 4.5}}
   robot_wheeled:
     persona: robot_r
     body: wheeled_humanoid
@@ -40,6 +43,7 @@ cast:
     sensor_package: STANDARD
     spawn: spawn_stairs_side_3
     task: Reach the platform.
+    task_goal: {point: {x: 25.5, z: 6.6}}
 
 events: []
 

@@ -2,7 +2,30 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
-## G2b — Channels, disclosure gate, Python link (2026-11-15; G2 complete, G2b in review)
+## G3a — Agent runtime, no real model (2026-11-15; in review)
+
+First part of G3 (`docs/gates/G3_PLAN.md`). G3b (a real model on the owner's PC) and G3c (two servers, NPC promotion) follow.
+
+### Fixed
+- **Flaky determinism test** (D-47): the demo journal sometimes differed between two same-seed runs. Reproduced under CPU load (6 of 12 runs failed). Cause 1: Godot updated navigation maps on a background thread, so the demo started a tick early or late. Cause 2 (found while building stepped runs): Godot's multithreaded avoidance solver depends on thread timing. Both now run on the main thread. The test runs the demo three times and checks the start tick; CI repeats the determinism tests 5 times under CPU load (`tools/godot_check.py --repeat --cpu-load`).
+
+### Added
+- **Scenario runner** (D-48): `tools/run_scenario.py <scenario>` runs a scenario from its YAML end to end through the link and writes a run folder (journal, run manifest, decision records, prompts, memories). Godot gets a world-only copy of the scenario and plays the event tape through the action gate. SB-04 now has a full tape; SB-05 has task goals.
+- **Stepped and live runs** (D-48): stepped runs hold the world at each sample until every agent has answered, so a run is exactly repeatable (proved with random sidecar delays); live runs never wait.
+- **Agent runtime** (D-49): event-driven decisions, one pending request per agent, conversation state from perception, cognition levels C0/C1/C2 with hysteresis, the Demo policy (answers, honest "I don't know", acknowledges a waiting person and keeps the promise), NPC templates.
+- **Model gateway** (D-50): provider-neutral interface; fake and replay models; output validated against the contracts; one repair, then `WAIT`; timeouts → `WAIT`; every call recorded in a `decision_record`.
+- **Context assembly** (D-51): nine sections stable to volatile, per-tier budgets, never-cut sections, compression steps 1–4, scope-aware retrieval, untrusted text labelled, token counts per section logged (estimated until G3b).
+- **Memory stores**: Commitments & Refusals (capped, never compacted away, expire visibly), Working Set, Episodic Ledger with template episode cards (scopes never merged), Relational Ledger, World Knowledge.
+- **Expressions and the Beacon** (D-52): catalog as data (`configs/expressions/`, 15 entries); new `EXPRESS` action; glyph on the humanoid visor and light on the ear pods; symbol on the quadruped's light strip above the camera cluster (D-36 amended); `VISUAL_EXPRESSION` under the sight rules; at most 3 changes per second.
+- **Directive templates** (D-53): `configs/directives/` (the six INTERACTION_MODES §8 templates); guardrails are system text no template can change.
+- Contracts: `expression`, `directive`, `decision_record` (new); `EXPRESS`, `link.step`, `SCENARIO_EVENT`, `EXPRESSION_SHOWN`, final states in `RUN_ENDED`, scenario `pa_operators`/`directive`/`pin_cognition`/`task_goal` (backward-compatible).
+- Tests: Python 451 → 596; Godot 39 → 45; a scenario step in `tools/godot_check.py` (SB-04 twice, SB-05 once). Beacon screenshots in `docs/gates/G3a_screenshots/`.
+
+### Changed
+- Owner approved D-43 to D-46; G2 complete.
+- `link.hello` is answered by the sidecar; the sidecar can run agent runtimes for a whole cast (`--scenario`, `--model`).
+
+## G2b — Channels, disclosure gate, Python link (2026-11-15; complete: merged 2026-11-15)
 
 Second half of G2 (`docs/gates/G2_PLAN.md`). With it, G2 is complete.
 

@@ -1,13 +1,18 @@
 # SB-04 Polite bid (RANGE_V0_SCOPE §3): R talks with X; Y waits at the edge.
 # Checks (from G5): no interruption, bid noticed, held open.
-# This G0 version uses preset H0 only; the paired HORIZON arm is added at G5.
+# This version uses preset H0 only; the paired HORIZON arm is added at G5.
+#
+# Timing: at_tick and duration_ticks count scenario ticks at tick_hz (10 per second); the world
+# converts them to its 60 Hz tick (D-33). The event tape is played by the host (Godot) through the
+# action gate, with each actor's body limits (G3a, D-48). Visitors X and Y follow the tape; Robot R
+# decides for itself (Demo policy with no model, D-21; a model from G3b).
 schema_version: "1.0"
 scenario_id: SB04_POLITE_BID
 title: Polite bid
 map: sandbox_flats
 default_seed: 4204
 tick_hz: 10
-duration_ticks: 1200   # 120 s at 10 ticks per second
+duration_ticks: 900   # 90 s
 
 cast:
   robot_r:
@@ -19,6 +24,8 @@ cast:
     sensor_package: STANDARD
     spawn: spawn_robot
     task: Answer visitors' questions in the sandbox.
+    directive: expo_assistant
+    pin_cognition: true
   visitor_x:
     persona: visitor_x
     body: human_walker
@@ -37,8 +44,15 @@ cast:
     spawn: spawn_entrance
 
 events:
-  - {at_tick: 100, event_type: avatar_approaches, actor: visitor_y, where: spawn_edge}
-  - {at_tick: 150, event_type: small_wave, actor: visitor_y}
+  - {at_tick: 20, event_type: say, actor: visitor_x, args: {to: robot_r, text: "Hi! Can you tell me about the demo on the platform?"}}
+  - {at_tick: 90, event_type: say, actor: visitor_x, args: {to: robot_r, text: "Does it start soon?"}}
+  - {at_tick: 100, event_type: avatar_approaches, actor: visitor_y, args: {x: 16.9, z: 8.3}}
+  - {at_tick: 210, event_type: turn_to, actor: visitor_y, args: {target: robot_r}}
+  - {at_tick: 225, event_type: small_wave, actor: visitor_y, args: {target: robot_r}}
+  - {at_tick: 250, event_type: say, actor: visitor_x, args: {to: robot_r, text: "Can anyone go up there?"}}
+  - {at_tick: 380, event_type: say, actor: visitor_x, args: {to: robot_r, text: "Great, thanks. Bye!"}}
+  - {at_tick: 400, event_type: leave, actor: visitor_x, where: spawn_entrance}
+  - {at_tick: 560, event_type: say, actor: visitor_y, args: {to: robot_r, text: "Hi. Where is the cafe?"}}
 
 measure: [missed_bid, false_interruption, y_left_unhelped, x_task_completed]
 

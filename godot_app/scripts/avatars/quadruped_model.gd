@@ -5,8 +5,8 @@ extends Node3D
 ## with a dark visor and lens array, a dark dorsal mounting rail, four legs with dark hip and
 ## knee joints, and (variant) a utility arm on the rail, shown stowed.
 ##
-## The visor is a camera array, not a face: it carries a thin light strip (future Beacon
-## light), never a face glyph. Identity: matte trim panels on both sides with 1-3 stripes as
+## The visor is a camera array, not a face: the Beacon is a narrow light strip above it
+## (simple symbols and light, never over the lenses; D-52), plus a thin light below it. Identity: matte trim panels on both sides with 1-3 stripes as
 ## a pattern that does not rely on color, plus a number badge on each side (ART_DIRECTION §2.1).
 ## No leg animation yet: the body glides.
 ##
@@ -14,6 +14,8 @@ extends Node3D
 
 const DESIGN_LENGTH_M := 1.10
 const SENSOR_HEIGHT_M := 0.55
+
+var beacon: Beacon
 
 
 ## `appearance`: "badge", "trim", "bands" as for HumanoidModel.
@@ -44,7 +46,13 @@ func _assemble(with_arm: bool, trim: String, bands: int, badge_text: String) -> 
 		var l := p.cyl(head, String(lens[0]), float(lens[2]), float(lens[2]), 0.012, 10, "robot_lens",
 			Vector3(float(lens[1]), 0.015, -0.137))
 		l.rotation.x = PI / 2
-	p.box(head, "VisorLight", Vector3(0.28, 0.012, 0.012), "robot_ear", Vector3(0, -0.05, -0.128))
+	var under := p.box(head, "VisorLight", Vector3(0.28, 0.012, 0.012), "robot_ear", Vector3(0, -0.05, -0.128))
+	# Beacon (EXPRESSION_PRINCIPLES §1, D-36 as amended): a narrow light strip above the camera
+	# cluster, never over the lenses, showing a few simple symbols plus light.
+	# The strip stays dark and its symbol lights up in the Beacon color, like an LED band; the thin
+	# bar under the visor carries the light itself.
+	p.box(head, "LightStrip", Vector3(0.30, 0.03, 0.012), "robot_joint", Vector3(0, 0.078, -0.128))
+	beacon = Beacon.attach(head, Vector3(0, 0.078, -0.136), 0.07, [under] as Array[MeshInstance3D])
 
 	# Identity: side trim panels with 1-3 stripes, and a badge on each side.
 	for side in [["L", -1.0], ["R", 1.0]]:

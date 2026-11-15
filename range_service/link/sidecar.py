@@ -10,8 +10,17 @@ invalid or unknown messages are recorded and ignored, never acted on. Messages l
 MAX_MESSAGE_BYTES close the connection.
 
 Godot sends ``link.hello`` (which agents this session controls), ``world.observation`` packets
-(one per agent per sample) and ``world.action_result``; the sidecar answers with
-``agent.action_request`` from its scripted agents, and heartbeats.
+(one per agent per sample) and ``world.action_result``; the sidecar answers ``link.hello`` with the
+agents it runs, then ``agent.action_request`` messages, and heartbeats.
+
+Agents are either the G2b scripted agents (``agents.py``) or G3a agent runtimes
+(``range_service/agents``). Run modes (D-48):
+
+- **LIVE** (default): a runtime's decision runs as a background task, so a slow model never holds
+  up the link, the heartbeat or other agents (T25). One pending decision per agent.
+- **STEPPED**: after a sample's packets Godot sends ``link.step`` ``SAMPLE_SENT`` and holds the
+  world. The sidecar answers every agent for that sample, sends their requests in agent-id
+  order, then ``link.step`` ``AGENTS_DONE``. Same seed, same journal, however slow the agents.
 """
 
 from __future__ import annotations
@@ -19,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import random
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +36,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from range_service import contracts
+from range_service.agents.runtime import AgentRuntime, DecisionJob
 from range_service.link.agents import SCRIPTS, ScriptedAgent
 
 HOST = "127.0.0.1"
@@ -37,12 +48,19 @@ CLOSE_BUSY = 4409
 
 class Sidecar:
     def __init__(self, token: str, agents: dict[str, str], record_dir: Path | None = None,
-                 delay_ms: int = 0, drop_after: int = 0) -> None:
+                 delay_ms: int = 0, drop_after: int = 0, runtimes: dict[str, AgentRuntime] | None = None,
+                 jitter_ms: int = 0) -> None:
         if len(token) < 16:
             raise ValueError("the session token must be at least 16 characters")
         self._token = token
         self.agent_scripts = agents          # agent id -> script name
-        self.agents: dict[str, ScriptedAgent] = {}
+        self.agents: dict[str, ScriptedAgent | AgentRuntime] = {}
+        self.runtimes = runtimes or {}       # agent id -> AgentRuntime (G3a)
+        self.jitter_ms = jitter_ms           # test: random extra delay before answering (determinism checks)
+        self.run_mode = "LIVE"
+        self._step_jobs: list[tuple[AgentRuntime, DecisionJob]] = []
+        self._tasks: set[asyncio.Task] = set()
+        self._records_written = 0
         self.record_dir = record_dir
         self.delay_ms = delay_ms
         self.drop_after = drop_after         # close the connection once after this many observations
@@ -64,10 +82,13 @@ class Sidecar:
         return self.port
 
     async def stop(self) -> None:
+        for task in list(self._tasks):
+            task.cancel()
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
         self.write_memory()
+        self.write_records()
 
     def bound_hosts(self) -> list[str]:
         return [s.getsockname()[0] for s in self._server.sockets] if self._server else []
@@ -135,28 +156,31 @@ class Sidecar:
         self._last_tick = env["tick_id"]
         kind, payload = env["type"], env["payload"]
         if kind == "link.hello":
+            self.run_mode = payload.get("run_mode", "LIVE")
             for agent_id in payload["agents"]:
-                script = self.agent_scripts.get(agent_id)
-                if script is not None and agent_id not in self.agents:
-                    self.agents[agent_id] = SCRIPTS[script](agent_id)
+                if agent_id in self.agents:
+                    continue
+                if agent_id in self.runtimes:
+                    self.agents[agent_id] = self.runtimes[agent_id]
+                elif self.agent_scripts.get(agent_id) is not None:
+                    self.agents[agent_id] = SCRIPTS[self.agent_scripts[agent_id]](agent_id)
+            reply = dict(payload, agents=sorted(a for a in payload["agents"] if a in self.agents))
+            await self._send(ws, "link.hello", reply)
         elif kind == "world.observation":
             agent = self.agents.get(payload["observer_id"])
             if agent is None:
                 return
-            remembered = len(agent.memory)
-            requests = agent.on_observation(payload)
-            if len(agent.memory) != remembered:
-                self.write_memory()   # kept current, so a hard stop (Windows) loses nothing
-            if requests and self.delay_ms:
-                await asyncio.sleep(self.delay_ms / 1000)   # test: a slow agent answers late
-            for request in requests:
-                deliberate = request["action_request_id"] in getattr(agent, "raw_ids", set()) \
-                    or request["agent_id"] != agent.agent_id
-                await self._send(ws, "agent.action_request", request, check=not deliberate)
+            if isinstance(agent, AgentRuntime):
+                await self._runtime_observation(ws, agent, payload)
+            else:
+                await self._scripted_observation(ws, agent, payload)
             self._observations += 1
             if self.drop_after and not self._dropped_once and self._observations >= self.drop_after:
                 self._dropped_once = True
                 await ws.close(code=1001, reason="sidecar test: dropping the connection once")
+        elif kind == "link.step":
+            if payload["phase"] == "SAMPLE_SENT":
+                await self._finish_step(ws, payload["sample_tick_id"])
         elif kind == "world.action_result":
             agent = self.agents.get(payload["agent_id"])
             if agent is not None:
@@ -166,9 +190,87 @@ class Sidecar:
             await self._send(ws, "link.heartbeat", {})
         # Other valid types are not for the sidecar; they are ignored.
 
+    async def _scripted_observation(self, ws: ServerConnection, agent: ScriptedAgent, payload: dict[str, Any]) -> None:
+        remembered = len(agent.memory)
+        requests = agent.on_observation(payload)
+        if len(agent.memory) != remembered:
+            self.write_memory()   # kept current, so a hard stop (Windows) loses nothing
+        if requests and self.delay_ms:
+            await asyncio.sleep(self.delay_ms / 1000)   # test: a slow agent answers late
+        for request in requests:
+            deliberate = request["action_request_id"] in getattr(agent, "raw_ids", set()) \
+                or request["agent_id"] != agent.agent_id
+            await self._send(ws, "agent.action_request", request, check=not deliberate)
+
+    async def _runtime_observation(self, ws: ServerConnection, runtime: AgentRuntime, payload: dict[str, Any]) -> None:
+        job = runtime.observe(payload)
+        if job is None:
+            return
+        if self.run_mode == "STEPPED":
+            self._step_jobs.append((runtime, job))
+            return
+        if job.proposals is not None and not self.delay_ms and not self.jitter_ms:
+            await self._send_requests(ws, runtime.decide_now(job))
+            return
+        task = asyncio.create_task(self._answer_live(ws, runtime, job))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _answer_live(self, ws: ServerConnection, runtime: AgentRuntime, job: DecisionJob) -> None:
+        requests = await runtime.decide(job)
+        await self._pause()
+        try:
+            await self._send_requests(ws, requests)
+        except ConnectionClosed:
+            pass
+
+    async def _finish_step(self, ws: ServerConnection, sample_tick: int) -> None:
+        jobs, self._step_jobs = sorted(self._step_jobs, key=lambda j: j[0].agent_id), []
+        answers = await asyncio.gather(*(runtime.decide(job) for runtime, job in jobs))
+        await self._pause()
+        for requests in answers:
+            await self._send_requests(ws, requests)
+        await self._send(ws, "link.step", {"sample_tick_id": sample_tick, "phase": "AGENTS_DONE"})
+
+    async def _pause(self) -> None:
+        delay = self.delay_ms + (random.randint(0, self.jitter_ms) if self.jitter_ms else 0)
+        if delay:
+            await asyncio.sleep(delay / 1000)
+
+    async def _send_requests(self, ws: ServerConnection, requests: list[dict[str, Any]]) -> None:
+        for request in requests:
+            await self._send(ws, "agent.action_request", request)
+        self.write_records()
+
+    def write_records(self) -> None:
+        """Append new decision records (one JSON line each) for every runtime, in agent-id order."""
+        if self.record_dir is None:
+            return
+        new, prompts = [], []
+        for agent_id in sorted(self.runtimes):
+            runtime = self.runtimes[agent_id]
+            done = getattr(runtime, "_records_flushed", 0)
+            new += runtime.records[done:]
+            runtime._records_flushed = len(runtime.records)
+            done = getattr(runtime, "_prompts_flushed", 0)
+            prompts += [dict(p, agent_id=agent_id) for p in runtime.prompts[done:]]
+            runtime._prompts_flushed = len(runtime.prompts)
+        if new or prompts:
+            self.record_dir.mkdir(parents=True, exist_ok=True)
+        if new:
+            with (self.record_dir / "decision_records.jsonl").open("a", encoding="utf-8") as fh:
+                for record in new:
+                    fh.write(json.dumps(record, sort_keys=True) + "\n")
+        if prompts:
+            # Evaluator view of what each agent was shown (CONTEXT_MEMORY_STRATEGY §9); never sent anywhere.
+            with (self.record_dir / "prompts.jsonl").open("a", encoding="utf-8") as fh:
+                for entry in prompts:
+                    fh.write(json.dumps(entry, sort_keys=True, ensure_ascii=False) + "\n")
+
     def write_memory(self) -> None:
         if self.record_dir is None:
             return
         self.record_dir.mkdir(parents=True, exist_ok=True)
-        memory = {agent_id: agent.memory for agent_id, agent in self.agents.items()}
+        memory = {agent_id: (agent.memory.items if isinstance(agent, AgentRuntime) else agent.memory)
+                  for agent_id, agent in self.agents.items()}
         (self.record_dir / "agent_memory.json").write_text(json.dumps(memory, indent=2, sort_keys=True), encoding="utf-8")

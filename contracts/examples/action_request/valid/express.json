@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "action_request_id": "act_robot_r_0007",
+  "agent_id": "robot_r",
+  "based_on_tick_id": 240,
+  "action": "EXPRESS",
+  "args": {
+    "expression_id": "listening",
+    "target_id": "anon_k3j9x2m1qa"
+  }
+}

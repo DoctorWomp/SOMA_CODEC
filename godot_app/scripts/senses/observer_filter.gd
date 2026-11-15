@@ -18,6 +18,12 @@ extends Node
 signal sampled(tick: int, packets: Dictionary)
 
 const TRACK_TTL_MS := 3000
+## Expressions (G3a, D-52): a glyph is readable within 8 m (times the zone's visual range factor),
+## a visor glyph only from within 75 degrees of the visor's facing, a light-strip symbol within
+## 110 degrees. Ear-pod lights show from every side; a quadruped's strip light within 110 degrees.
+const GLYPH_LEGIBLE_RANGE_M := 8.0
+const VISOR_VIEW_COS := 0.2588     # cos 75 deg
+const STRIP_VIEW_COS := -0.3420    # cos 110 deg
 const EXPIRES_AFTER_MS := 1000
 const VISUAL_PROVENANCE := "synthetic_visual_multipoint_v1"
 const AUDIO_PROVENANCE := "synthetic_acoustic_v1"
@@ -46,7 +52,7 @@ func setup(target_world: RangeWorld, seed_value: int) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if world == null or world.clock == null:
+	if world == null or world.clock == null or not world.sensing_enabled:
 		return
 	if world.clock.tick % world.sample_period_ticks() == 0 and world.clock.tick != _last_sample_tick:
 		sample()
@@ -104,6 +110,11 @@ func observe(observer: Avatar) -> Dictionary:
 					{"gesture": gesture["gesture"], "direction": "TOWARD_OBSERVER" if facing > 0.5 else "AWAY_FROM_OBSERVER"},
 					now_ms, "OBSERVED", quality, VISUAL_PROVENANCE)
 				items.append(g)
+			var shown := t.active_expression(tick)
+			if not shown.is_empty() and visible.has("HEAD"):
+				var e := _expression_item(observer, eye, t, shown, seen["points"]["HEAD"], track["track_id"], now_ms, quality)
+				if not e.is_empty():
+					items.append(e)
 		elif tracks.has(t.avatar_id):
 			var track: Dictionary = tracks[t.avatar_id]
 			if now_ms - int(track["last_seen_ms"]) > TRACK_TTL_MS:
@@ -202,6 +213,33 @@ func _visual_quality(eye: Vector3, t: Avatar, visual_range: float, parts_seen: i
 	var distance_factor := 1.0 - 0.5 * clampf(eye.distance_to(t.global_position) / visual_range, 0.0, 1.0)
 	var light := float(world.environment_at(t.global_position)["light_level"])
 	return _r(clampf(fraction * distance_factor * (0.5 + 0.5 * light), 0.0, 1.0))
+
+
+## What `observer` can make out of the expression `t` is showing, under the same sight rules as
+## everything else: the display (HEAD point) must be in view and unblocked. Returns {} if nothing.
+func _expression_item(observer: Avatar, eye: Vector3, t: Avatar, shown: Dictionary, head: Vector3, track_id: String,
+		now_ms: int, quality) -> Dictionary:
+	var to_observer := Vector3(eye.x - head.x, 0, eye.z - head.z).normalized()
+	var facing := SenseModel.forward_of(t).dot(to_observer)
+	var glyph_display := BeaconRules.glyph_display(t.body)
+	var light_display := BeaconRules.light_display(t.body)
+	var factor := world.visual_range_factor(observer.global_position, t.global_position)
+	var legible: bool = String(shown["glyph_id"]) != "" and eye.distance_to(head) <= GLYPH_LEGIBLE_RANGE_M * factor \
+		and facing >= (VISOR_VIEW_COS if glyph_display == "VISOR" else STRIP_VIEW_COS)
+	var lit: bool = String(shown["light"]) != "OFF" and (light_display == "EAR_PODS" or facing >= STRIP_VIEW_COS)
+	if not legible and not lit:
+		return {}
+	var value := {}
+	if legible:
+		value["glyph"] = shown["glyph_id"]
+		value["display"] = glyph_display
+	if lit:
+		value["light"] = shown["light"]
+		value["light_pattern"] = shown["light_pattern"]
+		if not legible:
+			value["display"] = light_display
+	return _item("VISUAL_EXPRESSION", shown["event_id"], track_id, observer, eye, t.global_position, value, now_ms,
+		"OBSERVED", quality, VISUAL_PROVENANCE)
 
 
 func _item(kind: String, event_id, track_id, observer: Avatar, eye: Vector3, at, value: Dictionary,

@@ -31,8 +31,22 @@ var senses: ObserverFilter
 var comms: CommsRouter
 var actions: ActionGate
 var journal: Journal
+## The expression catalog (configs/expressions/, D-52), by id.
+var expressions: Dictionary = {}
 ## One avoidance map shared by every avatar, whatever navigation map its size uses (D-42).
 var avoidance_map: RID
+## Stepped runs (D-48): the world can be held between ticks while agents answer. A hold asked for
+## during a tick takes effect at the end of that tick (TickGate runs last), so held runs and
+## unheld runs see exactly the same ticks. While held, nothing in the world processes and its
+## avoidance map does not step; the camera and UI keep running.
+var held := false
+var held_samples := 0               # samples at which the world waited for agents
+var sensing_enabled := true         # a scenario turns senses on when it starts
+var run_active := false             # between start_run() and end_run()
+var _hold_reasons := {}
+## The tick at which every navigation map could answer queries (-1 until then). Map updates run
+## on the main thread (async iterations are off, D-47), so this is the same tick on every run.
+var navigation_ready_tick := -1
 var _avatar_root: Node3D
 var _nav_ready := false
 var _event_counter := 0
@@ -51,6 +65,7 @@ func build(map_id: String, body_ids: Array) -> bool:
 			return false
 		bodies[String(body_id)] = body
 	name = "World_" + map_id
+	expressions = WorldData.load_expressions()
 	clock = SimClock.new()
 	add_child(clock)
 	var map_root := Node3D.new()
@@ -63,6 +78,7 @@ func build(map_id: String, body_ids: Array) -> bool:
 	_build_navigation()
 	avoidance_map = NavigationServer3D.map_create()
 	NavigationServer3D.map_set_up(avoidance_map, Vector3.UP)
+	NavigationServer3D.map_set_use_async_iterations(avoidance_map, false)
 	NavigationServer3D.map_set_active(avoidance_map, true)
 	_zones_by_size = map_data["zones"].duplicate()
 	_zones_by_size.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _area(a) < _area(b))
@@ -75,7 +91,44 @@ func build(map_id: String, body_ids: Array) -> bool:
 	actions = ActionGate.new()
 	add_child(actions)
 	actions.setup(self)
+	add_child(TickGate.new(self))
 	return true
+
+
+## Ask the world to hold after the current tick (`reason`: "step", "link"). Several reasons can
+## hold at once; the world runs again when all are released.
+func hold(reason: String) -> void:
+	_hold_reasons[reason] = true
+	if reason == "step":
+		held_samples += 1
+
+
+func release(reason: String) -> void:
+	_hold_reasons.erase(reason)
+	if _hold_reasons.is_empty() and held:
+		_set_held(false)
+
+
+func _set_held(on: bool) -> void:
+	held = on
+	process_mode = Node.PROCESS_MODE_DISABLED if on else Node.PROCESS_MODE_INHERIT
+	# The avoidance solver keeps stepping an active map even when nobody moves, so a held world
+	# pauses its avoidance map too; otherwise the number of held frames would leak into the run.
+	NavigationServer3D.map_set_active(avoidance_map, not on)
+
+
+## Runs last in every tick and applies a pending hold.
+class TickGate extends Node:
+	var world: RangeWorld
+
+	func _init(target_world: RangeWorld) -> void:
+		world = target_world
+		name = "TickGate"
+		process_physics_priority = 1000
+
+	func _physics_process(_delta: float) -> void:
+		if not world._hold_reasons.is_empty() and not world.held:
+			world._set_held(true)
 
 
 static func _area(zone: Dictionary) -> float:
@@ -103,14 +156,24 @@ func start_run(run_seed: int, journal_path := "", run_sample_hz := 10) -> bool:
 			"z": snappedf(a.global_position.z, 0.0001), "yaw_rad": snappedf(wrapf(a.rotation.y, -PI, PI), 0.0001)})
 	journal_write("RUN_STARTED", null, {"seed": run_seed, "map_id": String(map_data["map_id"]),
 		"tick_hz": SimClock.TICK_HZ, "sample_hz": sample_hz, "avatars": poses})
+	run_active = true
 	return true
 
 
 ## Write RUN_ENDED and close the journal. Returns its SHA-256 (empty if there was none).
 func end_run() -> String:
+	run_active = false
 	if journal == null:
 		return ""
-	journal_write("RUN_ENDED", null, {"ticks_run": clock.tick})
+	var states := []
+	for a in avatar_list():
+		states.append({"avatar_id": a.avatar_id, "x": snappedf(a.global_position.x, 0.0001),
+			"y": snappedf(a.global_position.y, 0.0001), "z": snappedf(a.global_position.z, 0.0001),
+			"yaw_rad": snappedf(wrapf(a.rotation.y, -PI, PI), 0.0001), "links_used": Array(a.links_used)})
+	var ended := {"ticks_run": clock.tick, "avatars": states}
+	if held_samples > 0:
+		ended["held_ticks"] = held_samples
+	journal_write("RUN_ENDED", null, ended)
 	var digest := journal.close()
 	journal = null
 	return digest
@@ -166,6 +229,8 @@ func clear_spoken_before(tick: int) -> void:
 
 func _exit_tree() -> void:
 	end_run()
+	if held and avoidance_map.is_valid():
+		NavigationServer3D.map_set_active(avoidance_map, true)
 
 
 func _notification(what: int) -> void:
@@ -178,7 +243,8 @@ func _notification(what: int) -> void:
 
 
 ## Navigation is ready once every map can answer queries: the baked polygons and every link
-## are in the map's current iteration. Map updates are asynchronous, so this takes a few ticks.
+## are in the map's current iteration. Map updates are synchronous (D-47) but still applied at
+## the navigation server's next sync, so this takes a tick or two, always the same number.
 func _physics_process(_delta: float) -> void:
 	if _nav_ready or nav_sizes.is_empty():
 		return
@@ -192,6 +258,7 @@ func _physics_process(_delta: float) -> void:
 		if NavigationServer3D.map_get_closest_point_owner(map, probe) != (size["region"] as NavigationRegion3D).get_rid():
 			return
 	_nav_ready = true
+	navigation_ready_tick = clock.tick
 	navigation_ready.emit()
 
 
@@ -251,6 +318,9 @@ func _build_navigation() -> void:
 		NavigationServer3D.map_set_up(map, Vector3.UP)
 		NavigationServer3D.map_set_cell_size(map, NAV_CELL_SIZE)
 		NavigationServer3D.map_set_cell_height(map, NAV_CELL_HEIGHT)
+		# Synchronous map updates: a background-thread update finishes a tick earlier or later
+		# depending on CPU load, which made runs with the same seed differ (D-47).
+		NavigationServer3D.map_set_use_async_iterations(map, false)
 		NavigationServer3D.map_set_active(map, true)
 		var group := Node3D.new()
 		group.name = "Nav_" + key

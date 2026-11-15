@@ -6,8 +6,8 @@ extends Node3D
 ## - WHEELS: the wheeled humanoid, after docs/concept-art/robot_wheeled_humanoid_concept.jpg:
 ##   the same upper body on a dark lift column and a four-wheeled base.
 ##
-## Upper body: helmet with black visor (future Beacon face), ear pods (future Beacon light
-## strip), dark neck band, white chest shell with dark side panels, dark waist, arms with
+## Upper body: helmet with black visor (the Beacon glyph display), ear pods (the Beacon light),
+## dark neck band, white chest shell with dark side panels, dark waist, arms with
 ## shoulder, elbow and wrist joints. Identity: matte trim on shoulders, forearms and chest
 ## band, a number badge front and back, and 1-3 forearm bands as a pattern that does not
 ## rely on color (ART_DIRECTION §2.1). No leg animation yet: bodies glide.
@@ -19,6 +19,7 @@ const UPPER_BODY_M := 0.8675   # from the hip line to the top of the helmet
 const WHEEL_RADIUS_M := 0.12
 
 var base_kind := "LEGS"
+var beacon: Beacon
 var _wheels: Array[Node3D] = []
 
 
@@ -68,9 +69,13 @@ func _upper_body(hip: float, trim: String, bands: int, badge_text: String) -> vo
 	var neck := p.joint(self, "Neck", Vector3(0, hip + 0.60, 0))
 	p.sphere(neck, "Head", 0.128, 0.285, 8, 4, "robot_shell", Vector3(0, 0.125, 0))
 	p.sphere(neck, "Visor", 0.108, 0.175, 8, 4, "robot_visor", Vector3(0, 0.115, -0.08), Vector3(1, 1, 0.55))
+	var pods: Array[MeshInstance3D] = []
 	for side in [["EarPodL", -1.0], ["EarPodR", 1.0]]:
 		var pod := p.cyl(neck, String(side[0]), 0.048, 0.048, 0.035, 6, "robot_ear", Vector3(0.127 * float(side[1]), 0.115, 0.01))
 		pod.rotation.z = PI / 2
+		pods.append(pod)
+	# Beacon (D-52): glyph just in front of the visor, light on the ear pods.
+	beacon = Beacon.attach(neck, Vector3(0, 0.118, -0.147), 0.08, pods)
 
 	# Arms with a slight outward hang, like the concepts.
 	for side in [["L", -1.0], ["R", 1.0]]:

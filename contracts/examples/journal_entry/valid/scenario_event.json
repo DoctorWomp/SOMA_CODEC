@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "seq": 7,
+  "tick_id": 600,
+  "sim_time_ms": 10000,
+  "kind": "SCENARIO_EVENT",
+  "actor_id": "visitor_y",
+  "payload": {
+    "index": 2,
+    "event_type": "small_wave",
+    "actor_id": "visitor_y",
+    "reason_code": "OK",
+    "resulting_event_ids": [
+      "evt_000031"
+    ]
+  }
+}

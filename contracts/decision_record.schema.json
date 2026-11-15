@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/decision_record.schema.json",
+  "title": "Decision record",
+  "description": "One agent decision, written by the runtime (D-49 to D-51): why it decided, the context it assembled (tokens per section, cuts, compression steps), every model call with its response and timings (record and replay, INFERENCE_STRATEGY T20), and what it proposed. Evaluator audience: reason text here is never fed back to any agent.",
+  "x-audience": "evaluator",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "decision_id",
+    "agent_id",
+    "based_on_tick_id",
+    "cognition_level",
+    "tier",
+    "policy",
+    "triggers",
+    "context",
+    "model_calls",
+    "action_request_ids",
+    "fallback"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "decision_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "agent_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "based_on_tick_id": {
+      "$ref": "common.schema.json#/$defs/tick"
+    },
+    "cognition_level": {
+      "enum": [
+        "C0",
+        "C1",
+        "C2"
+      ]
+    },
+    "tier": {
+      "enum": [
+        "FOCAL",
+        "C2",
+        "C1",
+        "C0"
+      ]
+    },
+    "policy": {
+      "description": "ROUTINE (C0 script), TEMPLATE (C1), DEMO (rule-based stand-in for a model, D-21), MODEL.",
+      "enum": [
+        "ROUTINE",
+        "TEMPLATE",
+        "DEMO",
+        "MODEL"
+      ]
+    },
+    "triggers": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 16,
+      "items": {
+        "enum": [
+          "ADDRESSED_SPEECH",
+          "DIRECTED_GESTURE",
+          "DIRECTED_EXPRESSION",
+          "PERSON_NEAR",
+          "PARTNER_LEFT",
+          "GROUP_INVITE",
+          "ACTION_REJECTED",
+          "COMMITMENT_DUE",
+          "TASK_STEP",
+          "START"
+        ]
+      }
+    },
+    "context": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/context"
+        }
+      ]
+    },
+    "model_calls": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/model_call"
+      }
+    },
+    "action_request_ids": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "common.schema.json#/$defs/id"
+      }
+    },
+    "fallback": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "reason"
+          ],
+          "properties": {
+            "action": {
+              "enum": [
+                "WAIT",
+                "NO_OP"
+              ]
+            },
+            "reason": {
+              "enum": [
+                "TIMEOUT",
+                "INVALID_OUTPUT",
+                "PROVIDER_ERROR",
+                "REPLAY_DIVERGED"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokenizer",
+        "budget_tokens",
+        "total_tokens",
+        "sections",
+        "compression_steps",
+        "prompt_sha256"
+      ],
+      "properties": {
+        "tokenizer": {
+          "description": "approx_chars_v1 is an estimate (G3a); G3b uses the model's own tokenizer.",
+          "type": "string",
+          "pattern": "^[a-z0-9_.:-]{1,64}$"
+        },
+        "budget_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prompt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sections": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "section",
+              "tokens",
+              "budget",
+              "items",
+              "cut_items",
+              "never_cut"
+            ],
+            "properties": {
+              "section": {
+                "enum": [
+                  "GUARDRAILS",
+                  "IDENTITY",
+                  "COMMITMENTS",
+                  "SETTING",
+                  "FACTS",
+                  "EPISODES",
+                  "CONVERSATION",
+                  "OBSERVATIONS",
+                  "DECISION"
+                ]
+              },
+              "tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "budget": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cut_items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "never_cut": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "compression_steps": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 6,
+          "items": {
+            "enum": [
+              "DEDUPLICATE",
+              "EXPIRE",
+              "EPISODE_CARDS",
+              "RANK_AND_SELECT",
+              "SECTION_CUT"
+            ]
+          }
+        }
+      }
+    },
+    "model_call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "call_id",
+        "attempt",
+        "provider",
+        "model_id",
+        "prompt_sha256",
+        "response_text",
+        "outcome",
+        "error",
+        "deadline_ms",
+        "timings",
+        "prompt_tokens",
+        "cached_tokens",
+        "generated_tokens"
+      ],
+      "properties": {
+        "call_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "attempt": {
+          "description": "0 = first call, 1 = the one repair attempt (Blueprint §10.3).",
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "provider": {
+          "enum": [
+            "FAKE",
+            "REPLAY",
+            "LLAMA_SERVER",
+            "OLLAMA"
+          ]
+        },
+        "model_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "prompt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "response_text": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 8000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "VALID",
+            "INVALID_OUTPUT",
+            "TIMEOUT",
+            "PROVIDER_ERROR",
+            "REPLAY_DIVERGED"
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 300
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deadline_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "queue_ms",
+            "prefill_ms",
+            "generation_ms",
+            "total_ms"
+          ],
+          "properties": {
+            "queue_ms": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "prefill_ms": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "generation_ms": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "total_ms": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "prompt_tokens": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cached_tokens": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generated_tokens": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

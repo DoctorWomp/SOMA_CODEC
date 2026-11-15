@@ -6,5 +6,6 @@
   "token_in_hello": "additionalProperties",
   "unknown_field": "additionalProperties",
   "unknown_type": "enum",
-  "wrong_version": "const"
+  "wrong_version": "const",
+  "link_step_bad_phase": "enum"
 }

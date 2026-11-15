@@ -35,3 +35,25 @@ static func load_map(map_id: String) -> Dictionary:
 
 static func load_body(body_id: String) -> Dictionary:
 	return load_config("bodies", body_id)
+
+
+## A scenario's world-only view (D-48): no evaluator-only labels, measures or personas.
+static func load_scenario(scenario_id: String) -> Dictionary:
+	return load_config("scenarios", scenario_id)
+
+
+## Every expression in the catalog (configs/expressions/), by id.
+static func load_expressions() -> Dictionary:
+	var out := {}
+	var dir := DirAccess.open(DATA_DIR + "/expressions")
+	if dir == null:
+		push_error("WorldData: no expression catalog in %s/expressions. %s" % [DATA_DIR, EXPORT_HINT])
+		return out
+	var names := Array(dir.get_files())
+	names.sort()
+	for file_name in names:
+		if String(file_name).ends_with(".json"):
+			var data := load_config("expressions", String(file_name).get_basename())
+			if not data.is_empty():
+				out[String(data["expression_id"])] = data
+	return out
