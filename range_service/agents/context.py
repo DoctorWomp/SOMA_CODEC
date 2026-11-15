@@ -44,8 +44,8 @@ BUDGETS: dict[str, dict[str, int]] = {
     # ~600 estimated tokens, so guardrails got more and observations less than §4.1's starting split.
     "FOCAL": {"GUARDRAILS": 650, "IDENTITY": 300, "COMMITMENTS": 200, "SETTING": 200, "FACTS": 350,
               "EPISODES": 350, "CONVERSATION": 750, "OBSERVATIONS": 800, "DECISION": 150},
-    "C2": {"GUARDRAILS": 550, "IDENTITY": 200, "COMMITMENTS": 100, "SETTING": 100, "FACTS": 100,
-           "EPISODES": 100, "CONVERSATION": 300, "OBSERVATIONS": 350, "DECISION": 100},
+    "C2": {"GUARDRAILS": 600, "IDENTITY": 200, "COMMITMENTS": 100, "SETTING": 100, "FACTS": 100,
+           "EPISODES": 100, "CONVERSATION": 300, "OBSERVATIONS": 300, "DECISION": 100},
     "C1": {"GUARDRAILS": 150, "IDENTITY": 120, "COMMITMENTS": 60, "SETTING": 0, "FACTS": 0,
            "EPISODES": 0, "CONVERSATION": 80, "OBSERVATIONS": 0, "DECISION": 90},
 }

@@ -77,8 +77,9 @@ class CognitionLevel:
             return None
         before = self.level
         now = s.now_ms
+        self.addressed_times = [t for t in self.addressed_times if now - t <= ADDRESSED_TWICE_WINDOW_MS]
         if s.addressed:
-            self.addressed_times = [t for t in self.addressed_times if now - t <= ADDRESSED_TWICE_WINDOW_MS] + [now]
+            self.addressed_times.append(now)
         if s.addressed or s.own_activity or s.invited_to_group:
             self.last_activity_ms = now
         cooling = self.last_demoted_ms is not None and now - self.last_demoted_ms < REPROMOTE_COOLDOWN_MS

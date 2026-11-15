@@ -74,5 +74,6 @@ def build_runtimes(scenario: dict[str, Any], cs: ConfigSet, *, gateway: ModelGat
             avatar_id, persona=persona, body=body, directive=directive_for(entry, persona, cs.items["directives"]),
             expressions=expression_rules.available(body, catalog), setting=setting, task=entry.get("task"),
             task_goal=task_goal_point(entry, game_map), focal=focal, pin=bool(entry.get("pin_cognition")),
-            controller=entry["controller"], gateway=gateway if entry["controller"] == "LLM_AGENT" else None)
+            controller=entry["controller"], gateway=gateway if entry["controller"] == "LLM_AGENT" else None,
+            expression_gestures={eid: e["gesture"] for eid, e in catalog.items() if "gesture" in e})
     return out

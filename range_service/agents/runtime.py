@@ -80,13 +80,15 @@ class AgentRuntime:
                  expressions: list[str], setting: list[str], task: str | None = None,
                  task_goal: dict[str, float] | None = None, focal: bool = False, pin: bool = False,
                  controller: str = "SCRIPTED", gateway: ModelGateway | None = None,
-                 tokenizer: Tokenizer | None = None) -> None:
+                 tokenizer: Tokenizer | None = None, expression_gestures: dict[str, str] | None = None) -> None:
         self.agent_id = agent_id
         self.body = body
         self.focal = focal
         self.controller = controller
         self.gateway = gateway
         self.expressions = sorted(expressions)
+        # Each available expression's gesture, if it has one (from the catalog).
+        self.expression_gestures = {k: v for k, v in (expression_gestures or {}).items() if k in self.expressions}
         self.setting = list(setting)
         self.task = task
         self.task_goal = task_goal
@@ -112,6 +114,7 @@ class AgentRuntime:
         self._requests = 0
         self._sent: dict[str, dict[str, Any]] = {}     # request id -> {"action", "commitment_id", "replanned"}
         self._replan_due = False
+        self._replanned_decisions: set[str] = set()
         self._last_express_tick = -10_000
         self.waved_back: set[str] = set()     # NPC templates wave back once per person
         for fact in persona.get("knows", []):
@@ -149,6 +152,7 @@ class AgentRuntime:
             stored = self.memory.remember_heard(item, packet, topics)
             if conv.partner is None and speaker is not None:
                 self._start_conversation(speaker, item.get("event_id"))
+                conv = self.conversation
             if speaker is not None and speaker == conv.partner:
                 conv.last_exchange_ms = now
                 conv.turns += 1
@@ -310,10 +314,18 @@ class AgentRuntime:
         requests = []
         kept = []
         for p in proposals[:3]:
-            # The host refuses a light change sooner than 1/3 s after the last; don't ask for one.
-            # A promise riding on a dropped expression moves to the words that go with it.
+            # The host refuses a light change sooner than 1/3 s after the last (D-14), so don't ask
+            # for one: show the expression's gesture alone if it has one (gestures are not light),
+            # and a promise riding on it stays with that gesture or moves to the words.
             if p.action == "EXPRESS":
                 if job.tick - self._last_express_tick < EXPRESSION_MIN_GAP_TICKS:
+                    gesture = self.expression_gestures.get(p.args.get("expression_id", ""))
+                    if gesture is not None and self.body_supports_gesture(gesture):
+                        kept.append(Proposal("GESTURE", {"gesture": gesture, "target_id": p.args.get("target_id")},
+                                             p.commitment, p.fulfills))
+                        continue
+                    # No gesture: the promise moves to the words, if any. With nothing said or shown,
+                    # no promise was made, so none is recorded.
                     nxt = next((q for q in proposals if q.action == "SPEAK"), None)
                     if p.commitment and nxt is not None and nxt.commitment is None:
                         nxt.commitment = p.commitment
@@ -337,7 +349,8 @@ class AgentRuntime:
                     self._start_conversation(target, None)
                 if target is not None and target == self.conversation.partner:
                     self.conversation.last_exchange_ms = self.ws.now_ms
-            self._sent[request_id] = {"action": p.action, "commitment_id": commitment_id, "replanned": "ACTION_REJECTED" in job.triggers}
+            self._sent[request_id] = {"action": p.action, "commitment_id": commitment_id, "decision_id": job.decision_id,
+                                      "replanned": "ACTION_REJECTED" in job.triggers}
         if self.conversation.closing:
             self._end_conversation("FAREWELL")
         self.stats["decisions"] += 1
@@ -368,7 +381,9 @@ class AgentRuntime:
         if sent["commitment_id"] is not None:
             self.memory.set_commitment_state(sent["commitment_id"], "RELEASED")
         # One replan per rejected decision, from the next observation (T27); never a loop.
-        if result["reason_code"] in REPLAN_REASONS and not sent["replanned"]:
+        if result["reason_code"] in REPLAN_REASONS and not sent["replanned"] \
+                and sent["decision_id"] not in self._replanned_decisions:
+            self._replanned_decisions.add(sent["decision_id"])
             self._replan_due = True
             self.stats["replans"] += 1
 
