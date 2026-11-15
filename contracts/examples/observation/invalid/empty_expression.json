@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "observer_id": "robot_legged",
+  "based_on_tick_id": 600,
+  "sim_time_ms": 10000,
+  "coordinate_frame": "world_meters_xyz",
+  "observer_pose": {
+    "x": 15.0,
+    "y": 0.0,
+    "z": 15.5,
+    "yaw_rad": 0.0
+  },
+  "observations": [
+    {
+      "observation_id": "obs_000901",
+      "event_id": "evt_000077",
+      "kind": "VISUAL_EXPRESSION",
+      "track_id": "anon_q8w2e4r6t1",
+      "source_entity_id": null,
+      "position_estimate": {
+        "x": 15.0,
+        "y": 0.0,
+        "z": 12.5
+      },
+      "bearing_rad": 0.0,
+      "range_m": 3.0,
+      "value": {},
+      "observed_at_ms": 10000,
+      "expires_at_ms": 11000,
+      "validity": "OBSERVED",
+      "quality": 0.82,
+      "provenance": "synthetic_visual_multipoint_v1"
+    },
+    {
+      "observation_id": "obs_000902",
+      "event_id": "evt_000078",
+      "kind": "GROUP_INVITE",
+      "track_id": null,
+      "source_entity_id": "visitor_x",
+      "position_estimate": null,
+      "bearing_rad": null,
+      "range_m": null,
+      "value": {
+        "group_id": "grp_000001",
+        "group_name": "Cafe meetup"
+      },
+      "observed_at_ms": 10000,
+      "expires_at_ms": 11000,
+      "validity": "OBSERVED",
+      "quality": 1.0,
+      "provenance": "device_group_v1"
+    }
+  ]
+}

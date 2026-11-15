@@ -14,8 +14,14 @@ Steps:
   3. Compile: loads every .gd file (godot_app/tests/compile_all.gd). GDScript warnings are
               errors in this project (D-38), so a new warning fails here.
   4. Tests:   runs godot_app/tests/test_main.tscn at a fixed 60 frames per simulated second.
-  5. Outputs: every journal line and observation packet the tests wrote is validated against
-              contracts/ in Python (D-41), so Godot and Python keep to one contract.
+  5. Outputs: every journal line, observation packet and action result the tests wrote, and
+              every message that crossed the Python link, is validated against contracts/ in
+              Python (D-41). No message to the sidecar may carry an NPC's private goal or any
+              evaluator-only value (T17).
+
+For the link tests, two sidecars run on 127.0.0.1 with a fresh session token for the duration
+of the Godot tests: a normal one (which drops the connection once, to test reconnecting) and a
+deliberately slow one.
 
 Any engine or script ERROR line fails the check, even if every test passed.
 Exit code: 0 passed, 1 failed, 2 skipped (Godot not found and --require not given).
@@ -29,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import secrets
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -103,7 +110,30 @@ def compile_report(output: str) -> tuple[int, list[str]]:
 
 
 # Files the full test run must leave behind (a filtered run may write fewer).
-EXPECTED_ARTIFACTS = ("sampling.jsonl", "sampling.observations.json", "demo_a.jsonl", "demo_b.jsonl")
+EXPECTED_ARTIFACTS = ("sampling.jsonl", "sampling.observations.json", "demo_a.jsonl", "demo_b.jsonl",
+                      "gate.action_results.json", "sidecar/sidecar_received.jsonl", "sidecar/sidecar_sent.jsonl")
+
+# The two sidecars started for the Godot link tests: name, extra arguments.
+SIDECARS = {
+    "RANGE_LINK_PORT": ["--agent", "robot_legged=probe", "--agent", "robot_quadruped=greeter", "--drop-after", "25"],
+    "RANGE_LINK_PORT_SLOW": ["--agent", "robot_legged=greeter", "--delay-ms", "1500"],
+}
+
+
+def private_strings() -> list[str]:
+    """Text that must never reach an agent: NPC private goals and scenario evaluator-only values."""
+    from range_service.configs import load_and_check
+
+    config_set, _ = load_and_check()
+    found = []
+    for persona in config_set.items["personas"].values():
+        if persona.get("private_goal"):
+            found.append(str(persona["private_goal"]))
+    for scenario in config_set.items["scenarios"].values():
+        for value in scenario.get("evaluator_only", {}).values():
+            if isinstance(value, str) and " " in value and len(value) >= 12:   # sentences, not single ids
+                found.append(value)
+    return found
 
 
 def validate_artifacts(folder: Path, require_all: bool = True) -> tuple[int, list[str]]:
@@ -134,7 +164,56 @@ def validate_artifacts(folder: Path, require_all: bool = True) -> tuple[int, lis
             checked += 1
             for p in contracts.problems("observation", packet)[:3]:
                 problems.append(f"{path.name} packet {index}: {p}")
+    for path in sorted(folder.glob("*.action_results.json")):
+        for index, result in enumerate(json.loads(path.read_text(encoding="utf-8"))):
+            checked += 1
+            for p in contracts.problems("action_result", result)[:3]:
+                problems.append(f"{path.name} result {index}: {p}")
+    secrets_list = private_strings()
+    for path in sorted(folder.glob("sidecar*/sidecar_*.jsonl")):
+        if "deliberately_invalid" in path.name:
+            continue
+        rel = f"{path.parent.name}/{path.name}"
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            checked += 1
+            record = json.loads(line)
+            if path.name == "sidecar_problems.jsonl":
+                problems.append(f"{rel}: the sidecar refused something Godot sent: {record['problem']}")
+                continue
+            schema = "action_result" if path.name == "sidecar_results.jsonl" else "envelope"
+            for p in contracts.problems(schema, record)[:3]:
+                problems.append(f"{rel} line {number}: {p}")
+            if path.name == "sidecar_received.jsonl":
+                for secret in secrets_list:
+                    if secret in line:
+                        problems.append(f"{rel} line {number}: private text reached the sidecar (T17): {secret[:40]!r}")
     return checked, problems
+
+
+def start_sidecars(record_root: Path, token: str) -> tuple[list[subprocess.Popen], dict[str, str]]:
+    """Start the test sidecars; returns the processes and the environment for Godot."""
+    procs, env = [], {}
+    for env_name, extra in SIDECARS.items():
+        folder = record_root / ("sidecar" if env_name == "RANGE_LINK_PORT" else "sidecar_slow")
+        proc = subprocess.Popen([sys.executable, "-m", "range_service.link", "--record", str(folder), *extra],
+                                cwd=REPO, env=dict(os.environ, RANGE_SESSION_TOKEN=token),
+                                stdout=subprocess.PIPE, text=True)
+        procs.append(proc)
+        line = proc.stdout.readline().strip()
+        if not line.startswith("LISTENING "):
+            raise RuntimeError(f"the test sidecar did not start ({line!r})")
+        env[env_name] = line.rsplit(":", 1)[1]
+    return procs, env
+
+
+def stop_sidecars(procs: list[subprocess.Popen]) -> None:
+    for proc in procs:
+        proc.terminate()
+    for proc in procs:
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 def find_godot() -> str | None:
@@ -151,10 +230,10 @@ def find_godot() -> str | None:
     return None
 
 
-def _run(cmd: list[str], timeout: int) -> tuple[int, str]:
+def _run(cmd: list[str], timeout: int, env: dict[str, str] | None = None) -> tuple[int, str]:
     try:
         proc = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=timeout)
+                              errors="replace", timeout=timeout, env=None if env is None else dict(os.environ, **env))
     except subprocess.TimeoutExpired as exc:
         out = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
         return -1, out + f"\nTIMEOUT after {timeout} s"
@@ -209,7 +288,16 @@ def main(argv: list[str] | None = None) -> int:
            "--", f"--artifacts-dir={artifacts.as_posix()}"]
     if test_filter:
         cmd.append(f"--filter={test_filter}")
-    code, out = _run(cmd, timeout=900)
+    token = secrets.token_hex(24)
+    try:
+        sidecars, link_env = start_sidecars(artifacts, token)
+    except RuntimeError as exc:
+        print(f"  FAIL  {exc}")
+        return EXIT_FAILED
+    try:
+        code, out = _run(cmd, timeout=900, env=dict(link_env, RANGE_SESSION_TOKEN=token))
+    finally:
+        stop_sidecars(sidecars)
     report = analyze(out)
     for name in report.passed:
         print(f"  PASS  {name}")
@@ -237,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         for line in problems[:20]:
             print(f"        {line}")
         return EXIT_FAILED
-    print(f"  {checked} journal lines and observation packets from Godot match the contracts")
+    print(f"  {checked} journal lines, packets, action results and link messages match the contracts")
     return EXIT_PASSED
 
 

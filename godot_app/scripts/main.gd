@@ -16,6 +16,7 @@ var demo: DemoRoutes
 var camera_rig: CameraRig
 var hud: Hud
 var sense_view: SenseView
+var link: LinkClient
 
 
 func _ready() -> void:
@@ -47,8 +48,27 @@ func _ready() -> void:
 	if path == "auto":
 		path = Journal.new_default_path("run_" + Time.get_datetime_string_from_system().replace(":", "-"))
 	world.start_run(run_seed, path)
+	_start_link_if_asked()
 
 	await world.wait_navigation_ready()
 	if run_demo:
 		demo.start()
 
+
+## The Python link starts only when asked on the command line (tools/run_link_demo.py does
+## this): "-- --link-port=PORT --link-agents=robot_legged,robot_quadruped". The session token
+## comes from the RANGE_SESSION_TOKEN environment variable, never the command line.
+func _start_link_if_asked() -> void:
+	var link_port := 0
+	var agents: Array = []
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--link-port="):
+			link_port = int(arg.trim_prefix("--link-port="))
+		elif arg.begins_with("--link-agents="):
+			agents = Array(arg.trim_prefix("--link-agents=").split(",", false))
+	if link_port <= 0 or agents.is_empty():
+		return
+	link = LinkClient.new()
+	add_child(link)
+	link.setup(world, link_port, agents)
+	hud.link = link

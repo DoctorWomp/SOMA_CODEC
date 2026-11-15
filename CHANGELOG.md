@@ -2,7 +2,27 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
-## G2a — Senses, journal, avoidance (2026-11-14, in review)
+## G2b — Channels, disclosure gate, Python link (2026-11-15; G2 complete, G2b in review)
+
+Second half of G2 (`docs/gates/G2_PLAN.md`). With it, G2 is complete.
+
+### Added
+- **COMMS router** (Godot, D-43): GESTURE, LOCAL, GROUP (invite and accept; decline; leaving stops delivery) and PA (authorized senders only, through the PA speaker), each message making one `comms_event` record (evaluator-only) in the journal.
+- **Action gate** (Godot, D-44): validates every agent action request and answers with `action_result` and a reason code (`INVALID_SCHEMA`, `CAPABILITY_DENIED`, `STALE_OBSERVATION`, `RATE_LIMITED`, `TARGET_UNKNOWN`, `GROUP_NOT_MEMBER`, `PA_UNAUTHORIZED`, `PRIVACY_SCOPE_DENIED`).
+- **Disclosure gate** (Python, D-45): PUBLIC / GROUP / ONE_TO_ONE / SEALED with the earshot rule; overheard speech never stored or retold; withheld answers never hint. Godot repeats the check on `SPEAK`.
+- **Godot ↔ Python link** (D-44): the Python sidecar (`range_service/link/`, WebSocket on 127.0.0.1 with a per-run session token) receives each controlled agent's observations and sends action requests; Godot validates and answers. Scripted agents (no LLM) wave back and say hello. Godot never waits for Python and reconnects by itself.
+- **Expression-ready contracts** (D-46): a shared `expression` object (gesture, glyph, light state) and the observation kind `VISUAL_EXPRESSION`, so G3 can add visor/strip glyphs and lights without an incompatible change.
+- `tools/run_link_demo.py`: the demo connected to the sidecar, in one command. The demo now has a visitor waving at the robots on the platform.
+- Panel line showing the Python link's status.
+- Tests: T13–T17 through the router and the link, the action gate's reason codes, wrong token, slow and disconnecting Python side. Godot tests 30 → 39; Python tests 410 → 451. `tools/godot_check.py` runs two test sidecars and validates every message that crossed the link, including a scan for NPC private goals (T17).
+- Contract additions (backward-compatible): envelope types `link.hello`, `link.heartbeat`; observation kinds `VISUAL_EXPRESSION`, `GROUP_INVITE`; `comms_event.expression`; `SPEAK.disclosure_scope`; `memory_item.shared_by`, `memory_item.group_id`; journal kinds `COMMS_EVENT`, `COMMS_REJECTED`, `GROUP_CHANGED`, `ACTION_RESOLVED`, `LINK_STATUS`.
+- Dependency `websockets` (the sidecar's WebSocket server).
+- Decisions D-43 to D-46 (proposed).
+
+### Changed
+- Owner approved D-39 to D-42; D-40 records the known limit for loud halls (Lombard effect before G6).
+
+## G2a — Senses, journal, avoidance (2026-11-14, complete: merged 2026-11-14)
 
 First half of G2 (plan: `docs/gates/G2_PLAN.md`; G2b adds channels, the disclosure gate and the WebSocket link).
 

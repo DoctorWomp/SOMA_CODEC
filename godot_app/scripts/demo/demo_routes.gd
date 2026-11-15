@@ -11,14 +11,17 @@ extends Node
 
 ## route entries: [x, z, wait in seconds after arriving, optional {"gesture": ..., "say": ...} done on arrival]
 ## The quadruped also tries to WAVE, which its body cannot do: the world refuses it (D-36).
+## Once up, the legged robot and the quadruped turn to face the hall, and visitor_z waves at
+## them from below the platform; with the Python link on (tools/run_link_demo.py), their scripted
+## agents wave back and say hello.
 ## appearance: number badge, matte trim color and 1-3 trim bands (ART_DIRECTION §2.1)
 const CAST := [
 	{"id": "robot_quadruped", "body": "quadruped", "spawn": "spawn_stairs_side_1", "start_s": 0.0,
 		"appearance": {"badge": "3", "trim": "robot_trim_brown", "bands": 3},
-		"route": [[28.2, 2.0, 0.0, {"gesture": "WAVE", "then_gesture": "HEAD_TILT", "say": "Hello from up here."}]]},
+		"route": [[28.2, 2.0, 0.0, {"gesture": "WAVE", "then_gesture": "HEAD_TILT", "say": "Hello from up here.", "face": [25.5, 10.5]}]]},
 	{"id": "robot_legged", "body": "legged_humanoid", "spawn": "spawn_stairs_side_2", "start_s": 3.0,
 		"appearance": {"badge": "1", "trim": "robot_trim_green", "bands": 1},
-		"route": [[25.0, 4.5, 0.0, {"gesture": "WAVE", "say": "I took the stairs."}]]},
+		"route": [[25.0, 4.5, 0.0, {"gesture": "WAVE", "say": "I took the stairs.", "face": [24.5, 10.5]}]]},
 	{"id": "robot_wheeled", "body": "wheeled_humanoid", "spawn": "spawn_stairs_side_3", "start_s": 0.5,
 		"appearance": {"badge": "2", "trim": "robot_trim_teal", "bands": 2},
 		"route": [[25.5, 6.6, 0.0, {"say": "And I came up the ramp."}]]},
@@ -30,7 +33,8 @@ const CAST := [
 		"route": [[12.5, 15.5, 0.0]]},
 	{"id": "visitor_z", "body": "human_walker", "spawn": "spawn_talker", "start_s": 0.0,
 		"appearance": {"color": "visitor_mauve"},
-		"route": [[16.5, 10.8, 0.0], [21.0, 11.0, 1.0, {"gesture": "SMALL_WAVE"}], [25.0, 15.0, 1.0], [19.5, 17.5, 0.0]]},
+		"route": [[16.5, 10.8, 0.0], [21.0, 11.0, 1.0, {"gesture": "SMALL_WAVE"}], [25.0, 15.0, 1.0],
+			[24.5, 10.5, 2.0, {"face": [25.5, 4.0], "gesture": "WAVE"}], [19.5, 17.5, 0.0]]},
 ]
 
 var world: RangeWorld
@@ -112,6 +116,9 @@ func _physics_process(_delta: float) -> void:
 
 
 func _act(avatar: Avatar, actions: Dictionary) -> void:
+	if actions.has("face"):
+		var to: Array = actions["face"]
+		avatar.turn_to(atan2(-(float(to[0]) - avatar.global_position.x), -(float(to[1]) - avatar.global_position.z)))
 	if actions.has("gesture"):
 		avatar.perform_gesture(String(actions["gesture"]))
 	if actions.has("then_gesture"):

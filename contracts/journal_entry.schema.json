@@ -39,6 +39,11 @@
         "GESTURE_PERFORMED",
         "GESTURE_REFUSED",
         "SPEECH_EMITTED",
+        "COMMS_EVENT",
+        "COMMS_REJECTED",
+        "GROUP_CHANGED",
+        "ACTION_RESOLVED",
+        "LINK_STATUS",
         "RUN_ENDED"
       ]
     },
@@ -160,6 +165,86 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/speech_emitted"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "COMMS_EVENT"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "comms_event.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "COMMS_REJECTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/comms_rejected"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "GROUP_CHANGED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/group_changed"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "ACTION_RESOLVED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/action_resolved"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "LINK_STATUS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/link_status"
           }
         }
       }
@@ -408,6 +493,107 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 60000
+        }
+      }
+    },
+    "comms_rejected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sender_id",
+        "channel",
+        "reason_code"
+      ],
+      "properties": {
+        "sender_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "channel": {
+          "$ref": "common.schema.json#/$defs/channel"
+        },
+        "reason_code": {
+          "enum": [
+            "CAPABILITY_DENIED",
+            "GROUP_NOT_MEMBER",
+            "PA_UNAUTHORIZED",
+            "PRIVACY_SCOPE_DENIED",
+            "TARGET_UNKNOWN"
+          ]
+        }
+      }
+    },
+    "group_changed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group_id",
+        "op",
+        "actor_id",
+        "member_ids"
+      ],
+      "properties": {
+        "group_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "op": {
+          "enum": [
+            "CREATED",
+            "INVITED",
+            "ACCEPTED",
+            "DECLINED",
+            "LEFT"
+          ]
+        },
+        "actor_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "subject_id": {
+          "$ref": "common.schema.json#/$defs/nullable_id"
+        },
+        "member_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
+        }
+      }
+    },
+    "action_resolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request",
+        "result"
+      ],
+      "properties": {
+        "request": {
+          "description": "The request as received; may be invalid (then result.reason_code is INVALID_SCHEMA).",
+          "type": "object"
+        },
+        "result": {
+          "$ref": "action_result.schema.json"
+        }
+      }
+    },
+    "link_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "CONNECTED",
+            "DISCONNECTED",
+            "REFUSED"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 200
         }
       }
     }

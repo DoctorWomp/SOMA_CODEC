@@ -75,7 +75,9 @@
             "AUDIO_SPEECH",
             "AUDIO_SOUND",
             "GROUP_MESSAGE",
-            "SIGN_TEXT"
+            "SIGN_TEXT",
+            "VISUAL_EXPRESSION",
+            "GROUP_INVITE"
           ]
         },
         "track_id": {
@@ -284,6 +286,38 @@
           }
         },
         {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "VISUAL_EXPRESSION"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "common.schema.json#/$defs/expression"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "GROUP_INVITE"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_group_invite"
+              }
+            }
+          }
+        },
+        {
           "description": "Nothing measured means no quality: MISSING/EXPIRED observations carry quality null.",
           "if": {
             "properties": {
@@ -435,6 +469,24 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 500
+        }
+      }
+    },
+    "value_group_invite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group_id",
+        "group_name"
+      ],
+      "properties": {
+        "group_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "group_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         }
       }
     }

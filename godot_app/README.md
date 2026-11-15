@@ -9,6 +9,7 @@ The Godot 4.7.2 project (D-06): the world authority for SOMA RANGE (D-04). Open 
 | `scripts/world/` | `map_builder.gd` (walls, platform, ramp, stairs, props, zones, spawns from the map file) and `range_world.gd` (per-size navigation, avatars, path queries) |
 | `scripts/avatars/` | `avatar.gd` (body limits, collider, navigation, gesture checks), `humanoid_model.gd` (legged and wheeled), `quadruped_model.gd` (with or without arm), `visitor_model.gd`, `robot_parts.gd` |
 | `scripts/senses/` | The observer filter: `sense_model.gd` (sight lines, hearing) and `observer_filter.gd` (observation packets, anonymous tracks) (D-39, D-40) |
+| `scripts/comms/` | `comms_router.gd` (the four channels, groups, PA; D-43), `action_gate.gd` (checks every agent request; D-44), `link_client.gd` (the WebSocket link to the Python sidecar) |
 | `scripts/sim/` | `journal.gd`, the event journal (D-41) |
 | `scripts/demo/` | The G1 walk-to-goal demo routes (replaced by the scripted policy at G3) |
 | `scripts/ui/` | Free / orbit camera, the status panel and the F2 sense view |

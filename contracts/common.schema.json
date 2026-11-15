@@ -15,11 +15,97 @@
     },
     "gesture": {
       "description": "Bounded gesture vocabulary (Blueprint §10.3, ART_DIRECTION §6). A body config lists which of these it can perform (D-36); the action gate rejects the rest. SIT_IN_PLACE is a posture in place, not sitting on a chair (that is INTERACT with affordance SIT). HAND_OVER offers a held object.",
-      "enum": ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD", "OPEN_PALM", "BOW", "HEAD_TILT", "SIT_IN_PLACE", "HAND_OVER"]
+      "enum": [
+        "WAVE",
+        "SMALL_WAVE",
+        "RAISED_HAND",
+        "POINT",
+        "BECKON",
+        "NOD",
+        "SHAKE_HEAD",
+        "OPEN_PALM",
+        "BOW",
+        "HEAD_TILT",
+        "SIT_IN_PLACE",
+        "HAND_OVER"
+      ]
     },
     "expression_channel": {
       "description": "Ways a body can express itself (D-14, D-19). SPEECH: voice, shown as a text bubble in RANGE. FACE: a readable face (a person's face, or a robot's visor glyph display). LIGHT: a Beacon light strip or visor light.",
-      "enum": ["SPEECH", "FACE", "LIGHT"]
+      "enum": [
+        "SPEECH",
+        "FACE",
+        "LIGHT"
+      ]
+    },
+    "light_state": {
+      "description": "Public Beacon light states (D-14), always paired with words or a gesture. OFF when unlit.",
+      "enum": [
+        "OFF",
+        "NEUTRAL",
+        "WARM",
+        "CALM",
+        "CONSIDERED",
+        "CAUTION",
+        "STOP"
+      ]
+    },
+    "expression": {
+      "description": "A perceivable expression (G2b design, built out at G3 per docs/EXPRESSION_PRINCIPLES.md): a gesture, a glyph on a visor or light strip, and/or a light state. At least one of gesture, glyph or light. Everything here must exist on a real chassis.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "anyOf": [
+        {
+          "required": [
+            "gesture"
+          ]
+        },
+        {
+          "required": [
+            "glyph"
+          ]
+        },
+        {
+          "required": [
+            "light"
+          ]
+        }
+      ],
+      "properties": {
+        "gesture": {
+          "$ref": "#/$defs/gesture"
+        },
+        "glyph": {
+          "description": "Glyph id from the expression catalog (configs/expressions/, G3), shown on a visor or light strip.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,31}$"
+        },
+        "light": {
+          "$ref": "#/$defs/light_state"
+        },
+        "light_pattern": {
+          "description": "Steady or slow pulse; never faster than 3 Hz (D-14).",
+          "enum": [
+            "STEADY",
+            "SLOW_PULSE"
+          ]
+        },
+        "display": {
+          "description": "Where a glyph or light is shown.",
+          "enum": [
+            "VISOR",
+            "LIGHT_STRIP",
+            "EAR_PODS",
+            "BODY"
+          ]
+        },
+        "sign_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      }
     },
     "id": {
       "description": "Stable identifier: letters, digits, '_', '-', '.', ':'.",
@@ -27,7 +113,14 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
     },
     "nullable_id": {
-      "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }]
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "track_id": {
       "description": "Anonymous track ID, scoped to one recipient and one session. Never derived reversibly from the true entity ID.",
@@ -45,7 +138,14 @@
       "minimum": 0
     },
     "nullable_time_ms": {
-      "oneOf": [{ "$ref": "#/$defs/time_ms" }, { "type": "null" }]
+      "oneOf": [
+        {
+          "$ref": "#/$defs/time_ms"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "unit_interval": {
       "type": "number",
@@ -54,80 +154,180 @@
     },
     "validity": {
       "description": "Measurement status (Addendum v0.2 §2). Missing or stale evidence is never reported as 0 or calm.",
-      "enum": ["OBSERVED", "DEGRADED", "OCCLUDED", "MISSING", "EXPIRED", "UNKNOWN_SOURCE"]
+      "enum": [
+        "OBSERVED",
+        "DEGRADED",
+        "OCCLUDED",
+        "MISSING",
+        "EXPIRED",
+        "UNKNOWN_SOURCE"
+      ]
     },
     "read_label": {
       "description": "Qualitative read on an interpretation (D-10). Not a probability.",
-      "enum": ["COMMIT", "LEAN", "HELD_OPEN", "UNKNOWN"]
+      "enum": [
+        "COMMIT",
+        "LEAN",
+        "HELD_OPEN",
+        "UNKNOWN"
+      ]
     },
     "scope": {
       "description": "Disclosure scope (D-12).",
-      "enum": ["PUBLIC", "GROUP", "ONE_TO_ONE", "SEALED"]
+      "enum": [
+        "PUBLIC",
+        "GROUP",
+        "ONE_TO_ONE",
+        "SEALED"
+      ]
     },
     "channel": {
       "description": "COMMS channel (D-07).",
-      "enum": ["GESTURE", "LOCAL", "GROUP", "PA"]
+      "enum": [
+        "GESTURE",
+        "LOCAL",
+        "GROUP",
+        "PA"
+      ]
     },
     "baseline_scope": {
       "description": "Where a ΔP baseline comes from (Addendum v0.2 §2). NONE means no baseline exists.",
-      "enum": ["ENVIRONMENT", "SESSION", "SOURCE", "NONE"]
+      "enum": [
+        "ENVIRONMENT",
+        "SESSION",
+        "SOURCE",
+        "NONE"
+      ]
     },
     "action_name": {
       "description": "Structured action vocabulary (Blueprint §10.3).",
       "enum": [
-        "MOVE_TO", "LOOK_AT", "TURN_TO", "SPEAK", "GESTURE", "WAIT", "YIELD", "INTERACT",
-        "JOIN_QUEUE", "REQUEST_CLARIFICATION", "CREATE_GROUP", "INVITE_GROUP",
-        "ACCEPT_GROUP", "DECLINE_GROUP", "LEAVE_GROUP", "NO_OP"
+        "MOVE_TO",
+        "LOOK_AT",
+        "TURN_TO",
+        "SPEAK",
+        "GESTURE",
+        "WAIT",
+        "YIELD",
+        "INTERACT",
+        "JOIN_QUEUE",
+        "REQUEST_CLARIFICATION",
+        "CREATE_GROUP",
+        "INVITE_GROUP",
+        "ACCEPT_GROUP",
+        "DECLINE_GROUP",
+        "LEAVE_GROUP",
+        "NO_OP"
       ]
     },
     "layer_mask": {
       "description": "Perception mask: which HORIZON layers are active (D-03). L0 cannot be bypassed.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["L0", "L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8"],
+      "required": [
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
+        "L6",
+        "L7",
+        "L8"
+      ],
       "properties": {
-        "L0": { "const": true },
-        "L1": { "type": "boolean" },
-        "L2": { "type": "boolean" },
-        "L3": { "type": "boolean" },
-        "L4": { "type": "boolean" },
-        "L5": { "type": "boolean" },
-        "L6": { "type": "boolean" },
-        "L7": { "type": "boolean" },
-        "L8": { "type": "boolean" }
+        "L0": {
+          "const": true
+        },
+        "L1": {
+          "type": "boolean"
+        },
+        "L2": {
+          "type": "boolean"
+        },
+        "L3": {
+          "type": "boolean"
+        },
+        "L4": {
+          "type": "boolean"
+        },
+        "L5": {
+          "type": "boolean"
+        },
+        "L6": {
+          "type": "boolean"
+        },
+        "L7": {
+          "type": "boolean"
+        },
+        "L8": {
+          "type": "boolean"
+        }
       }
     },
     "point3": {
       "description": "World position in meters, Godot convention: x and z on the floor, y up (D-29).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["x", "y", "z"],
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "z": { "type": "number" }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
       }
     },
     "point2": {
       "description": "Floor position in meters (x, z), Godot convention (D-29).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["x", "z"],
+      "required": [
+        "x",
+        "z"
+      ],
       "properties": {
-        "x": { "type": "number" },
-        "z": { "type": "number" }
+        "x": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
       }
     },
     "pose": {
       "description": "Floor pose. yaw_rad is Godot's rotation.y: 0 faces -z, positive turns left (D-29).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["x", "y", "z", "yaw_rad"],
+      "required": [
+        "x",
+        "y",
+        "z",
+        "yaw_rad"
+      ],
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "z": { "type": "number" },
-        "yaw_rad": { "type": "number", "minimum": -6.283185307179586, "maximum": 6.283185307179586 }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        },
+        "yaw_rad": {
+          "type": "number",
+          "minimum": -6.283185307179586,
+          "maximum": 6.283185307179586
+        }
       }
     },
     "short_text": {

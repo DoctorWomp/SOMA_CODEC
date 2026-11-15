@@ -5,5 +5,6 @@
   "local_with_group_id": "type",
   "missing_required": "required",
   "negative_tick": "minimum",
+  "strobe_light": "enum",
   "unknown_field": "additionalProperties"
 }

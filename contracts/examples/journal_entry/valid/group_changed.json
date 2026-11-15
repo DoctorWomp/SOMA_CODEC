@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "seq": 40,
+  "tick_id": 606,
+  "sim_time_ms": 10100,
+  "actor_id": "visitor_x",
+  "kind": "GROUP_CHANGED",
+  "payload": {
+    "group_id": "grp_000001",
+    "op": "ACCEPTED",
+    "actor_id": "visitor_y",
+    "subject_id": null,
+    "member_ids": [
+      "visitor_x",
+      "visitor_y"
+    ]
+  }
+}

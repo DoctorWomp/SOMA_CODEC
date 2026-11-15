@@ -6,10 +6,22 @@
   "x-audience": "transport",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "message_id", "type", "tick_id", "sim_time_ms", "source", "payload"],
+  "required": [
+    "schema_version",
+    "message_id",
+    "type",
+    "tick_id",
+    "sim_time_ms",
+    "source",
+    "payload"
+  ],
   "properties": {
-    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
-    "message_id": { "$ref": "common.schema.json#/$defs/id" },
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "message_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
     "type": {
       "enum": [
         "world.observation",
@@ -18,12 +30,25 @@
         "agent.action_request",
         "world.action_result",
         "comms.event",
-        "director.intervention"
+        "director.intervention",
+        "link.hello",
+        "link.heartbeat"
       ]
     },
-    "tick_id": { "$ref": "common.schema.json#/$defs/tick" },
-    "sim_time_ms": { "$ref": "common.schema.json#/$defs/time_ms" },
-    "source": { "enum": ["godot_world", "range_service", "testworld", "operator_ui"] },
+    "tick_id": {
+      "$ref": "common.schema.json#/$defs/tick"
+    },
+    "sim_time_ms": {
+      "$ref": "common.schema.json#/$defs/time_ms"
+    },
+    "source": {
+      "enum": [
+        "godot_world",
+        "range_service",
+        "testworld",
+        "operator_ui"
+      ]
+    },
     "payload": {
       "description": "Closed by the schema named in type.",
       "type": "object",
@@ -31,12 +56,194 @@
     }
   },
   "allOf": [
-    { "if": { "properties": { "type": { "const": "world.observation" } } }, "then": { "properties": { "payload": { "$ref": "observation.schema.json" } } } },
-    { "if": { "properties": { "type": { "const": "horizon.delta_feature" } } }, "then": { "properties": { "payload": { "$ref": "delta_feature.schema.json" } } } },
-    { "if": { "properties": { "type": { "const": "horizon.hypothesis" } } }, "then": { "properties": { "payload": { "$ref": "hypothesis.schema.json" } } } },
-    { "if": { "properties": { "type": { "const": "agent.action_request" } } }, "then": { "properties": { "payload": { "$ref": "action_request.schema.json" } } } },
-    { "if": { "properties": { "type": { "const": "world.action_result" } } }, "then": { "properties": { "payload": { "$ref": "action_result.schema.json" } } } },
-    { "if": { "properties": { "type": { "const": "comms.event" } } }, "then": { "properties": { "payload": { "$ref": "comms_event.schema.json" } } } },
-    { "if": { "properties": { "type": { "const": "director.intervention" } } }, "then": { "properties": { "payload": { "$ref": "intervention.schema.json" } } } }
-  ]
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "world.observation"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "observation.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "horizon.delta_feature"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "delta_feature.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "horizon.hypothesis"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "hypothesis.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "agent.action_request"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "action_request.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "world.action_result"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "action_result.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "comms.event"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "comms_event.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "director.intervention"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "intervention.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "link.hello"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/link_hello"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "link.heartbeat"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/link_heartbeat"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "link_hello": {
+      "description": "Sent by Godot after connecting: which agents this session controls and the run's timing. The session token is never in an envelope (D-29).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "agents",
+        "tick_hz",
+        "sample_hz",
+        "map_id"
+      ],
+      "properties": {
+        "protocol": {
+          "const": "range-link/1"
+        },
+        "agents": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
+        },
+        "tick_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 240
+        },
+        "sample_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 240
+        },
+        "map_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        }
+      }
+    },
+    "link_heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    }
+  }
 }

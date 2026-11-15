@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "seq": 40,
+  "tick_id": 606,
+  "sim_time_ms": 10100,
+  "actor_id": "visitor_y",
+  "kind": "COMMS_EVENT",
+  "payload": {
+    "schema_version": "1.0",
+    "comms_id": "comms_000012",
+    "channel": "GESTURE",
+    "sender_id": "visitor_y",
+    "addressee_id": null,
+    "text": "(WAVE)",
+    "emitted_at_tick": 300,
+    "emitted_at_ms": 5000,
+    "modality": "SIMULATED_GESTURE",
+    "delivery_scope": "VISUAL_FOV_LOS",
+    "group_id": null,
+    "delivered_to": [
+      "robot_legged"
+    ],
+    "not_delivered_to": [
+      "robot_quadruped"
+    ],
+    "source_event_id": "evt_000020",
+    "expression": {
+      "gesture": "WAVE"
+    }
+  }
+}

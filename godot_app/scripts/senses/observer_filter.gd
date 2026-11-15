@@ -26,6 +26,9 @@ var world: RangeWorld
 var latest: Dictionary = {}        # observer id -> last packet
 ## For the spectator UI only: the last speech each avatar heard, {"text", "ms", "validity"}.
 var last_heard: Dictionary = {}
+## Other senders of perceivable items (the COMMS router: device messages, PA). Each is called as
+## source.call(observer: Avatar, now_ms: int) -> Array of observation items, at every sample.
+var extra_sources: Array[Callable] = []
 var _tracks: Dictionary = {}       # observer id -> {target id -> {"track_id", "last_seen_ms", "last_pos"}}
 var _rng := RandomNumberGenerator.new()
 var _obs_counter := 0
@@ -116,6 +119,8 @@ func observe(observer: Avatar) -> Dictionary:
 				lost["validity_reason"] = "LEFT_FIELD_OF_VIEW" if seen["in_range"] else "OUT_OF_RANGE"
 			lost["visible_parts"] = []
 			items.append(lost)
+	for source in extra_sources:
+		items.append_array(source.call(observer, now_ms))
 	for speech in world.spoken_since(_last_sample_tick):
 		var item := _speech_item(observer, eye, speech, seen_now, tracks, now_ms)
 		if not item.is_empty():
@@ -174,6 +179,15 @@ func track_id_for(observer_id: String, target_id: String) -> String:
 	return String(tracks[target_id]["track_id"]) if tracks.has(target_id) else ""
 
 
+## HOST ONLY (action gate): which avatar an observer's anonymous track refers to, or "".
+func entity_for_track(observer_id: String, track_id: String) -> String:
+	var tracks: Dictionary = _tracks.get(observer_id, {})
+	for target_id in tracks:
+		if tracks[target_id]["track_id"] == track_id:
+			return String(target_id)
+	return ""
+
+
 func _track(tracks: Dictionary, target_id: String) -> Dictionary:
 	if not tracks.has(target_id):
 		var token := ""
@@ -190,18 +204,32 @@ func _visual_quality(eye: Vector3, t: Avatar, visual_range: float, parts_seen: i
 	return _r(clampf(fraction * distance_factor * (0.5 + 0.5 * light), 0.0, 1.0))
 
 
-func _item(kind: String, event_id, track_id, observer: Avatar, eye: Vector3, at: Vector3, value: Dictionary,
+func _item(kind: String, event_id, track_id, observer: Avatar, eye: Vector3, at, value: Dictionary,
+		observed_ms: int, validity: String, quality, provenance: String) -> Dictionary:
+	return make_item(kind, event_id, track_id, observer, eye, at, value, observed_ms, validity, quality, provenance)
+
+
+## Build one observation item. `at` (Vector3) is where the source is perceived, or null when
+## it cannot be located (device messages): then position, bearing and range are null.
+func make_item(kind: String, event_id, track_id, observer: Avatar, eye: Vector3, at, value: Dictionary,
 		observed_ms: int, validity: String, quality, provenance: String) -> Dictionary:
 	_obs_counter += 1
+	var position = null
+	var bearing_rad = null
+	var range_m = null
+	if at is Vector3:
+		position = {"x": _r(at.x), "y": _r(at.y), "z": _r(at.z)}
+		bearing_rad = _r(SenseModel.bearing(observer, eye, at))
+		range_m = _r(Vector2(at.x - eye.x, at.z - eye.z).length())
 	return {
 		"observation_id": "obs_%06d" % _obs_counter,
 		"event_id": event_id,
 		"kind": kind,
 		"track_id": track_id,
 		"source_entity_id": null,
-		"position_estimate": {"x": _r(at.x), "y": _r(at.y), "z": _r(at.z)},
-		"bearing_rad": _r(SenseModel.bearing(observer, eye, at)),
-		"range_m": _r(Vector2(at.x - eye.x, at.z - eye.z).length()),
+		"position_estimate": position,
+		"bearing_rad": bearing_rad,
+		"range_m": range_m,
 		"value": value,
 		"observed_at_ms": observed_ms,
 		"expires_at_ms": observed_ms + EXPIRES_AFTER_MS,
