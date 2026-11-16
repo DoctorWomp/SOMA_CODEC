@@ -17,6 +17,7 @@ EXPECTED = {
     "memory_item", "run_manifest", "journal_entry", "decision_record",
     # configs
     "scenario", "persona", "body", "map", "preset", "expression", "directive",
+    "model_catalog", "inference", "model_registry",
     # shared definitions
     "common",
 }

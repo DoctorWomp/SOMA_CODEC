@@ -29,17 +29,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--delay-ms", type=int, default=0, help="test: send agents' action requests this late")
     parser.add_argument("--drop-after", type=int, default=0, help="test: close the connection once after N observations")
     parser.add_argument("--scenario", default=None, help="run an agent runtime for every cast member of this scenario")
-    parser.add_argument("--model", default="none", help="none, fake, fake-slow:MS, fake-malformed or replay:PATH")
+    parser.add_argument("--model", default="none",
+                        help="none, fake, fake-slow:MS, fake-malformed, replay:PATH, llama, llama:MODEL or llama-attach:PORT")
     parser.add_argument("--body", action="append", default=[], metavar="AVATAR=BODY", help="play AVATAR with another body")
     parser.add_argument("--jitter-ms", type=int, default=0, help="test: random extra delay before each answer")
     return parser.parse_args(argv)
 
 
-def runtimes_for(args: argparse.Namespace) -> dict:
+async def runtimes_for(args: argparse.Namespace) -> tuple[dict, object]:
+    """The scenario's agent runtimes and their (started) gateway, or ({}, None)."""
     if args.scenario is None:
-        return {}
+        return {}, None
     from range_service.agents.factory import build_runtimes
-    from range_service.agents.gateway import gateway_from_spec
+    from range_service.agents.gateway import gateway_from_spec, tokenizer_for
     from range_service.configs import load_and_check
 
     config_set, problems = load_and_check()
@@ -48,8 +50,11 @@ def runtimes_for(args: argparse.Namespace) -> dict:
     if args.scenario not in config_set.items["scenarios"]:
         raise SystemExit(f"unknown scenario {args.scenario!r}")
     overrides = dict(spec.split("=", 1) for spec in args.body)
-    return build_runtimes(config_set.items["scenarios"][args.scenario], config_set,
-                          gateway=gateway_from_spec(args.model), body_overrides=overrides)
+    gateway = gateway_from_spec(args.model)
+    if gateway is not None:
+        await gateway.start()
+    return build_runtimes(config_set.items["scenarios"][args.scenario], config_set, gateway=gateway,
+                          body_overrides=overrides, tokenizer=tokenizer_for(gateway)), gateway
 
 
 async def run(args: argparse.Namespace, token: str) -> None:
@@ -59,7 +64,8 @@ async def run(args: argparse.Namespace, token: str) -> None:
         if script not in SCRIPTS:
             raise SystemExit(f"unknown script {script!r} for {agent_id}; choose from {', '.join(SCRIPTS)}")
         agents[agent_id] = script
-    sidecar = Sidecar(token, agents, args.record, args.delay_ms, args.drop_after, runtimes=runtimes_for(args),
+    runtimes, gateway = await runtimes_for(args)
+    sidecar = Sidecar(token, agents, args.record, args.delay_ms, args.drop_after, runtimes=runtimes,
                       jitter_ms=args.jitter_ms)
     port = await sidecar.start(args.port)
     print(f"LISTENING 127.0.0.1:{port}", flush=True)
@@ -74,6 +80,8 @@ async def run(args: argparse.Namespace, token: str) -> None:
         await stop.wait()
     finally:
         await sidecar.stop()
+        if gateway is not None:
+            await gateway.stop()   # stops a llama-server this process started, and only that
 
 
 def main(argv: list[str] | None = None) -> int:

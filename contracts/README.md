@@ -20,6 +20,7 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 | `journal_entry` | evaluator | One line of the JSONL event journal |
 | `decision_record` | evaluator | One agent decision: triggers, context sizes per section, model calls with responses (record and replay), the requests it made (G3a, D-49–D-51) |
 | `map`, `persona`, `body`, `scenario`, `preset`, `expression`, `directive` | config | The YAML content files in `configs/` |
+| `model_catalog`, `inference`, `model_registry` | config | The pinned model files, the real-model settings and the local (git-ignored) list of model files on this machine (G3b, D-57) |
 
 `x-audience` in each file records its audience. **Agent-facing contracts can never carry evaluator-only fields** (private goals, scenario labels, delivery lists; the list is `common.schema.json#/$defs/evaluator_only_field`). Tests insert every one of those names at every level of every agent-facing example and check that each is rejected.
 
@@ -35,6 +36,7 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 - Expressions (D-46, D-52): one shared `expression` object (gesture, glyph, light state) used by GESTURE-channel `comms_event`s and `VISUAL_EXPRESSION` observations. The `EXPRESS` action names an entry of the expression catalog (`configs/expressions/`, contract `expression`).
 - G3a (D-48): envelope type `link.step` for stepped runs; journal kinds `SCENARIO_EVENT` and `EXPRESSION_SHOWN`; optional scenario fields `pa_operators`, `directive`, `pin_cognition`, `task_goal`. All backward-compatible, versions unchanged.
 - Rig step A (D-56): optional `amplitude` and `tempo` (`prosody_factor`, 0.5–1.5) on `GESTURE` and `EXPRESS` actions, on catalog entries and on the `GESTURE_PERFORMED` journal payload (only when given); an optional `rig` block in `body`. All backward-compatible, versions unchanged.
+- G3b (D-57): new config contracts `model_catalog` (configs/models/catalog.yaml), `model_registry` (the git-ignored models/registry.local.yaml) and `inference` (configs/inference.yaml). No message contract changed.
 - Gestures come from one shared vocabulary, `common.schema.json#/$defs/gesture`, used by `body`, `action_request` and `observation` (D-36). Expression channels likewise (`SPEECH`, `FACE`, `LIGHT`).
 
 ## Examples

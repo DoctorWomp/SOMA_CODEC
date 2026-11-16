@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/model_catalog.schema.json",
+  "title": "Model catalog",
+  "description": "configs/models/catalog.yaml (D-55, G3b): the pinned model files the bake-off uses. Each entry lists the exact files that count as that model (Hugging Face repo, commit, file, size, SHA-256) and the license on its model card. The first source is the one tools/models.py downloads; any listed source counts as found. The quantization is part of a model's identity.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "catalog_id",
+    "checked_on",
+    "models"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "catalog_id": {
+      "const": "catalog"
+    },
+    "checked_on": {
+      "description": "When the model pages were read.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "set",
+        "role",
+        "model",
+        "quant",
+        "qat",
+        "license",
+        "license_url",
+        "sources"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,47}$"
+        },
+        "label": {
+          "description": "The bake-off label (D-55 table): F1, N2, S1...",
+          "type": "string",
+          "pattern": "^[A-Z][0-9]{1,2}$"
+        },
+        "set": {
+          "description": "CORE: the D-55 core set. LATER: only if the core set falls short. EXTRA: optional comparisons, never needed. SMOKE: a tiny model for plumbing checks only, never a candidate.",
+          "enum": [
+            "CORE",
+            "LATER",
+            "EXTRA",
+            "SMOKE"
+          ]
+        },
+        "role": {
+          "description": "What it is a candidate for: FOCAL (Robot R), NPC_C2 (active NPCs), NPC_C1 (reactive NPCs).",
+          "enum": [
+            "FOCAL",
+            "NPC_C2",
+            "NPC_C1"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "quant": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]{2,16}$"
+        },
+        "qat": {
+          "description": "Quantization-aware trained checkpoint (D-55).",
+          "type": "boolean"
+        },
+        "license": {
+          "description": "As stated on the model card.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "license_url": {
+          "type": "string",
+          "pattern": "^https://huggingface\\.co/"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "repo",
+              "revision",
+              "file",
+              "size_bytes",
+              "sha256"
+            ],
+            "properties": {
+              "repo": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
+              },
+              "revision": {
+                "description": "The repository commit the file was pinned at.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "file": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]+\\.gguf$"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

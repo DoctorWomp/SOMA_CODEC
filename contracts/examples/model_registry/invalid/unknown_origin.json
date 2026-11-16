@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "files": [
+    {
+      "local_id": "qwen35_0p8b_q4km",
+      "path": "G:/models/Qwen3.5-0.8B-Q4_K_M.gguf",
+      "size_bytes": 532517120,
+      "mtime_ns": 1763300000000000000,
+      "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+      "catalog_id": "qwen35_0p8b_q4km",
+      "origin": "COPIED",
+      "header": {
+        "architecture": "qwen35",
+        "name": "Qwen3.5-0.8B",
+        "size_label": "0.8B",
+        "quantization": "Q4_K_M",
+        "file_type": 15,
+        "context_length": 262144,
+        "parameter_count": 752393024,
+        "gguf_version": 3
+      }
+    }
+  ]
+}

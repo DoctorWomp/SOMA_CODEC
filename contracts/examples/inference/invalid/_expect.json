@@ -1,0 +1,5 @@
+{
+  "unknown_kv_type": "enum",
+  "host_setting": "additionalProperties",
+  "missing_tier": "required"
+}

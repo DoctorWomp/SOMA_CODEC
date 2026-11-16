@@ -1,0 +1,29 @@
+# Real-model inference (G3b; D-20, D-21, D-50, D-55; INFERENCE_STRATEGY). Used when a run asks
+# for --model llama (tools/run_scenario.py) or by tools/bakeoff.py. Checked by contract `inference`.
+#
+# llama-server runs as a child process on 127.0.0.1 only, on a free port, with a fresh API key
+# per session that is never written to a log. Only the processes RANGE started are stopped.
+schema_version: "1.0"
+inference_id: inference
+engine:
+  binary: auto               # auto = the copy tools/install_llama.py installed in .tools/llama/
+  startup_timeout_s: 300     # loading a 7 GB model from a slow disk can take a while
+  warm_up: true              # one short request after loading, so the first decision is not slow
+servers:
+  focal:                     # Option A/B (INFERENCE_STRATEGY §4): one server for every agent
+    model: qwen35_9b_q4km    # a catalog id or label (configs/models/catalog.yaml) or a registry local id
+    parallel_slots: 2        # one pinned slot for Robot R, one for everyone else
+    context_per_slot: 6144   # tokens per slot; the focal budget is 3750 (D-51) plus room to answer
+    kv_cache_type: f16       # f16 or q8_0 (D-55 bake-off condition); q4_0 only if measured harmless
+    flash_attention: auto
+    gpu_layers: all          # all, or a number of layers to keep on the GPU
+sampling:
+  temperature: 0.0           # decisions are compared across models and runs (D-55)
+  top_p: 1.0
+  seed: 0                    # 0 = use the run's seed
+thinking: false              # D-20: thinking mode off by default; on is a separate measured condition
+structured_output: true      # JSON-schema-constrained answers: valid action JSON by construction (D-21)
+tiers:                       # deadlines as D-50; the slot policy as INFERENCE_STRATEGY T4
+  FOCAL: {server: focal, deadline_ms: 4000, pin_slot: true}
+  C2: {server: focal, deadline_ms: 6000, pin_slot: false}
+  C1: {server: focal, deadline_ms: 3000, pin_slot: false}

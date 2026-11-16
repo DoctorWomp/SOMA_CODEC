@@ -129,8 +129,10 @@ EXPECTED_ARTIFACTS = ("sampling.jsonl", "sampling.observations.json", "demo_a.js
 SIDECARS = {
     "RANGE_LINK_PORT": ["--agent", "robot_legged=probe", "--agent", "robot_quadruped=greeter", "--drop-after", "25"],
     "RANGE_LINK_PORT_SLOW": ["--agent", "robot_legged=greeter", "--delay-ms", "1500"],
-    # G3a: agent runtimes for SB-04 with a fake model that takes 1.5 s per call (T25, T27).
-    "RANGE_LINK_PORT_MODEL": ["--scenario", "SB04_POLITE_BID", "--model", "fake-slow:1500"],
+    # G3a/G3b: agent runtimes for SB-04 whose model takes 1.5 s per call (T25, T27), through the real
+    # llama-server provider code path: the stand-in server (range_service/agents/standin.py) plays a
+    # slow llama-server; {standin} is replaced with its port.
+    "RANGE_LINK_PORT_MODEL": ["--scenario", "SB04_POLITE_BID", "--model", "llama-attach:{standin}"],
 }
 SIDECAR_FOLDERS = {"RANGE_LINK_PORT": "sidecar", "RANGE_LINK_PORT_SLOW": "sidecar_slow",
                    "RANGE_LINK_PORT_MODEL": "sidecar_model"}
@@ -189,6 +191,14 @@ def validate_artifacts(folder: Path, require_all: bool = True) -> tuple[int, lis
     c, found = check_agent_records(folder)
     checked += c
     problems += found
+    # G3b: the slow-model run (T25, T27) must really have gone through the llama-server provider.
+    model_records = folder / "sidecar_model" / "decision_records.jsonl"
+    if model_records.is_file():
+        providers = {call["provider"] for line in model_records.read_text(encoding="utf-8").splitlines()
+                     for call in json.loads(line).get("model_calls", [])}
+        if providers != {"LLAMA_SERVER"}:
+            problems.append(f"sidecar_model: model calls went through {sorted(providers) or 'no provider'}, "
+                            "expected only LLAMA_SERVER (the stand-in server played by tools/godot_check.py)")
     for path in sorted(folder.glob("sidecar*/sidecar_*.jsonl")):
         if "deliberately_invalid" in path.name:
             continue
@@ -233,12 +243,23 @@ def check_agent_records(folder: Path) -> tuple[int, list[str]]:
 
 
 def start_sidecars(record_root: Path, token: str) -> tuple[list[subprocess.Popen], dict[str, str]]:
-    """Start the test sidecars; returns the processes and the environment for Godot."""
+    """Start the test sidecars (and the slow stand-in model server they use); returns the processes
+    and the environment for Godot."""
     procs, env = [], {}
+    model_key = secrets.token_urlsafe(32)
+    standin = subprocess.Popen([sys.executable, "-m", "range_service.agents.standin", "--mode", "slow", "--delay-ms", "1500"],
+                               cwd=REPO, env=dict(os.environ, RANGE_STANDIN_API_KEY=model_key),
+                               stdout=subprocess.PIPE, text=True)
+    procs.append(standin)
+    line = standin.stdout.readline().strip()
+    if not line.startswith("LISTENING "):
+        raise RuntimeError(f"the stand-in model server did not start ({line!r})")
+    standin_port = line.rsplit(":", 1)[1]
     for env_name, extra in SIDECARS.items():
         folder = record_root / SIDECAR_FOLDERS[env_name]
-        proc = subprocess.Popen([sys.executable, "-m", "range_service.link", "--record", str(folder), *extra],
-                                cwd=REPO, env=dict(os.environ, RANGE_SESSION_TOKEN=token),
+        args = [a.replace("{standin}", standin_port) for a in extra]
+        proc = subprocess.Popen([sys.executable, "-m", "range_service.link", "--record", str(folder), *args],
+                                cwd=REPO, env=dict(os.environ, RANGE_SESSION_TOKEN=token, RANGE_LLAMA_API_KEY=model_key),
                                 stdout=subprocess.PIPE, text=True)
         procs.append(proc)
         line = proc.stdout.readline().strip()

@@ -682,3 +682,58 @@ Choices made while building step A that D-54 and the plan left open:
 - **Body config `rig` block** (optional, contract `body` 2.0 unchanged): `skeleton` (HUMANOID or QUADRUPED, must fit `kind`), `arm_module`, `joint_limits_deg` overrides, `head_turn_speed_deg_s`, `gesture_amplitude`, `gesture_tempo`, `gait` (read from step B). `tools/validate_configs.py` rejects unknown joints or axes, min above max, head yaw beyond ±85°, prosody ranges that exclude 1, an arm module without an arm (or an arm without its module), and a rig on a visitor (visitors are step C). All four robot configs now carry a `rig` block.
 - **Tests (headless, in `tools/check.py`):** `test_rig_skeletons` (joints, every part on a bone, no arm bones without an arm), `test_rig_joint_limits` (every gesture at amplitude and tempo extremes, gaze behind, above and below, driving and turning: no limit passed, no clamp asked for, bones carry exactly their angles, head and posture gestures never move an arm), `test_gesture_fits_world_duration` (back at rest by the event's last tick, tempo 0.5–1.5), `test_posed_hand_at_sense_point` (≤ 10 cm at the peak, every amplitude, turned bodies; head gestures likewise; worst measured 5.8 cm), `test_pose_never_changes_the_world` (demo journal identical with posing on, on and off; same tick, same pose), `test_wheels_spin_from_actual_speed`, `test_gaze_layer`, `test_gesture_prosody_actions`. The scenario step now also runs SB-04 with `--no-pose` and requires the same journal bytes.
 - **Not in step A:** gaits and foot IK (step B), articulated visitors (step C), levels of detail (cost is small at four robots; measure with the render-tax test before G6), skinned-mesh merge, telling models about prosody.
+
+## D-57 — G3b-1 as built: llama-server, model catalog and registry, provider
+**Status:** PROPOSED (2026-11-16), G3b-1. Builds D-20, D-21 (with its owner note), D-50 and D-55. Owner checklist: [gates/G3b_OWNER_CHECKLIST.md](gates/G3b_OWNER_CHECKLIST.md).
+
+- **Pinned engine: llama.cpp `b12443`** (commit `301db633702f1d2c107d4feaa4268f07c0b508c5`, 2026-11-16). `tools/install_llama.py` installs it into `.tools/llama/` like `install_godot.py`.
+  - **Windows:** `llama-b12443-bin-win-cuda-12.4-x64.zip` plus `cudart-llama-bin-win-cuda-12.4-x64.zip` (CUDA 12.4 runtime). The asset names were read from that commit's release workflows.
+  - **Minimum NVIDIA driver:** 551.61 for CUDA 12.4. Through CUDA minor-version compatibility, 528.33 or newer usually works too. `--check` reads the driver from `nvidia-smi` and compares.
+  - **Checksums: not pinned yet (BLOCKED on the owner).** The cloud session could read llama.cpp's source but not download its release files (GitHub release downloads are blocked there). Until the hashes are pinned, the installer refuses to unpack anything unless run with `--record-hashes`: it prints each file's SHA-256 and size, the owner compares them with the `sha256:` shown on the release page, types yes, and the values are saved in `.tools/llama/recorded_hashes.json` for later checks. The owner pastes them back to be pinned in the script.
+  - **Linux and cloud:** `--from-source` clones the tag, refuses anything but the pinned commit, and builds a static CPU `llama-server` (no shared libraries, source removed afterwards). This build ran the cloud smoke tests.
+- **Model catalog** (`configs/models/catalog.yaml`, contract `model_catalog`, checked by `validate_configs.py`): D-55's eight core models (F1–F3, N1–N3, S1–S2).
+  - **Each entry lists the exact files that count as that model:** repository, commit, file name, size and SHA-256, read from the Hugging Face model pages on 2026-11-16. Every license on the cards reads Apache-2.0.
+  - **The first source is the download.**
+    - Gemma 4: Google's official QAT Q4_0 GGUF first (D-55), with LM Studio's QAT conversion (same tensors, slightly different metadata) also accepted.
+    - Qwen3.5: the `lmstudio-community` files first, because the owner's LM Studio folder most likely holds exactly those, with the `unsloth` files of the same quantization also accepted.
+  - **Download size:** the core set from first sources is **36.19 GB**.
+  - **Two non-core entries:**
+    - `X1`, Gemma 4 E4B Q4_K_M non-QAT (`EXTRA`, a comparison the owner already has).
+    - `T1`, Qwen3.5-0.8B Q4_K_M, 0.53 GB (`SMOKE`: plumbing checks only, never a candidate).
+- **Local registry** (`models/registry.local.yaml`, git-ignored, contract `model_registry`). `tools/models.py`:
+  - **`scan`** reads each `.gguf`'s header (pure Python: architecture, parameter count from the tensor table, quantization from `general.file_type`, context length), skips `mmproj` projectors, computes SHA-256, and records the file **in place**. Unchanged files are not re-hashed.
+  - **`plan`** shows found and missing core models, the download size and the free disk space.
+  - **`download`** fetches only the entries the owner names, after showing the list and asking for "yes". It downloads from the pinned commit, resumes partial files, checks size and SHA-256 before registering, and deletes a mismatch.
+- **Provider** (`range_service/agents/llama.py`):
+  - **The child process.**
+    - Listens on 127.0.0.1 on a free port.
+    - Its per-session key (32 random bytes) goes in the child's environment (`LLAMA_API_KEY`), so it is never on the command line, in a log, in `repr`, or in a record.
+    - Health is polled until ready, and the server is warmed up with one short request.
+    - `stop()` stops only the process this object started.
+    - Server output goes to `llama_server.log` in the run folder.
+  - **Requests.**
+    - One chat request per decision, with the whole assembled prompt as the user message (the stable prefix stays first, T3) and `cache_prompt: true`.
+    - Thinking is off (`--reasoning off` and `enable_thinking: false`, D-20).
+    - Temperature 0, and the run's seed.
+    - **JSON-schema-constrained output** built from `contracts/action_request` for the agent's allowed actions (`agents/output_schema.py`). Cross-file references are inlined, keywords llama.cpp's grammar cannot use are dropped, and the contract's GROUP/`group_id` if-then rule is turned into two alternatives. Answers are still checked against the contracts afterwards.
+  - **Slot pinning (T4):** each agent of a pinned tier (FOCAL) gets its own slot (0, 1, …); the last slot stays shared for everyone else.
+  - **From the server's reply into the decision record:** prefill and generation times, and prompt, cached and generated token counts.
+  - **Real token counts:** with a llama gateway, context budgets count tokens with the model's own tokenizer through `/tokenize` (cached per text). If the server cannot be reached, the estimate is used for that text and the tokenizer's name gains `+approx_fallback`, so it is never hidden.
+- **Configuration.** `configs/inference.yaml` (contract `inference`) holds:
+  - the server (model by catalog id, label or local id; slots; context per slot; KV cache type; flash attention; GPU layers);
+  - sampling, thinking and structured output;
+  - per-tier deadlines (D-50's 4/6/3 s) and slot pinning.
+
+  `--model llama`, `llama:MODEL` (for example `llama:F3`) and `llama-attach:PORT` (a server already running) join the G3a choices. **Run manifests now record** `model.engine`, `model.file`, `model.quant`, `model.sha256`, `model.kv_cache_type`, slots, thinking and the tokenizer, and the avatar's `model_hash` is the file's SHA-256 (D-55).
+- **Tests without a model or network:**
+  - **A stand-in server** (`agents/standin.py`) speaks the part of llama-server's API that RANGE uses, in four modes: normal, slow, malformed and disconnecting. It also checks the API key. Provider tests cover each mode plus a wrong key, slot pinning, the tokenizer and its fallback, the answer schema, and the process lifecycle (with a fake binary).
+  - **T25–T27 through the real provider:** `tools/godot_check.py` starts the stand-in in slow mode and the Godot test reaches it through `--model llama-attach`. The check fails if any of that run's model calls did not go through `LLAMA_SERVER`.
+  - **Registry, downloads and installer:** GGUF parsing (including damaged files), scan and plan, download (pinned URL, resume, hash mismatch), and the installer's pins and refusals.
+- **Measured in the cloud** (static CPU build, 4 cores, T1 = Qwen3.5-0.8B): a constrained decision came back as valid action JSON on the first try.
+  - **Prefix caching:** the second identical request reused 96 of 100 prompt tokens, and prefill dropped from 334 ms to 74 ms.
+  - **Tokenizer:** `/tokenize` counted 88 tokens where the estimate said 83.
+
+  - **A full SB-04 run** (`--model llama:T1`, stepped, in Godot) finished OK with the manifest fields above. On 4 CPU cores all 9 of Robot R's calls missed the 4 s focal deadline and fell back to WAIT, as expected for ~3K-token prompts on a CPU.
+
+  These are plumbing checks, not results: nothing about GPU speed, VRAM or decision quality was measured.
+- **Not in G3b-1:** the priority scheduler (Option B) and the bake-off tool (G3b-2), the Ollama provider (D-21 alternative; not needed while llama-server is bundled), two servers (Option C, G3c), and context-aware schemas (for example offering GROUP only to an agent in a group).

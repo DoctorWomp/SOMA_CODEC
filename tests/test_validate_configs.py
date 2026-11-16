@@ -115,7 +115,7 @@ def test_spawn_outside_map_is_reported(config_copy):
 def test_command_line_exit_codes(config_copy):
     ok = subprocess.run([sys.executable, str(TOOL)], capture_output=True, text=True, cwd=REPO)
     assert ok.returncode == 0, ok.stdout + ok.stderr
-    assert "All 33 config file(s) are valid." in ok.stdout
+    assert "All 35 config file(s) are valid." in ok.stdout
     _edit(config_copy / "personas" / "visitor_y.yaml", "patience: 85", "patience: 120")
     bad = subprocess.run([sys.executable, str(TOOL), str(config_copy)], capture_output=True, text=True, cwd=REPO)
     assert bad.returncode == 1

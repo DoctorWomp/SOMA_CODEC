@@ -36,6 +36,11 @@ KINDS: dict[str, tuple[str, str]] = {
     "scenarios": ("scenario", "scenario_id"),
     "expressions": ("expression", "expression_id"),
     "directives": ("directive", "directive_id"),
+    "models": ("model_catalog", "catalog_id"),
+}
+# Single files directly in configs/: file stem -> (contract, id field). Loaded as kind "<stem>".
+SINGLE_FILES: dict[str, tuple[str, str]] = {
+    "inference": ("inference", "inference_id"),
 }
 
 
@@ -98,15 +103,16 @@ def _rel(path: Path, root: Path) -> str:
 def load_and_check(config_dir: Path = CONFIGS_DIR) -> tuple[ConfigSet, list[ConfigProblem]]:
     """Load every config under ``config_dir`` and return what loaded plus all problems."""
     found: list[ConfigProblem] = []
-    items: dict[str, dict[str, dict[str, Any]]] = {kind: {} for kind in KINDS}
+    items: dict[str, dict[str, dict[str, Any]]] = {kind: {} for kind in [*KINDS, *SINGLE_FILES]}
     files: dict[tuple[str, str], str] = {}
     broken: set[tuple[str, str]] = set()
 
-    for kind, (contract, id_field) in KINDS.items():
-        folder = config_dir / kind
-        if not folder.is_dir():
-            continue
-        for path in sorted([*folder.glob("*.yaml"), *folder.glob("*.yml")]):
+    sources = [(kind, contract, id_field, sorted([*(config_dir / kind).glob("*.yaml"), *(config_dir / kind).glob("*.yml")]))
+               for kind, (contract, id_field) in KINDS.items() if (config_dir / kind).is_dir()]
+    sources += [(stem, contract, id_field, [config_dir / f"{stem}.yaml"])
+                for stem, (contract, id_field) in SINGLE_FILES.items() if (config_dir / f"{stem}.yaml").is_file()]
+    for kind, contract, id_field, paths in sources:
+        for path in paths:
             rel = _rel(path, config_dir)
             broken.add((kind, path.stem))  # removed again once the file loads cleanly
             try:
@@ -152,6 +158,19 @@ def _cross_checks(cs: ConfigSet) -> list[ConfigProblem]:
         return ref not in cs.items[kind] and (kind, ref) not in cs.broken
 
     maps, personas, scenarios = cs.items["maps"], cs.items["personas"], cs.items["scenarios"]
+
+    from .models import registry as model_registry   # imports this module: load it lazily
+
+    for catalog_id, catalog in cs.items["models"].items():
+        for problem in model_registry.catalog_problems(catalog):
+            found.append(ConfigProblem(cs.files[("models", catalog_id)], problem))
+
+    for inference_id, inf in cs.items["inference"].items():
+        for tier, setting in inf["tiers"].items():
+            if setting["server"] not in inf["servers"]:
+                found.append(ConfigProblem(cs.files[("inference", inference_id)],
+                                           f"tiers.{tier}.server {setting['server']!r} is not one of servers "
+                                           f"({', '.join(inf['servers'])})"))
 
     for body_id, b in cs.items["bodies"].items():
         for problem in body_rules.body_problems(b):
