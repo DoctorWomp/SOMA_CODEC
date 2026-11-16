@@ -87,7 +87,7 @@ The reference sheet's 86 DOF (three segments per finger) is film-level detail th
 | HipFlex ×4 | 1 | −60°…+120° | |
 | Knee ×4 | 1 | −150°…0° | |
 | Foot ×4 | — | — | Point feet, no ankle (the sheet's 2-DOF ankle is not current hardware) |
-| Neck + Head | 2 | yaw ±85°, pitch −35°…+45° | A design choice: many real robot dogs have a fixed sensor head, but readable gaze is the point |
+| Body pose (no neck) | 3 | yaw ±15°, pitch ±15°, roll ±15° | **Changed at step A (owner, 2026-11-16; D-56):** no neck, as on current robot dogs; the sensor head is fixed to the body. Gaze and HEAD_TILT are whole-body poses that the legs make over planted feet (asymmetric hip and knee angles), lowering the body slightly when needed. *Was: a 2-axis neck for readable gaze* |
 
 3 DOF per leg is what current robot dogs have, and it also keeps the IK simple.
 

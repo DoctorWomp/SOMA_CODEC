@@ -47,16 +47,16 @@
   ],
   "rig": {
     "skeleton": "QUADRUPED",
-    "head_turn_speed_deg_s": 150,
+    "head_turn_speed_deg_s": 90,
     "joint_limits_deg": {
-      "Neck": {
+      "Body": {
         "yaw": [
-          -60,
-          60
-        ],
-        "roll": [
           -20,
           20
+        ],
+        "roll": [
+          -15,
+          15
         ]
       }
     },

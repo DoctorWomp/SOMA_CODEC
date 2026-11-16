@@ -62,6 +62,7 @@ const TESTS := [
 	"test_wheels_spin_from_actual_speed",
 	"test_gaze_layer",
 	"test_gesture_prosody_actions",
+	"test_quadruped_whole_body_gestures",
 ]
 
 ## Where tests write journals and packets for tools/godot_check.py to validate in Python.
@@ -1847,11 +1848,11 @@ const EXPECTED_JOINTS := {
 		"ToeL", "ToeR", "WristL", "WristR"],
 	"wheeled_humanoid": ["ElbowL", "ElbowR", "FingersL", "FingersR", "Neck", "ShoulderL", "ShoulderR",
 		"SpineLower", "SpineUpper", "ThumbL", "ThumbR", "TorsoMount", "WristL", "WristR"],
-	"quadruped": ["HipAbdBL", "HipAbdBR", "HipAbdFL", "HipAbdFR", "HipFlexBL", "HipFlexBR", "HipFlexFL",
-		"HipFlexFR", "KneeBL", "KneeBR", "KneeFL", "KneeFR", "Neck"],
-	"quadruped_arm": ["ArmBase", "ArmElbow", "ArmShoulder", "ArmWrist", "Gripper", "HipAbdBL", "HipAbdBR",
+	"quadruped": ["Body", "HipAbdBL", "HipAbdBR", "HipAbdFL", "HipAbdFR", "HipFlexBL", "HipFlexBR", "HipFlexFL",
+		"HipFlexFR", "KneeBL", "KneeBR", "KneeFL", "KneeFR"],
+	"quadruped_arm": ["ArmBase", "ArmElbow", "ArmShoulder", "ArmWrist", "Body", "Gripper", "HipAbdBL", "HipAbdBR",
 		"HipAbdFL", "HipAbdFR", "HipFlexBL", "HipFlexBR", "HipFlexFL", "HipFlexFR", "KneeBL", "KneeBR",
-		"KneeFL", "KneeFR", "Neck"],
+		"KneeFL", "KneeFR"],
 }
 ## Gesture durations in ticks for clamped tempos, the same numbers as tests/test_bodies.py (D-56).
 const EXPECTED_DURATIONS := {0.5: 180, 0.8: 113, 1.0: 90, 1.2: 75, 1.5: 60}
@@ -1913,6 +1914,14 @@ func test_rig_skeletons() -> String:
 			return "%s: arm bones do not match whether it can wave" % body_id
 		if body_id == "quadruped" and (r.find_bone("ArmBase") >= 0 or r.find_bone("Gripper") >= 0):
 			return "the quadruped without an arm has arm bones"
+		if a.kind == "QUADRUPED":
+			# No neck, like current robot dogs (owner, 2026-11-16): the sensor head is part of the body.
+			if r.find_bone("Neck") >= 0 or r.has_joint("Neck"):
+				return "%s has a neck; its head must be fixed to the body" % body_id
+			var head: Node = a.model.find_child("SensorHead", true, false)
+			if head == null or head.get_parent() != r.attach("Body"):
+				return "%s sensor head is not fixed to the body bone" % body_id
+			continue
 		var neck_yaw := r.limits("Neck", "yaw")
 		if absf(rad_to_deg(neck_yaw.x)) > 85.0 + 1e-3 or rad_to_deg(neck_yaw.y) > 85.0 + 1e-3:
 			return "%s head yaw limits %s exceed ±85° (D-54)" % [body_id, neck_yaw]
@@ -2200,6 +2209,7 @@ func test_wheels_spin_from_actual_speed() -> String:
 
 ## Gaze: LOOK_AT turns the head toward the target at the body's head speed and never past ±85°;
 ## a gesture with a target looks at it; when the hold ends the head comes back to the front.
+## The quadruped has no neck: its whole body turns, only as far as its Body joint allows.
 func test_gaze_layer() -> String:
 	var w := await _world(["legged_humanoid", "quadruped", "human_walker"])
 	if w == null:
@@ -2222,9 +2232,11 @@ func test_gaze_layer() -> String:
 	var want := atan2(2.0, 1.0)
 	if absf(prev - want) > deg_to_rad(6.0):
 		return "the head looks %.1f°, expected about %.1f° toward the visitor" % [rad_to_deg(prev), rad_to_deg(want)]
-	var dog_yaw := absf(float(dog.rig().angles["Neck"]["yaw"]))
-	if absf(dog_yaw - deg_to_rad(85.0)) > 1e-3:
-		return "a target straight behind should hold the head at 85°, got %.2f°" % rad_to_deg(dog_yaw)
+	var dog_yaw := absf(float(dog.rig().angles["Body"]["yaw"]))
+	var dog_limit := dog.rig().limits("Body", "yaw").y
+	if absf(dog_yaw - dog_limit) > 1e-3:
+		return "a target straight behind should turn the quadruped's body to its limit %.1f°, got %.2f°" % [
+			rad_to_deg(dog_limit), rad_to_deg(dog_yaw)]
 	await _ticks(150)
 	if absf(float(robot.rig().angles["Neck"]["yaw"])) > 1e-4:
 		return "the head did not come back to the front when the gaze hold ended"
@@ -2286,4 +2298,60 @@ func test_gesture_prosody_actions() -> String:
 		return "EXPRESS tempo 0.8 should give a 113-tick nod, got %s" % performed[2]
 	if performed[3].has("amplitude") or performed[3].has("tempo") or int(performed[3]["duration_ms"]) != SimClock.ms_at(90):
 		return "a gesture without prosody must journal exactly as before: %s" % performed[3]
+	return ""
+
+
+## The quadruped has no neck (owner, 2026-11-16): HEAD_TILT and gaze are whole-body poses that its
+## legs make with the feet planted, as a real robot dog would. At HEAD_TILT's peak the body rolls,
+## the left and right legs bend differently, and no foot leaves its spot; the same holds while
+## the body turns toward someone to its side, and while sitting.
+func test_quadruped_whole_body_gestures() -> String:
+	var w := await _world(["quadruped", "quadruped_arm", "human_walker"])
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["quad", "quadruped", 6.0, 16.5, 0.0], ["quad_arm", "quadruped_arm", 9.0, 16.5, 0.0],
+		["visitor", "human_walker", 12.0, 15.0, 0.0]])
+	for phase in ["HEAD_TILT", "GAZE", "SIT_IN_PLACE"]:
+		var peak := 0
+		for id in ["quad", "quad_arm"]:
+			var a: Avatar = av[id]
+			if phase == "GAZE":
+				a.look_toward("visitor", 240)
+				peak = w.clock.tick + 60
+			else:
+				a.perform_gesture(phase, "", 1.5)
+				var g := a.active_gesture(w.clock.tick)
+				peak = int(g["start_tick"]) + roundi((int(g["until_tick"]) - int(g["start_tick"])) / 2.0)
+		while w.clock.tick < peak:
+			await get_tree().physics_frame
+			for id in ["quad", "quad_arm"]:
+				var r: Rig = av[id].rig()
+				var q := av[id].model as QuadrupedModel
+				for leg in RigSpec.LEGS:
+					var off := r.bone_global("Foot" + leg).origin.distance_to(q.foot_point(leg))
+					if off > 0.002:
+						return "%s %s: foot %s moved %.4f m off its spot at tick %d" % [id, phase, leg, off, w.clock.tick]
+				if r.check_pose() != "" or r.clamp_count > 0:
+					return "%s %s: %s %s" % [id, phase, r.check_pose(), r.clamp_log]
+		for id in ["quad", "quad_arm"]:
+			var r: Rig = av[id].rig()
+			var body: Dictionary = r.angles["Body"]
+			match phase:
+				"HEAD_TILT":
+					if float(body["roll"]) < deg_to_rad(10.0):
+						return "%s HEAD_TILT rolled the body only %.1f°" % [id, rad_to_deg(float(body["roll"]))]
+				"GAZE":
+					if absf(float(body["yaw"])) < deg_to_rad(10.0):
+						return "%s did not turn its body toward the visitor (yaw %.1f°)" % [id, rad_to_deg(float(body["yaw"]))]
+			if phase != "SIT_IN_PLACE":
+				var asym := 0.0
+				for pair in [["FL", "FR"], ["BL", "BR"]]:
+					for j in ["HipAbd", "HipFlex", "Knee"]:
+						var axis := "abduct" if j == "HipAbd" else "flex"
+						var left := float(r.angles[j + pair[0]][axis])
+						var right := float(r.angles[j + pair[1]][axis])
+						asym = maxf(asym, absf(left - right))   # both sides measure abduction outward
+				if asym < deg_to_rad(2.0):
+					return "%s %s: left and right legs bend the same; the legs must make the body pose" % [id, phase]
+		await _ticks(200)
 	return ""

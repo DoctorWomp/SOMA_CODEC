@@ -242,7 +242,7 @@
       ],
       "properties": {
         "skeleton": {
-          "description": "Skeleton family. HUMANOID: legged and wheeled humanoids (the wheeled one has a torso mount and wheels instead of legs). QUADRUPED: a rigid body with four 3-joint legs and a 3-axis head.",
+          "description": "Skeleton family. HUMANOID: legged and wheeled humanoids (the wheeled one has a torso mount and wheels instead of legs). QUADRUPED: a rigid body with no neck and four 3-joint legs; the legs pose the whole body (yaw, pitch, roll) over planted feet.",
           "enum": [
             "HUMANOID",
             "QUADRUPED"
@@ -285,7 +285,7 @@
           }
         },
         "head_turn_speed_deg_s": {
-          "description": "How fast the head turns toward a gaze target.",
+          "description": "How fast the head (a quadruped: its whole body) turns toward a gaze target.",
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 720
