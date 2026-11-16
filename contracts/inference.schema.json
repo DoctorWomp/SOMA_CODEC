@@ -14,6 +14,7 @@
     "sampling",
     "thinking",
     "structured_output",
+    "scheduler",
     "tiers"
   ],
   "properties": {
@@ -144,6 +145,67 @@
     "structured_output": {
       "description": "Constrain answers with a JSON schema built from the agent's allowed actions (D-21).",
       "type": "boolean"
+    },
+    "scheduler": {
+      "description": "INFERENCE_STRATEGY step 3: PRIORITY is Option B (pinned slots for pinned tiers, priority with aging, stale-drop); FIFO is Option A (arrival order).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "reserved_slots",
+        "priorities",
+        "aging_ms",
+        "min_service_ms"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "PRIORITY",
+            "FIFO"
+          ]
+        },
+        "reserved_slots": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "priorities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "FOCAL",
+            "C2",
+            "C1"
+          ],
+          "properties": {
+            "FOCAL": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "C2": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "C1": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            }
+          }
+        },
+        "aging_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "min_service_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        }
+      }
     },
     "tiers": {
       "type": "object",

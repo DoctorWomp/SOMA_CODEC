@@ -34,5 +34,16 @@
       "deadline_ms": 6000,
       "pin_slot": false
     }
+  },
+  "scheduler": {
+    "mode": "PRIORITY",
+    "reserved_slots": 1,
+    "priorities": {
+      "FOCAL": 0,
+      "C2": 1,
+      "C1": 2
+    },
+    "aging_ms": 2000,
+    "min_service_ms": 300
   }
 }

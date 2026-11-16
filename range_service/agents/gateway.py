@@ -18,7 +18,10 @@ A provider-neutral interface between agents and models. Agents never call a mode
 - **Record and replay** (T20): every call is returned as a ``decision_record`` model-call entry
   with the prompt hash, response text and timings. ``ReplayModel`` serves those responses in
   order and reports a changed prompt as ``REPLAY_DIVERGED``: a rerun, never a replay.
-- **One slot** (INFERENCE_STRATEGY Option A): calls queue on a semaphore; queue time is logged.
+- **Scheduling**: without a scheduler, calls queue on a semaphore in arrival order (INFERENCE_STRATEGY
+  Option A). With a ``SlotScheduler`` (agents/scheduler.py; Option B, G3b-2) focal agents own a
+  pinned slot, others are served by priority with aging, and calls that could only answer late
+  are dropped before they reach the model. Queue time is logged either way.
 """
 
 from __future__ import annotations
@@ -66,6 +69,8 @@ class ModelRequest:
     demo_hint: str | None = None
     # JSON schema of a valid answer for this agent (constrained output, D-21); None = unconstrained.
     output_schema: dict[str, Any] | None = None
+    # The engine slot the scheduler granted (-1 = none: the provider chooses).
+    slot: int = -1
 
 
 @dataclass
@@ -199,10 +204,12 @@ def parse_output(text: str, allowed_actions: list[str], agent_id: str, tick: int
 
 
 class ModelGateway:
-    def __init__(self, provider: Provider, deadlines_ms: dict[str, int] | None = None, max_concurrent: int = 1) -> None:
+    def __init__(self, provider: Provider, deadlines_ms: dict[str, int] | None = None, max_concurrent: int = 1,
+                 scheduler: Any = None) -> None:
         self.provider = provider
         self.deadlines_ms = dict(DEADLINES_MS, **(deadlines_ms or {}))
         self._slots = asyncio.Semaphore(max_concurrent)
+        self.scheduler = scheduler
         self._calls = 0
 
     async def start(self) -> None:
@@ -222,13 +229,28 @@ class ModelGateway:
         response: ModelResponse | None = None
         outcome, error = "VALID", None
         queue_ms = 0
+        from .scheduler import Dropped   # noqa: PLC0415
+
         try:
             async with asyncio.timeout(deadline_ms / 1000):
-                async with self._slots:
+                if self.scheduler is not None:
+                    slot = await self.scheduler.acquire(request.agent_id, request.tier,
+                                                        time.monotonic() + deadline_ms / 1000)
                     queue_ms = round((time.perf_counter() - started) * 1000)
-                    response = await self.provider.complete(request)
+                    request.slot = slot
+                    try:
+                        response = await self.provider.complete(request)
+                    finally:
+                        self.scheduler.release(slot)
+                else:
+                    async with self._slots:
+                        queue_ms = round((time.perf_counter() - started) * 1000)
+                        response = await self.provider.complete(request)
         except TimeoutError:
             outcome, error = "TIMEOUT", f"no answer within {deadline_ms} ms"
+        except Dropped as exc:
+            queue_ms = round((time.perf_counter() - started) * 1000)
+            outcome, error = "TIMEOUT", f"dropped before reaching the model: {exc}"[:300]
         except ReplayDiverged as exc:
             outcome, error = "REPLAY_DIVERGED", str(exc)[:300]
         except ProviderError as exc:
@@ -322,9 +344,13 @@ def gateway_from_spec(spec: str, *, log_path: Path | None = None, seed: int | No
         from .llama import LlamaProvider   # noqa: PLC0415
 
         inf = load_inference()
+        from .inference import make_scheduler   # noqa: PLC0415
+
+        slots = inf["servers"]["focal"]["parallel_slots"]
         provider = LlamaProvider.attach(int(spec.split(":", 1)[1]), sampling=inf["sampling"],
                                         structured_output=inf["structured_output"], thinking=inf["thinking"],
-                                        warm_up=False)
-        return ModelGateway(provider, deadlines_ms={t: s["deadline_ms"] for t, s in inf["tiers"].items()})
+                                        warm_up=False, parallel_slots=slots)
+        return ModelGateway(provider, deadlines_ms={t: s["deadline_ms"] for t, s in inf["tiers"].items()},
+                            max_concurrent=slots, scheduler=make_scheduler(inf))
     raise ValueError(f"unknown model {spec!r}: use none, fake, fake-slow:MS, fake-malformed, replay:PATH, "
                      "llama, llama:MODEL or llama-attach:PORT")

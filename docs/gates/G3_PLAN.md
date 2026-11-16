@@ -134,7 +134,7 @@ The link gains one envelope type, `link.step` (`SAMPLE_SENT` from Godot after a 
 
 ## G3b plan
 
-**Status:** G3b-1 built 2026-11-16 (installer, catalog and registry, provider, stand-in tests; D-57 PROPOSED; [owner checklist](G3b_OWNER_CHECKLIST.md)). G3b-2 (scheduler, bake-off) next.
+**Status:** G3b-1 built 2026-11-16 (installer, catalog and registry, provider, stand-in tests; D-57 PROPOSED; [owner checklist](G3b_OWNER_CHECKLIST.md)). G3b-2 built 2026-11-16 (priority scheduler, bake-off tool and prompt set; D-58 PROPOSED). Next: the owner's bake-off run.
 
 **Owner direction (2026-11-16):** 4B–12B models first, QAT preferred, smaller models for C1 NPCs (D-55); as standalone as possible (D-21 note). G3b is split: a **cloud part** (everything that needs no GPU, tested against a stand-in OpenAI-compatible server) and a short **PC part** (install, register models, run the bake-off, paste the results back).
 
