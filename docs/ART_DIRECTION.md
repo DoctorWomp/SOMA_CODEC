@@ -133,6 +133,8 @@ These effects are simple proxies, labeled synthetic, not models of real optics o
 | Asset sources | Free low-poly packs with permissive (CC0) licenses for props, characters and animations, e.g. Kenney and Quaternius. **Verify each pack's license before use**; record it in `THIRD_PARTY_LICENSES` |
 | Robot mesh | v0: assembled from primitives in Godot to match the concept's proportions and joints. Later: a proper mesh modeled from the concept (Blender) on the **same skeleton and joint names**, so nothing else changes |
 
+**Proposed amendment (D-54, [RIG_PLAN.md](gates/RIG_PLAN.md)):** three skeleton families instead of one (humanoid for both humanoid robots and human visitors, quadruped, and an arm module), because a quadruped cannot share the humanoid skeleton. Poses are code-driven with IK and never change what the world simulates.
+
 Gestures are actions in the bounded vocabulary (`GESTURE`, `LOOK_AT`, `TURN_TO`). The model picks *which* gesture; animation plays it. The model never animates joints directly.
 
 ## 7. Fidelity ladder

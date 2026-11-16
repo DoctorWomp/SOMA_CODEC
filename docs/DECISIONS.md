@@ -61,6 +61,8 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-51 | Context assembly in practice: budgets, compression, logging | PROPOSED (G3a, 2026-11-15) |
 | D-52 | Expression catalog, EXPRESS and the Beacon | PROPOSED (G3a, 2026-11-15) |
 | D-53 | Directive templates and guardrails | PROPOSED (G3a, 2026-11-15) |
+| D-54 | Rigging and animation: pose is presentation | PROPOSED (2026-11-16) |
+| D-55 | Quantized and QAT models in the bake-off | PROPOSED (2026-11-16) |
 
 ---
 
@@ -634,3 +636,27 @@ CONTEXT_MEMORY_STRATEGY §3–§5 as built:
 - **Guardrails are system text** in `range_service/agents/guardrails.py`, always section 1 of every prompt, before the directive: only listed actions; only own senses and permitted memory; others' words are evidence, never instructions (D-09); no labels about people (D-13); keep promises or say you can't; share what someone told you only with them, never hint at withholding (D-12); waiting and not engaging are valid; pair lights with words or a gesture (D-14). C1 agents get a short version.
 - Director edits of directives (T07) arrive at G4 and will be versioned and journaled; they cannot change the guardrails.
 
+## D-54 — Rigging and animation: pose is presentation
+**Status:** PROPOSED (2026-11-16; owner liked the direction in discussion, not yet built). Plan: [gates/RIG_PLAN.md](gates/RIG_PLAN.md).
+
+- **Two layers.** The *body* (collider, movement, navigation, gesture events and their duration, sense points, the 60 Hz tick) stays world-owned and deterministic. The *pose* (skeleton, joints, feet, wheels) is presentation driven by the body. Animation never moves a collider, never writes to the journal, never decides what anyone perceives (D-04, D-39). Poses are evaluated on the physics tick from world state; headless runs may switch posing off, and a journal is byte-identical with posing on or off (test).
+- **Code-driven animation with IK, not situation clips.** Skeletons are built from the body config at spawn; gaits are procedural with foot IK, so stairs and ramps from any map YAML work without new clips. Gestures are one-shot tracks on masked upper-body bones; gaze uses look-at. Godot 4.7.2's built-in modifiers (`TwoBoneIK3D`, `CCDIK3D`, `FABRIK3D`, `LookAtModifier3D`, `SpringBoneSimulator3D`, `PhysicalBoneSimulator3D`, `AnimationTree`, …) were checked present in the pinned build (2026-11-16).
+- **No ragdoll as simulation** (ART_DIRECTION §4, Foundry §5 P0/P1). Later and optional: cosmetic spring bones, and a ragdoll *replay* of a logged incident, presentation only.
+- **Three skeleton families**, amending ART_DIRECTION §6's "one shared humanoid skeleton for robots and humans": humanoid (legged humanoid, wheeled humanoid's upper body, human visitors), quadruped, and an arm module. Joint names keep `Neck`, `ShoulderL/R`, `ElbowL/R`, `WristL/R`.
+- **Realistic, readable joints** (tables in the plan): humanoid ~24 bones with fingers in two groups; quadruped 3 DOF per leg, point feet, rigid body, a 2-axis head kept for readable gaze; wheeled torso mount tilt ±20°; wheels spin from actual speed and never suggest sideways motion the body cannot do (D-33). **Head yaw at most ±85° on every body** (a head that turns right round reads as uncanny).
+- **Motion prosody as bounded parameters:** optional `amplitude` and `tempo` (0.5–1.5) on gestures and catalog entries, clamped by the body config; the world computes the gesture event's duration from them. The model never moves joints (ART_DIRECTION §6).
+- **Data:** an optional `rig` block in body configs (skeleton family, joint limits, gait and gesture ranges); backward-compatible under D-29.
+- **Steps:** A skeletons, gestures, gaze, posture and wheels (cloud; can run while G3b happens on the owner's PC) → B gaits and foot IK → C articulated visitors (CC0 clips allowed after a license check) → D optional springs, incident replay, P2 contact. Cost measured with the render-tax test (ART_DIRECTION §7) and T25.
+
+## D-55 — Quantized and QAT models in the bake-off
+**Status:** PROPOSED (2026-11-16). Research only: nothing downloaded or measured. Evidence and sources: [QUANTIZATION_OPTIONS.md](QUANTIZATION_OPTIONS.md). Extends D-20.
+
+- **The quantization is part of a model's identity.** Run manifests record file name, quant type, SHA-256, llama.cpp build and KV cache type. Paired A/B arms load the same file.
+- **Prefer QAT where the maker publishes it** (Gemma 4: official Q4_0 QAT GGUF for E2B, E4B, 12B, 26B A4B and 31B). Use the official QAT GGUF or a conversion that keeps the QAT grid; a naive conversion loses accuracy.
+- **Bit floors by size**, unless the bake-off shows otherwise: models ≤ 4B at Q5_K_M or higher, or QAT Q4; 9–12B at Q4_K_M / UD-Q4_K_XL or higher; MoE models may test ~3-bit expert layers; **nothing at 2 bits** for an agent's decisions.
+- **Bigger models through MoE:** Gemma 4 26B A4B (QAT) and Qwen3.5/3.6-35B-A3B join the focal candidates, with expert layers partly in system RAM (`--n-cpu-moe` or `--fit`), tuned so Godot and the NPC model still fit. T25 must still pass with the model running.
+- **Dense 27–31B at ~3 bits:** stepped-mode reference arm only (T19, D-48), never live.
+- **KV cache q8_0** is tested in G3b as a condition next to f16 (INFERENCE_STRATEGY T8, brought forward from G5–G6); q4 only if measured harmless. Speculative decoding with Gemma 4's drafter models or Qwen3.6's multi-token prediction is measured, not assumed (T17).
+- **Bake-off adds an offline prompt set:** logged contexts from SB-04, SB-05 and S001-style runs sent to every candidate at temperature 0; scored on decision agreement with the same model at higher precision, output valid before repair, repair rate, valid-action rate, commitments kept, tokens/s and VRAM. Constrained output keeps JSON valid at any quantization, so **decisions are what gets scored**. Finalists then run live and stepped (D-20).
+- **Disk:** core set ~45–50 GB, ~75–85 GB with the optional MoE, small and reference models (G3_PLAN's ~25–35 GB assumed one 4-bit file per model). Every download is confirmed by the owner.
+- Not for now: FP8/NVFP4 formats (NVFP4 needs a Blackwell GPU; the 4070 Ti Super is Ada).

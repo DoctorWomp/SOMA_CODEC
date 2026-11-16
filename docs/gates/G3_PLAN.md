@@ -144,6 +144,8 @@ What G3b will download, all on the owner's go-ahead and never automatically (D-2
 | Small reactive candidates: Qwen3.5-2B, Gemma 4 E2B (optional) | ~1.5–3 GB each | |
 | **Total for the whole bake-off** | **~25–35 GB of disk** | Files go in `G:\SOMA_CODEC\models\` (git-ignored) |
 
+**Proposed extension (D-55, [QUANTIZATION_OPTIONS.md](../QUANTIZATION_OPTIONS.md)):** add QAT and higher-precision variants, MoE models with experts partly in system RAM, KV cache q8_0 as a condition, and an offline prompt-set comparison. That raises the disk estimate to ~45–50 GB (core) or ~75–85 GB (everything).
+
 Sizes are estimates from published 4-bit file sizes for these model sizes; exact sizes are taken from the download pages before anything is fetched. Steps: a setup script that downloads only what the owner confirms and checks every file's hash; `configs/inference.yaml`; the bake-off on SB-04 and S001-style prompts (action-JSON validity, valid-action rate, p50/p95 latency, VRAM); then Option B (focal priority, slot pinning, deadline scheduler). `llama-server` listens on 127.0.0.1 only, so it needs no firewall rule.
 
 ## Out of scope for G3

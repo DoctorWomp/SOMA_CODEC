@@ -2,6 +2,15 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
+## Planning — rigging and quantization (2026-11-16; proposed, docs only)
+
+### Added
+- `docs/gates/RIG_PLAN.md` and **D-54** (PROPOSED): skeletons for every robot body, code-driven animation with IK (no stair-climb clips, no ragdoll as simulation), joint tables trimmed from the owner's reference sheets, motion prosody as bounded `amplitude`/`tempo`, steps A–D. Pose is presentation: journals stay identical with posing on or off.
+- `docs/QUANTIZATION_OPTIONS.md` and **D-55** (PROPOSED): QAT checkpoints (Gemma 4), bit floors by model size, MoE models with experts in system RAM as the route to bigger models, KV cache q8_0 as a G3b condition, and an offline prompt-set comparison for the bake-off. Research only; nothing downloaded or measured.
+
+### Changed
+- ART_DIRECTION §6 and G3_PLAN's G3b section point to the proposed amendments.
+
 ## G3a — Agent runtime, no real model (2026-11-15; in review)
 
 First part of G3 (`docs/gates/G3_PLAN.md`). G3b (a real model on the owner's PC) and G3c (two servers, NPC promotion) follow.
