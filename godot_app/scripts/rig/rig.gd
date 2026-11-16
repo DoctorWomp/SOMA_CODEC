@@ -22,6 +22,10 @@ var root_pose := Transform3D.IDENTITY
 var spin: Dictionary = {}
 ## Bones kept level with the root whatever their parents do (the quadruped's point feet).
 var level_bones: Array[String] = []
+## The point the quadruped's "Body" joint pivots about (its body centre at hip height).
+var body_pivot := Vector3.ZERO
+## How far the body is lowered so every leg still reaches the floor (Poser sets it).
+var body_drop := 0.0
 
 var _offsets: Dictionary = {}       # bone -> rest offset in the parent bone's space
 var _attachments: Dictionary = {}   # bone -> BoneAttachment3D
@@ -119,6 +123,20 @@ func rest_angles() -> Dictionary:
 	return _rest_angles.duplicate(true)
 
 
+## Where the root sits: posture (root_pose) times the Body joint's pose about its pivot, if any.
+## `body_angles` (optional) stands in for the Body joint's current angles.
+func body_transform(body_angles := {}) -> Transform3D:
+	if not angles.has("Body"):
+		return root_pose
+	var saved: Dictionary = angles["Body"]
+	if not body_angles.is_empty():
+		angles["Body"] = body_angles
+	var b := joint_basis("Body")
+	angles["Body"] = saved
+	return root_pose * Transform3D(Basis.IDENTITY, body_pivot + Vector3(0, -body_drop, 0)) * Transform3D(b, Vector3.ZERO) \
+		* Transform3D(Basis.IDENTITY, -body_pivot)
+
+
 ## Rotation of a joint from its angles: about each of its axes in order, outermost first.
 func joint_basis(joint_name: String) -> Basis:
 	var b := Basis.IDENTITY
@@ -133,6 +151,8 @@ func joint_basis(joint_name: String) -> Basis:
 func apply(move_parts := true) -> void:
 	for joint_name in angles:
 		var i := find_bone(joint_name)
+		if joint_name == "Body":
+			continue   # applied to the root bone below
 		if joint_name == "Gripper":
 			var half := float(angles[joint_name]["open"]) / 2.0
 			set_bone_pose_rotation(find_bone("GripperFingerL"), Quaternion(Vector3.UP, -half))
@@ -142,13 +162,13 @@ func apply(move_parts := true) -> void:
 	for wheel in spin:
 		set_bone_pose_rotation(find_bone(wheel), Quaternion(Vector3.RIGHT, float(spin[wheel])))
 	if _root != "":
-		var root_t := root_pose * Transform3D(Basis.IDENTITY, _offsets[_root])
+		var root_t := body_transform() * Transform3D(Basis.IDENTITY, _offsets[_root])
 		set_bone_pose_position(find_bone(_root), root_t.origin)
 		set_bone_pose_rotation(find_bone(_root), root_t.basis.get_rotation_quaternion())
 	for level in level_bones:
 		var i := find_bone(level)
 		var parent_basis := get_bone_global_pose(get_bone_parent(i)).basis
-		set_bone_pose_rotation(i, (parent_basis.inverse() * root_pose.basis).get_rotation_quaternion())
+		set_bone_pose_rotation(i, (parent_basis.inverse() * body_transform().basis).get_rotation_quaternion())
 	if not move_parts:
 		return
 	for att in _attachments.values():
@@ -171,6 +191,10 @@ func check_pose() -> String:
 				return "%s.%s is %.2f°, limits %.1f..%.1f°" % [joint_name, axis, rad_to_deg(v), rad_to_deg(lim.x), rad_to_deg(lim.y)]
 		if joint_name == "Gripper":
 			continue
+		if joint_name == "Body":
+			if not get_bone_pose_rotation(find_bone(_root)).is_equal_approx(body_transform().basis.get_rotation_quaternion()):
+				return "the root bone does not carry the Body joint's pose"
+			continue
 		var q := get_bone_pose_rotation(find_bone(joint_name))
 		if not q.is_equal_approx(joint_basis(joint_name).get_rotation_quaternion()):
 			return "%s bone rotation does not match its joint angles" % joint_name
@@ -191,6 +215,7 @@ func digest() -> String:
 	wheels.sort()
 	for wheel in wheels:
 		parts.append("%s=%d" % [wheel, roundi(float(spin[wheel]) * 1e6)])
+	parts.append("drop=%d" % roundi(body_drop * 1e6))
 	for c in [root_pose.basis.x, root_pose.basis.y, root_pose.basis.z, root_pose.origin]:
 		var v: Vector3 = c
 		parts.append("root=%d,%d,%d" % [roundi(v.x * 1e6), roundi(v.y * 1e6), roundi(v.z * 1e6)])

@@ -18,6 +18,11 @@ extends RefCounted
 ## 4. Gaze: the head turns toward the avatar's gaze target at the body's head speed, within its
 ##    joint limits (head yaw at most ±85°).
 ##
+## The quadruped has no neck, like current robot dogs (owner, 2026-11-16). Its gaze and HEAD_TILT
+## are whole-body poses: the Body joint turns, pitches and rolls the body over planted feet, and
+## leg IK (hip abduction, hip flex, knee) makes the left and right legs work asymmetrically to
+## hold it, as a real chassis would.
+##
 ## Every layer stays inside the joint limits by design; Rig counts any clamp and the tests
 ## require none.
 
@@ -28,6 +33,9 @@ const LEAN_ACCEL_RAD := 0.05   # forward lean at full acceleration (about 3°)
 const LEAN_SPEED_RAD := 0.03   # forward lean at full speed
 const LEAN_FOLLOW := 0.12      # per tick
 const IK_PASSES := 4
+## A leg is never stretched further than this share of its full length: when the body rolls or
+## pitches, it is lowered just enough (a slight crouch), as a real robot dog would.
+const LEG_REACH := 0.96
 ## Humanoid hand targets are the sense model's points; the raised hand sits 4 cm in front of
 ## it so the shoulder stays away from its pitch limit (well inside the 10 cm the test allows).
 const RAISED_FORWARD_M := 0.04
@@ -46,6 +54,7 @@ var base := ""
 ## Gaze after the head-speed limit: x yaw (+ left), y pitch (+ down), radians.
 var head := Vector2.ZERO
 var lean := 0.0
+var sit_weight := 0.0
 var last_tick := -1
 var _prev_pos := Vector3.ZERO
 var _prev_yaw := 0.0
@@ -92,12 +101,22 @@ func update(avatar: Avatar, tick: int) -> void:
 	_lean(avatar, motion, pose)
 	var shown := avatar.gesture_layers(tick)
 	_posture(shown, pose)
+	if family == "QUADRUPED":
+		# The body pose first: the legs hold it, and the arm aims from it.
+		_gaze(avatar, tick, dt, pose)
+		_head_gestures(shown, pose)
+		_clamp_look(pose)
+		# Sitting owns the body: other body poses fade out while it sits.
+		for axis in pose["Body"]:
+			pose["Body"][axis] = float(pose["Body"][axis]) * (1.0 - sit_weight)
+		_legs_hold_body(pose)
 	rig.set_angles(pose)
 	rig.apply(false)
 	_gesture_layer(avatar, shown, pose)
-	_gaze(avatar, tick, dt, pose)
-	_head_gestures(shown, pose)
-	_clamp_neck(pose)
+	if family == "HUMANOID":
+		_gaze(avatar, tick, dt, pose)
+		_head_gestures(shown, pose)
+		_clamp_look(pose)
 	rig.set_angles(pose)
 	rig.apply()
 
@@ -160,6 +179,7 @@ static func progress(g: Dictionary, tick: int) -> float:
 
 func _posture(shown: Array, pose: Dictionary) -> void:
 	rig.root_pose = Transform3D.IDENTITY
+	sit_weight = 0.0
 	for layer in shown:
 		var g: Dictionary = layer["gesture"]
 		var w := float(layer["weight"]) * envelope(float(layer["t"]))
@@ -173,33 +193,99 @@ func _posture(shown: Array, pose: Dictionary) -> void:
 						_add(pose, "TorsoMount", "pitch", deg_to_rad(8.0) * amp * w)
 			"SIT_IN_PLACE":
 				if family == "QUADRUPED":
-					_sit(deg_to_rad(15.0) * amp * w, pose)
+					sit_weight = maxf(sit_weight, w)
+					_sit(deg_to_rad(15.0) * amp * w)
 
 
-## The body tips back about the front hips by `angle`; hind legs fold with feet planted.
-func _sit(angle: float, pose: Dictionary) -> void:
+## The body tips back about the front hips by `angle` (the legs then fold with feet planted).
+func _sit(angle: float) -> void:
 	var pivot := Vector3(0, QuadrupedModel.HIP_Y, -QuadrupedModel.LEG_Z)
 	var r := Transform3D(Basis(Vector3.RIGHT, angle), Vector3.ZERO)
 	rig.root_pose = Transform3D(Basis.IDENTITY, pivot) * r * Transform3D(Basis.IDENTITY, -pivot)
+
+
+## Solve the legs for the body pose. If they cannot hold it inside their joint limits, the body
+## does proportionally less (a short search for the largest share that fits), as a real
+## controller would: the feet stay planted and no leg joint is pushed past its limit.
+func _legs_hold_body(pose: Dictionary) -> void:
+	var wanted: Dictionary = pose["Body"].duplicate()
+	if not _legs_fit(wanted, pose):
+		var lo := 0.0
+		var hi := 1.0
+		for i in 8:
+			var mid := (lo + hi) / 2.0
+			if _legs_fit(_scaled(wanted, mid), {}):
+				lo = mid
+			else:
+				hi = mid
+		pose["Body"] = _scaled(wanted, lo)
+		_legs_fit(pose["Body"], pose)
+
+
+static func _scaled(angles: Dictionary, k: float) -> Dictionary:
+	var out := {}
+	for axis in angles:
+		out[axis] = float(angles[axis]) * k
+	return out
+
+
+## Leg IK for these Body angles into `into` (if given); true if every leg angle is in its limits.
+func _legs_fit(body_angles: Dictionary, into: Dictionary) -> bool:
+	var trial := {}
+	var body := _fit_body(body_angles)
 	for leg in RigSpec.LEGS:
-		_leg_ik(leg, rig.root_pose, pose)
+		_leg_ik(leg, body, trial)
+	var ok := true
+	for joint_name in trial:
+		for axis in trial[joint_name]:
+			var lim := rig.limits(joint_name, axis)
+			var v := float(trial[joint_name][axis])
+			if v < lim.x or v > lim.y:
+				ok = false
+	if not into.is_empty():
+		for joint_name in trial:
+			into[joint_name] = trial[joint_name]
+	return ok
 
 
-## Two-bone IK in a leg's plane: HipFlex and Knee (+ swings back), knee behind the hip-foot line.
+## The body transform for these Body angles, lowered just enough that every foot stays in reach.
+func _fit_body(body_angles: Dictionary) -> Transform3D:
+	var q := model as QuadrupedModel
+	var reach := (q.upper_leg_m + q.lower_leg_m) * LEG_REACH
+	rig.body_drop = 0.0
+	var body := rig.body_transform(body_angles)
+	var drop := 0.0
+	for leg in RigSpec.LEGS:
+		var hip := body * rig.offset_of("HipAbd" + leg)
+		var foot := q.foot_point(leg)
+		var flat := Vector2(hip.x - foot.x, hip.z - foot.z).length()
+		var rise := hip.y - foot.y
+		if flat < reach:
+			drop = maxf(drop, rise - sqrt(reach * reach - flat * flat))
+	rig.body_drop = maxf(drop, 0.0)
+	return rig.body_transform(body_angles)
+
+
+## Leg IK with the foot held on its spot whatever the body does: HipAbd swings the leg out or in
+## so the foot lies in the leg's plane, then two-bone IK in that plane for HipFlex and Knee
+## (+ swings back), knee behind the hip-foot line.
 func _leg_ik(leg: String, body: Transform3D, pose: Dictionary) -> void:
 	var q := model as QuadrupedModel
 	var hip_rest := rig.offset_of("HipAbd" + leg)
 	var foot_local := body.basis.inverse() * (q.foot_point(leg) - body * hip_rest)
+	var outward := -1.0 if leg.ends_with("L") else 1.0
+	var abduct := atan2(outward * foot_local.x, -foot_local.y)
+	var drop := -Vector2(foot_local.x, foot_local.y).length()   # the foot's height in the abducted plane
 	var a := q.upper_leg_m
 	var b := q.lower_leg_m
-	var d := clampf(Vector2(foot_local.z, foot_local.y).length(), absf(a - b) + 1e-4, a + b - 1e-4)
-	var gamma := atan2(foot_local.z, -foot_local.y)
+	var d := clampf(Vector2(foot_local.z, drop).length(), absf(a - b) + 1e-4, a + b - 1e-4)
+	var gamma := atan2(foot_local.z, -drop)
 	var alpha := acos(clampf((a * a + d * d - b * b) / (2.0 * a * d), -1.0, 1.0))
 	var hip_angle := gamma + alpha
 	var knee := Vector2(a * sin(hip_angle), -a * cos(hip_angle))
 	var to_foot := Vector2(d * sin(gamma), -d * cos(gamma)) - knee
 	var lower_angle := atan2(to_foot.x, -to_foot.y)
-	pose["HipAbd" + leg] = {"abduct": 0.0}
+	pose["HipAbd" + leg] = {"abduct": abduct}
 	pose["HipFlex" + leg] = {"flex": hip_angle}
 	pose["Knee" + leg] = {"flex": lower_angle - hip_angle}
 
@@ -386,12 +472,17 @@ func _head_gestures(shown: Array, pose: Dictionary) -> void:
 				var nods := 0.0
 				if t > ATTACK and t < 1.0 - RELEASE:
 					nods = 0.5 - 0.5 * cos(TAU * 2.0 * (t - ATTACK) / HOLD)
-				_add(pose, "Neck", "pitch", deg_to_rad(4.0 + 12.0 * nods) * amp * w)
+				_add(pose, _look_joint(), "pitch", deg_to_rad(4.0 + 12.0 * nods) * amp * w)
 			"SHAKE_HEAD":
-				_add(pose, "Neck", "yaw", deg_to_rad(22.0) * amp * swing(t, 2.5) * w)
+				_add(pose, _look_joint(), "yaw", deg_to_rad(22.0) * amp * swing(t, 2.5) * w)
 			"HEAD_TILT":
-				_add(pose, "Neck", "roll", deg_to_rad(15.0) * amp * w)
-				_add(pose, "Neck", "pitch", deg_to_rad(-3.0) * w)
+				if family == "QUADRUPED":
+					# No neck: the whole body rolls and dips its nose a little, feet planted.
+					_add(pose, "Body", "roll", deg_to_rad(10.0) * amp * w)
+					_add(pose, "Body", "pitch", deg_to_rad(3.0) * w)
+				else:
+					_add(pose, "Neck", "roll", deg_to_rad(15.0) * amp * w)
+					_add(pose, "Neck", "pitch", deg_to_rad(-3.0) * w)
 			"BOW":
 				if family == "HUMANOID":
 					_add(pose, "Neck", "pitch", deg_to_rad(12.0) * amp * w)
@@ -399,28 +490,39 @@ func _head_gestures(shown: Array, pose: Dictionary) -> void:
 
 # ---------- gaze ----------
 
+## The joint that looks: the humanoid's Neck, the quadruped's whole Body.
+func _look_joint() -> String:
+	return "Neck" if family == "HUMANOID" else "Body"
+
+
 func _gaze(avatar: Avatar, tick: int, dt: float, pose: Dictionary) -> void:
+	var joint := _look_joint()
 	var want := Vector2.ZERO
 	var point = avatar.gaze_point(tick)
 	if point != null:
-		var parent := rig.bone_global("SpineUpper" if family == "HUMANOID" else "Body")
-		var neck := rig.bone_global("Neck").origin
-		var eyes := neck + parent.basis * Vector3(0, 0.115 if family == "HUMANOID" else 0.0, 0)
-		var local: Vector3 = parent.basis.inverse() * (model.to_local(point) - eyes)
+		var local: Vector3
+		if family == "HUMANOID":
+			var parent := rig.bone_global("SpineUpper")
+			var eyes := rig.bone_global("Neck").origin + parent.basis * Vector3(0, 0.115, 0)
+			local = parent.basis.inverse() * (model.to_local(point) - eyes)
+		else:
+			# From the sensor head in the standing frame (the body pose itself is what turns).
+			local = model.to_local(point) - Vector3(0, QuadrupedModel.SENSOR_HEIGHT_M, -0.44)
 		var flat := Vector2(local.x, local.z).length()
 		if flat > 0.05:
 			want = Vector2(atan2(-local.x, -local.z), atan2(-local.y, flat))
-	var yaw_lim := rig.limits("Neck", "yaw")
-	var pitch_lim := rig.limits("Neck", "pitch")
+	var yaw_lim := rig.limits(joint, "yaw")
+	var pitch_lim := rig.limits(joint, "pitch")
 	want = Vector2(clampf(want.x, yaw_lim.x, yaw_lim.y), clampf(want.y, pitch_lim.x, pitch_lim.y))
 	var turn := float(rig.spec["head_turn_speed"]) * dt
 	head = Vector2(move_toward(head.x, want.x, turn), move_toward(head.y, want.y, turn))
-	_add(pose, "Neck", "yaw", head.x)
-	_add(pose, "Neck", "pitch", head.y)
+	_add(pose, joint, "yaw", head.x)
+	_add(pose, joint, "pitch", head.y)
 
 
-## Gaze plus head gestures stay inside the neck's limits (head yaw at most ±85°).
-func _clamp_neck(pose: Dictionary) -> void:
-	for axis in pose["Neck"]:
-		var lim := rig.limits("Neck", axis)
-		pose["Neck"][axis] = clampf(float(pose["Neck"][axis]), lim.x, lim.y)
+## Gaze plus head gestures stay inside the looking joint's limits (head yaw at most ±85°).
+func _clamp_look(pose: Dictionary) -> void:
+	var joint := _look_joint()
+	for axis in pose[joint]:
+		var lim := rig.limits(joint, axis)
+		pose[joint][axis] = clampf(float(pose[joint][axis]), lim.x, lim.y)

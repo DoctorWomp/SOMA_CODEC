@@ -105,7 +105,9 @@ _HUMANOID_UPPER = {
 }
 _HUMANOID_LEGS = {"Hip": ("pitch", "roll", "yaw"), "Knee": ("flex",), "Ankle": ("pitch", "roll"), "Toe": ("flex",)}
 _WHEELED_BASE = {"TorsoMount": ("yaw", "pitch", "roll")}
-_QUADRUPED = {"Neck": ("yaw", "pitch", "roll"), "HipAbd": ("abduct",), "HipFlex": ("flex",), "Knee": ("flex",)}
+# The quadruped has no neck (owner, 2026-11-16): its "Body" joint is the whole body's pose over
+# planted feet (yaw, pitch, roll), made by the legs, as on current robot dogs.
+_QUADRUPED = {"Body": ("yaw", "pitch", "roll"), "HipAbd": ("abduct",), "HipFlex": ("flex",), "Knee": ("flex",)}
 _ARM_MODULE = {"ArmBase": ("yaw",), "ArmShoulder": ("pitch",), "ArmElbow": ("flex",),
                "ArmWrist": ("pitch", "yaw", "roll"), "Gripper": ("open",)}
 _SIDED = {"Shoulder", "Elbow", "Wrist", "Fingers", "Thumb", "Hip", "Knee", "Ankle", "Toe"}

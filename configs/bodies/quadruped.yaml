@@ -35,11 +35,12 @@ sensors:
   dropout_rate: 0.0
 gestures: [HEAD_TILT, SIT_IN_PLACE]
 expression_channels: [SPEECH, LIGHT]   # speaker and the light around the sensor visor
-# Skeleton (rig step A, D-54, D-56): rigid body, 3 joints per leg, a 3-axis sensor head.
+# Skeleton (rig step A, D-54, D-56): rigid body with the sensor head fixed to it (no neck),
+# 3 joints per leg; gaze and HEAD_TILT are whole-body poses made by the legs, feet planted.
 # Pose is presentation only.
 rig:
   skeleton: QUADRUPED
-  head_turn_speed_deg_s: 150
+  head_turn_speed_deg_s: 90    # no neck: the whole body turns toward a gaze target
   gesture_amplitude: {min: 0.5, max: 1.5}
   gesture_tempo: {min: 0.5, max: 1.5}
   gait: {step_height_m: 0.06, step_length_m: 0.35, cadence_hz: 2.2}   # used from rig step B

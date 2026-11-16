@@ -2,7 +2,8 @@ class_name QuadrupedModel
 extends Node3D
 ## Quadruped robot, V0 greybox (ART_DIRECTION §2, §7; D-36), after
 ## docs/concept-art/robot_quadruped_concept.jpg, on the quadruped skeleton (D-54, D-56): white
-## faceted body, a front sensor head on a neck joint with a dark visor and lens array, a dark
+## faceted body, a front sensor head fixed to it (no neck, as on current robot dogs) with a dark
+## visor and lens array, a dark
 ## dorsal mounting rail, four legs with dark hip and knee joints, and (variant) a utility arm on
 ## the rail, stowed unless it gestures.
 ##
@@ -11,8 +12,10 @@ extends Node3D
 ## Identity: matte trim panels on both sides with 1-3 stripes as a pattern that does not rely on
 ## color, plus a number badge on each side (ART_DIRECTION §2.1). No gait yet (rig step B).
 ##
-## Bones: Body (rigid root), Neck, and per leg (FL, FR, BL, BR) HipAbd, HipFlex, Knee, Foot; the
-## arm module adds ArmBase, ArmShoulder, ArmElbow, ArmWrist, Gripper, GripperFingerL/R.
+## Bones: Body (rigid root) and per leg (FL, FR, BL, BR) HipAbd, HipFlex, Knee, Foot; the arm
+## module adds ArmBase, ArmShoulder, ArmElbow, ArmWrist, Gripper, GripperFingerL/R. "Head"
+## gestures and gaze are whole-body poses: the legs roll, pitch and turn the body over planted
+## feet (owner, 2026-11-16), so they transfer to a real chassis.
 ##
 ## Designed at 1.10 x 0.50 m and 0.70 m tall (body), matching configs/bodies/quadruped.yaml.
 
@@ -65,6 +68,7 @@ func foot_point(leg: String) -> Vector3:
 func _assemble(with_arm: bool, trim: String, bands: int, badge_text: String) -> void:
 	var p := RobotParts
 	rig.bone("Body", "", Vector3.ZERO)
+	rig.body_pivot = Vector3(0, HIP_Y, 0)
 	var body := rig.attach("Body")
 	# Body shell with a narrower top for a rounded, faceted look.
 	p.box(body, "Torso", Vector3(0.40, 0.20, 0.78), "robot_shell", Vector3(0, 0.52, 0.03))
@@ -74,11 +78,11 @@ func _assemble(with_arm: bool, trim: String, bands: int, badge_text: String) -> 
 	for i in 5:
 		p.box(body, "RailSlot%d" % (i + 1), Vector3(0.12, 0.006, 0.02), "robot_shell", Vector3(0, 0.686, -0.17 + 0.11 * i))
 
-	# Front sensor head on its neck joint: shell, dark visor with lenses, and the visor light strip.
-	rig.bone("Neck", "Body", Vector3(0, SENSOR_HEIGHT_M - 0.01, -0.40))
+	# Front sensor head, part of the rigid body: shell, dark visor with lenses, and the light strip.
 	var head := Node3D.new()
 	head.name = "SensorHead"
-	rig.attach("Neck").add_child(head)
+	head.position = Vector3(0, SENSOR_HEIGHT_M - 0.01, -0.40)
+	body.add_child(head)
 	p.box(head, "HeadShell", Vector3(0.38, 0.19, 0.16), "robot_shell", Vector3(0, 0, -0.04))
 	p.box(head, "Visor", Vector3(0.32, 0.10, 0.02), "robot_visor", Vector3(0, 0.01, -0.125))
 	for lens in [["LensL", -0.09, 0.025], ["LensC", 0.0, 0.035], ["LensR", 0.09, 0.025]]:

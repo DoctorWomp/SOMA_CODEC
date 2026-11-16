@@ -89,6 +89,10 @@ func _shot(gesture: String) -> void:
 	caption.text = "%s  ·  peak of the gesture (tick %d)%s" % [gesture, world.clock.tick,
 		("   ·   cannot: " + ", ".join(cannot)) if not cannot.is_empty() else ""]
 	await _save("gesture_%s.png" % gesture.to_lower())
+	if gesture == "HEAD_TILT":
+		# No neck on the quadruped: the whole body rolls on its legs, feet planted (D-56).
+		await _front_closeup("quad", "quadruped_head_tilt_front.png",
+			"HEAD_TILT on a quadruped: no neck, so the legs roll the whole body, feet planted")
 	world.release("capture")
 	# Let the gesture finish before the next one.
 	var done := peak + 120
@@ -103,11 +107,26 @@ func _gaze_shot() -> void:
 		(world.avatars[c[0]] as Avatar).look_toward(visitor.avatar_id, 600)
 	await _ticks(90)
 	world.hold("capture")
-	caption.text = "Gaze: every robot turns its head toward the visitor (head yaw at most ±85°)"
+	await _front_closeup("quad", "quadruped_gaze_front.png",
+		"Gaze on a quadruped: the body turns and pitches toward the visitor on its legs (at most ±15°)")
+	caption.text = "Gaze: the humanoids turn their heads (at most ±85°); the quadrupeds turn their whole bodies"
 	cam.fov = 54
 	cam.look_at_from_position(Vector3(12.6, 2.3, 9.8), Vector3(12.4, 0.8, 15.4), Vector3.UP)
 	await _save("gaze_toward_visitor.png")
 	world.release("capture")
+
+
+## A close look at one robot from in front, then the camera goes back.
+func _front_closeup(avatar_id: String, file: String, text: String) -> void:
+	var a: Avatar = world.avatars[avatar_id]
+	var keep := cam.global_transform
+	var keep_text := caption.text
+	var at := a.global_position + Vector3.UP * 0.45
+	cam.look_at_from_position(at + SenseModel.forward_of(a) * 2.0 + Vector3.UP * 0.25, at, Vector3.UP)
+	caption.text = text
+	await _save(file)
+	cam.global_transform = keep
+	caption.text = keep_text
 
 
 func _save(file: String) -> void:

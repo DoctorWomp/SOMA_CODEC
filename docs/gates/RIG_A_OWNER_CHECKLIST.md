@@ -19,7 +19,7 @@ About 15 minutes. Repository at `G:\SOMA_CODEC`, Godot at `G:\Godot` (`GODOT_BIN
 uv run python tools/check.py
 ```
 
-Expect five **PASS** lines, `53 Godot tests passed`, and a line starting `PASS  scenarios: SB-04 deterministic` that ends with "one with posing off". About 3 minutes. It also proves the journal is byte-for-byte the same with posing on and off.
+Expect five **PASS** lines, `54 Godot tests passed`, and a line starting `PASS  scenarios: SB-04 deterministic` that ends with "one with posing off". About 3 minutes. It also proves the journal is byte-for-byte the same with posing on and off.
 
 ## 3. Watch every gesture
 
@@ -31,9 +31,9 @@ A window opens, plays the 12 gestures one after another (about 40 seconds) and c
 
 - [ ] The humanoids raise their **right** hand for WAVE, SMALL_WAVE, RAISED_HAND and BECKON, and reach forward for POINT, OPEN_PALM (hand up) and HAND_OVER (palm up).
 - [ ] The quadruped with arm unfolds its arm for WAVE, BECKON, RAISED_HAND (gripper open), POINT and HAND_OVER, then stows it flat again.
-- [ ] NOD, SHAKE_HEAD and HEAD_TILT move only the head; BOW bends the upper body; SIT_IN_PLACE tips both quadrupeds back onto folded hind legs, feet staying put.
+- [ ] On the humanoids NOD, SHAKE_HEAD and HEAD_TILT move only the head, and BOW bends the upper body. The quadrupeds have no neck: for HEAD_TILT their **whole body rolls** on their legs, feet staying put. SIT_IN_PLACE tips both quadrupeds back onto folded hind legs.
 - [ ] Nothing snaps, jitters or passes through the body. Arms never bend the wrong way.
-- [ ] The last picture: every robot turns its head toward the visitor.
+- [ ] The last pictures: the humanoids turn their heads toward the visitor; the quadrupeds turn and pitch their whole bodies a little toward them.
 
 Compare with the cloud renders in `docs\gates\RIG_A_screenshots\`. Your PC uses Forward+, so it may look richer. Tell me if a gesture reads wrong (for example, BECKON with the hand held high: that height comes from where the sense model expects a raised hand).
 
@@ -51,7 +51,7 @@ uv run python tools/run_scenario.py SB04_POLITE_BID --watch
 uv run python tools/run_scenario.py SB04_POLITE_BID --watch --body robot_r=quadruped
 ```
 
-- [ ] The quadruped **tilts its sensor head** toward Y instead of nodding.
+- [ ] The quadruped has no neck: instead of nodding it **tilts its whole body** toward Y, its legs bending unevenly while its feet stay put.
 
 ## 5. Watch the robots walk to the platform (optional)
 

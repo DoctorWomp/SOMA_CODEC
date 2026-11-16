@@ -16,6 +16,8 @@ extends RefCounted
 ## - roll on spine and neck: + leans or tilts to the right. Shoulder/hip roll: + away from the body.
 ## - Shoulder/hip pitch: + swings the limb forward. Elbow flex: + bends the forearm forward.
 ##   Knee flex (humanoid): + bends the shin back. Quadruped HipFlex and Knee: + swings back.
+## - Quadruped Body (no neck, like current robot dogs; owner 2026-11-16): yaw + turns left, pitch +
+##   noses down, roll + drops the right side. The legs make it, feet planted (Poser).
 ## - Arm module: ArmShoulder pitch + lifts the arm up and over toward the front, ArmElbow flex +
 ##   folds the same way, ArmWrist pitch likewise; Gripper open 0 is closed.
 
@@ -41,7 +43,7 @@ const AXES := {
 	"HipAbd": [["abduct", Vector3.BACK]],
 	"HipFlex": [["flex", Vector3.LEFT]],
 	"QuadKnee": [["flex", Vector3.LEFT]],
-	"QuadNeck": [["yaw", Vector3.UP], ["pitch", Vector3.LEFT], ["roll", Vector3.FORWARD]],
+	"BodyPose": [["yaw", Vector3.UP], ["pitch", Vector3.LEFT], ["roll", Vector3.FORWARD]],
 	"ArmBase": [["yaw", Vector3.UP]],
 	"ArmShoulder": [["pitch", Vector3.LEFT]],
 	"ArmElbow": [["flex", Vector3.LEFT]],
@@ -50,8 +52,8 @@ const AXES := {
 }
 
 ## Default limits in degrees (RIG_PLAN.md joint tables; starting values). Changes from the plan,
-## recorded in D-56: the quadruped head gains roll +/-25 for HEAD_TILT, and ArmElbow folds to 170
-## so the stowed arm lies flat on the back as before.
+## recorded in D-56: the quadruped has no neck; its whole body poses over planted feet instead
+## (owner, 2026-11-16), and ArmElbow folds to 170 so the stowed arm lies flat on the back as before.
 const LIMITS_DEG := {
 	"SpineLower": {"yaw": [-45, 45], "pitch": [-30, 30], "roll": [-30, 30]},
 	"SpineUpper": {"yaw": [-45, 45], "pitch": [-25, 25], "roll": [-25, 25]},
@@ -69,7 +71,7 @@ const LIMITS_DEG := {
 	"HipAbd": {"abduct": [-35, 35]},
 	"HipFlex": {"flex": [-60, 120]},
 	"QuadKnee": {"flex": [-150, 0]},
-	"QuadNeck": {"yaw": [-85, 85], "pitch": [-35, 45], "roll": [-25, 25]},
+	"BodyPose": {"yaw": [-15, 15], "pitch": [-15, 15], "roll": [-15, 15]},
 	"ArmBase": {"yaw": [-170, 170]},
 	"ArmShoulder": {"pitch": [-10, 150]},
 	"ArmElbow": {"flex": [0, 170]},
@@ -109,7 +111,7 @@ static func for_body(body: Dictionary) -> Dictionary:
 		if kind == "WHEELED_HUMANOID":
 			_add(joints, "TorsoMount", "TorsoMount", "", "TorsoMount")
 	else:
-		_add(joints, "Neck", "QuadNeck", "", "QuadNeck")
+		_add(joints, "Body", "BodyPose", "", "BodyPose")
 		for leg in LEGS:
 			var side := "L" if String(leg).ends_with("L") else "R"
 			_add(joints, "HipAbd" + leg, "HipAbd", side, "HipAbd")
@@ -126,7 +128,7 @@ static func for_body(body: Dictionary) -> Dictionary:
 		for axis in overrides[joint_name]:
 			var pair: Array = overrides[joint_name][axis]
 			joints[joint_name]["limits"][axis] = Vector2(deg_to_rad(float(pair[0])), deg_to_rad(float(pair[1])))
-	var default_speed := 180.0 if family == "HUMANOID" else 150.0
+	var default_speed := 180.0 if family == "HUMANOID" else 90.0   # a quadruped turns its whole body
 	return {
 		"family": family,
 		"base": "LEGS" if kind == "LEGGED_HUMANOID" else ("WHEELS" if kind == "WHEELED_HUMANOID" else "QUADRUPED"),
