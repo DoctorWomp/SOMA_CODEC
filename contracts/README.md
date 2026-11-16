@@ -34,6 +34,7 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 - The link between Godot and Python (D-44) adds envelope types `link.hello` and `link.heartbeat`; the session token is never in an envelope.
 - Expressions (D-46, D-52): one shared `expression` object (gesture, glyph, light state) used by GESTURE-channel `comms_event`s and `VISUAL_EXPRESSION` observations. The `EXPRESS` action names an entry of the expression catalog (`configs/expressions/`, contract `expression`).
 - G3a (D-48): envelope type `link.step` for stepped runs; journal kinds `SCENARIO_EVENT` and `EXPRESSION_SHOWN`; optional scenario fields `pa_operators`, `directive`, `pin_cognition`, `task_goal`. All backward-compatible, versions unchanged.
+- Rig step A (D-56): optional `amplitude` and `tempo` (`prosody_factor`, 0.5–1.5) on `GESTURE` and `EXPRESS` actions, on catalog entries and on the `GESTURE_PERFORMED` journal payload (only when given); an optional `rig` block in `body`. All backward-compatible, versions unchanged.
 - Gestures come from one shared vocabulary, `common.schema.json#/$defs/gesture`, used by `body`, `action_request` and `observation` (D-36). Expression channels likewise (`SPEECH`, `FACE`, `LIGHT`).
 
 ## Examples

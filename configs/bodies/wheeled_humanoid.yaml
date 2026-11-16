@@ -34,3 +34,10 @@ sensors:
   dropout_rate: 0.0
 gestures: [WAVE, SMALL_WAVE, RAISED_HAND, POINT, BECKON, NOD, SHAKE_HEAD, OPEN_PALM, BOW, HEAD_TILT, HAND_OVER]
 expression_channels: [SPEECH, FACE, LIGHT]
+# Skeleton (rig step A, D-54, D-56): the humanoid upper body on a torso mount; wheels spin from
+# the body's measured travel. Pose is presentation only.
+rig:
+  skeleton: HUMANOID
+  head_turn_speed_deg_s: 180
+  gesture_amplitude: {min: 0.5, max: 1.5}
+  gesture_tempo: {min: 0.5, max: 1.5}

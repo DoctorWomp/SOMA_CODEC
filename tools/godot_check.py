@@ -21,8 +21,9 @@ Steps:
               Python (D-41). No message to the sidecar and no agent context may carry an NPC's
               private goal or any evaluator-only value (T17).
   6. Scenarios (G3a, D-48): SB-04 and SB-05 run end to end from their files through
-              tools/run_scenario.py's runner, in stepped mode. SB-04 runs twice, the second
-              time with random delays in the sidecar, and must write the same journal bytes.
+              tools/run_scenario.py's runner, in stepped mode. SB-04 runs three times: the
+              second time with random delays in the sidecar, the third with posing off
+              (--no-pose, D-54), and all three must write the same journal bytes.
               Runs with --filter only if the filter is part of "scenario_determinism".
 
 For the link tests, two sidecars run on 127.0.0.1 with a fresh session token for the duration
@@ -371,26 +372,28 @@ def _stop_cpu_load(procs: list[multiprocessing.Process]) -> None:
         proc.join(timeout=10)
 
 
-def _scenario_run(godot: str, scenario_id: str, out: Path, jitter_ms: int = 0):
+def _scenario_run(godot: str, scenario_id: str, out: Path, jitter_ms: int = 0, posing: bool = True):
     import asyncio
 
     from range_service.eval.runner import RunOptions, run_scenario
-    return asyncio.run(run_scenario(RunOptions(scenario_id, godot, out_dir=out, jitter_ms=jitter_ms, timeout_s=600)))
+    return asyncio.run(run_scenario(RunOptions(scenario_id, godot, out_dir=out, jitter_ms=jitter_ms, timeout_s=600,
+                                               posing=posing)))
 
 
 def scenario_checks(godot: str) -> int:
-    """Step 6: SB-04 and SB-05 end to end; SB-04 twice (random sidecar delays the second time)."""
+    """Step 6: SB-04 and SB-05 end to end; SB-04 three times (random sidecar delays, then posing off)."""
     from range_service import contracts
     from range_service.eval.runner import RunError, read_journal
 
     root = Path(tempfile.mkdtemp(prefix="scenario_runs_"))
     problems: list[str] = []
     try:
-        runs = {"SB04_a": ("SB04_POLITE_BID", 0), "SB04_b": ("SB04_POLITE_BID", 25), "SB05": ("SB05_RAMP_VS_STAIRS", 0)}
+        runs = {"SB04_a": ("SB04_POLITE_BID", 0, True), "SB04_b": ("SB04_POLITE_BID", 25, True),
+                "SB04_no_pose": ("SB04_POLITE_BID", 0, False), "SB05": ("SB05_RAMP_VS_STAIRS", 0, True)}
         results = {}
-        for name, (scenario_id, jitter) in runs.items():
+        for name, (scenario_id, jitter, posing) in runs.items():
             try:
-                results[name] = _scenario_run(godot, scenario_id, root / name, jitter)
+                results[name] = _scenario_run(godot, scenario_id, root / name, jitter, posing)
             except RunError as exc:
                 print(f"  FAIL  scenario {scenario_id}: {exc}")
                 return EXIT_FAILED
@@ -413,6 +416,10 @@ def scenario_checks(godot: str) -> int:
         if a.journal_sha256 != b.journal_sha256:
             problems.append(f"SB-04 is not deterministic: same seed, different journals ({a.journal_sha256[:12]} vs "
                             f"{b.journal_sha256[:12]}) with random sidecar delays in the second run (D-48)")
+        off = results["SB04_no_pose"]
+        if a.journal_sha256 != off.journal_sha256:
+            problems.append(f"SB-04 journal changed with posing off ({a.journal_sha256[:12]} vs {off.journal_sha256[:12]}): "
+                            f"pose is presentation and must never change the world (D-54)")
         sb04 = a.summary
         if sb04["actions_by_agent"].get("robot_r", {}).keys() - {"OK"}:
             problems.append(f"SB-04: Robot R had refused actions: {sb04['actions_by_agent']['robot_r']}")
@@ -429,8 +436,8 @@ def scenario_checks(godot: str) -> int:
             for line in problems[:20]:
                 print(f"        {line}")
             return EXIT_FAILED
-        print(f"  PASS  scenarios: SB-04 deterministic (journal {a.journal_sha256[:12]}, twice, one with random "
-              f"sidecar delays); SB-05 robots on the platform by the links their bodies allow")
+        print(f"  PASS  scenarios: SB-04 deterministic (journal {a.journal_sha256[:12]}, three runs: one with random "
+              f"sidecar delays, one with posing off); SB-05 robots on the platform by the links their bodies allow")
         return EXIT_PASSED
     finally:
         shutil.rmtree(root, ignore_errors=True)

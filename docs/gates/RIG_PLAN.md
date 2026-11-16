@@ -1,6 +1,6 @@
 # Rig plan — skeletons, animation and body language
 
-**Status:** PROPOSED (2026-11-16), nothing built yet · Decision: [D-54](../DECISIONS.md) · Amends [ART_DIRECTION.md](../ART_DIRECTION.md) §6 (skeleton row) once approved
+**Status:** APPROVED (D-54, 2026-11-16). **Step A built** (2026-11-16, D-56 PROPOSED, in review; [owner checklist](RIG_A_OWNER_CHECKLIST.md), [screenshots](RIG_A_screenshots/)); steps B–D not started · Amends [ART_DIRECTION.md](../ART_DIRECTION.md) §6 (skeleton row, done)
 **Related:** [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) · D-14 (lights), D-33 (movement and the 60 Hz tick), D-36 (body family), D-39 (sight), D-47 (determinism), D-52 (expression catalog) · Avatar Foundry §5 (fidelity P0–P2) · Blueprint §1 (release scope: "dynamic ragdolls" not required)
 
 ## Goal

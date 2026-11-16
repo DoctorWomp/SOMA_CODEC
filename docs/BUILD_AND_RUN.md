@@ -141,6 +141,12 @@ The Beacon (G3a) has its own capture scene:
 xvfb-run -a -s "-screen 0 1600x900x24" .tools/godot/Godot_v4.7.2-stable_linux.x86_64 --path godot_app --rendering-method gl_compatibility --rendering-driver opengl3 --fixed-fps 60 --resolution 1600x900 res://dev/beacon_capture.tscn -- --out=$PWD/docs/gates/G3a_screenshots
 ```
 
+Rig step A (D-56): every gesture, the four robots side by side at the gesture's peak, plus gaze:
+
+```bash
+xvfb-run -a -s "-screen 0 1600x900x24" .tools/godot/Godot_v4.7.2-stable_linux.x86_64 --path godot_app --rendering-method gl_compatibility --rendering-driver opengl3 --fixed-fps 60 --resolution 1600x900 res://dev/gesture_capture.tscn -- --out=$PWD/docs/gates/RIG_A_screenshots
+```
+
 ## Smaller commands
 
 Check only the content files (useful after editing a YAML file):

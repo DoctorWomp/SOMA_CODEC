@@ -126,14 +126,14 @@ These effects are simple proxies, labeled synthetic, not models of real optics o
 
 | Item | Approach |
 |---|---|
-| Skeleton | One shared humanoid skeleton for robots and humans, so animations retarget across bodies |
+| Skeleton | Three families (D-54): humanoid (humanoid robots and, from rig step C, human visitors), quadruped, and an arm module. Joint names are shared within a family, so animations retarget across its bodies. *Was: one shared humanoid skeleton, which a quadruped cannot use.* |
 | Core set | Idle, walk, turn, stop, sit, nod, shake, wave, point, beckon, open-palm "one moment", lean in, step back, shrug, listening posture, waiting posture |
 | Procedural layers | Head/gaze look-at (attention), gesture amplitude and tempo from Foundry sliders, breathing idle for humans |
 | Robot extras | Visor glyph keyframes and light patterns (reaction lanes → keyframes, Chatbot spec A2.9); ≤ 3 Hz flashing (D-14) |
 | Asset sources | Free low-poly packs with permissive (CC0) licenses for props, characters and animations, e.g. Kenney and Quaternius. **Verify each pack's license before use**; record it in `THIRD_PARTY_LICENSES` |
 | Robot mesh | v0: assembled from primitives in Godot to match the concept's proportions and joints. Later: a proper mesh modeled from the concept (Blender) on the **same skeleton and joint names**, so nothing else changes |
 
-**Proposed amendment (D-54, [RIG_PLAN.md](gates/RIG_PLAN.md)):** three skeleton families instead of one (humanoid for both humanoid robots and human visitors, quadruped, and an arm module), because a quadruped cannot share the humanoid skeleton. Poses are code-driven with IK and never change what the world simulates.
+**Amendment (D-54, approved 2026-11-16; [RIG_PLAN.md](gates/RIG_PLAN.md); step A built, D-56):** three skeleton families instead of one (humanoid for both humanoid robots and human visitors, quadruped, and an arm module), because a quadruped cannot share the humanoid skeleton. Poses are code-driven with IK and never change what the world simulates.
 
 Gestures are actions in the bounded vocabulary (`GESTURE`, `LOOK_AT`, `TURN_TO`). The model picks *which* gesture; animation plays it. The model never animates joints directly.
 

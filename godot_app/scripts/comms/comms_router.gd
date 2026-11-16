@@ -43,13 +43,18 @@ func setup(target_world: RangeWorld) -> void:
 # ---------- sending ----------
 
 ## Results are {"ok": bool, "reason_code": String, "event_id": String}.
-func send_gesture(sender: Avatar, gesture: String, addressee_id = null, sign_text := "") -> Dictionary:
-	if not sender.perform_gesture(gesture):
+## `amplitude` and `tempo` below 0 mean "not given" (D-56). With an addressee, the sender's head
+## turns toward them while the gesture lasts (presentation only, D-54).
+func send_gesture(sender: Avatar, gesture: String, addressee_id = null, sign_text := "",
+		amplitude := -1.0, tempo := -1.0) -> Dictionary:
+	if not sender.perform_gesture(gesture, "", amplitude, tempo):
 		return _reject(sender, "GESTURE", "CAPABILITY_DENIED")
 	var shown: Dictionary = sender.active_gesture(world.clock.tick)
 	var expression := {"gesture": gesture}
 	if sign_text != "":
 		expression["sign_text"] = sign_text
+	if addressee_id is String:
+		sender.look_toward(addressee_id, int(shown["until_tick"]) - world.clock.tick + 30)
 	var comm := _comm("GESTURE", sender, addressee_id, sign_text if sign_text != "" else "(%s)" % gesture, shown["event_id"])
 	comm["expression"] = expression
 	_pending.append({"comm": comm, "event_id": shown["event_id"], "until_tick": int(shown["until_tick"]), "seen": {}})
@@ -59,15 +64,17 @@ func send_gesture(sender: Avatar, gesture: String, addressee_id = null, sign_tex
 ## Show an expression from the catalog (EXPRESS, D-52) on the GESTURE channel: its gesture, glyph
 ## and light together. Whoever perceives any part (VISUAL_GESTURE or VISUAL_EXPRESSION, same
 ## event id) received it. Refused whole (CAPABILITY_DENIED) if the body lacks any part.
-func send_expression(sender: Avatar, expression_id: String, addressee_id = null) -> Dictionary:
+func send_expression(sender: Avatar, expression_id: String, addressee_id = null, amplitude := -1.0, tempo := -1.0) -> Dictionary:
 	var expression: Dictionary = world.expressions.get(expression_id, {})
 	if expression.is_empty():
 		return _reject(sender, "GESTURE", "INVALID_SCHEMA")
 	var event_id := world.next_event_id()
-	var outcome := sender.show_expression(expression, event_id)
+	var outcome := sender.show_expression(expression, event_id, amplitude, tempo)
 	if outcome != "OK":
 		return _reject(sender, "GESTURE", outcome)
 	var shown: Dictionary = sender.active_expression(world.clock.tick)
+	if addressee_id is String:
+		sender.look_toward(addressee_id, int(shown["until_tick"]) - world.clock.tick)
 	var obj := {"light": String(expression["light"]), "light_pattern": String(expression["light_pattern"])}
 	if expression.has("gesture"):
 		obj["gesture"] = String(expression["gesture"])
@@ -88,6 +95,8 @@ func send_local(sender: Avatar, text: String, addressee_id = null) -> Dictionary
 	var event_id := sender.say(text, addressee_id)
 	if event_id == "":
 		return _reject(sender, "LOCAL", "CAPABILITY_DENIED")
+	if addressee_id is String:
+		sender.look_toward(addressee_id, 120)
 	_pending.append({"comm": _comm("LOCAL", sender, addressee_id, text, event_id), "event_id": event_id,
 		"until_tick": world.clock.tick, "seen": {}})
 	return _ok(event_id)

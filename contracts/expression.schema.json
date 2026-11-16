@@ -30,6 +30,14 @@
     "gesture": {
       "$ref": "common.schema.json#/$defs/gesture"
     },
+    "amplitude": {
+      "$ref": "common.schema.json#/$defs/prosody_factor",
+      "description": "How big the gesture is played (needs a gesture)."
+    },
+    "tempo": {
+      "$ref": "common.schema.json#/$defs/prosody_factor",
+      "description": "How fast the gesture is played (needs a gesture)."
+    },
     "glyph": {
       "type": "object",
       "additionalProperties": false,
@@ -71,5 +79,13 @@
       "minimum": 500,
       "maximum": 10000
     }
+  },
+  "dependentRequired": {
+    "amplitude": [
+      "gesture"
+    ],
+    "tempo": [
+      "gesture"
+    ]
   }
 }

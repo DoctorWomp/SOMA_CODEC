@@ -15,7 +15,8 @@ const GRAVITY := 9.8
 const ARRIVE_DISTANCE_M := 0.25
 const STUCK_WINDOW_TICKS := 180
 const STUCK_MIN_PROGRESS_M := 0.05
-const GESTURE_DURATION_TICKS := 90      # a gesture is visible for 1.5 s
+const GESTURE_DURATION_TICKS := RigSpec.GESTURE_BASE_TICKS   # 1.5 s at tempo 1; tempo divides it (D-56)
+const GAZE_HOLD_TICKS := 180              # a LOOK_AT holds the head on its target for 3 s
 ## Local avoidance (D-42): RVO on the world's shared avoidance map, so bodies of every size
 ## steer around each other even though each size plans paths on its own navigation map.
 const AVOID_MARGIN_M := 0.15
@@ -42,17 +43,21 @@ var stuck := false
 var ever_stuck := false
 var speed := 0.0                     # current forward speed, m/s
 var contacts: Dictionary = {}        # other avatar id -> ticks in contact (from physics)
-var current_gesture := ""            # last gesture the body accepted (no animation yet)
+var current_gesture := ""            # last gesture the body accepted
 var refused_gestures: Array[String] = []
 var current_expression := ""         # last expression shown (G3a, D-52)
 var avoidance_enabled := true
 var world: RangeWorld
 var nav_agent: NavigationAgent3D
 var model: Node3D
+## Skeleton settings (RigSpec.for_body); empty for bodies without a skeleton yet (visitors).
+var rig_spec: Dictionary = {}
 
 var _direct_velocity := Vector3.ZERO
 var _turn_yaw := 0.0
-var _gesture := {}                   # {"gesture", "event_id", "until_tick"} while one is shown
+var _gesture := {}                   # {"gesture", "event_id", "start_tick", "duration", "until_tick", "amplitude", "tempo"}
+var _previous_gesture := {}          # the gesture the current one replaced, while it fades out
+var _gaze := {}                      # {"target_id" or "point", "until_tick"}: where the head looks (presentation)
 var _expression := {}                # {"expression_id", "event_id", "until_tick", "glyph_id", "light", ...}
 var _last_expression_tick := -1000
 var _avoid_rid: RID
@@ -104,13 +109,12 @@ func setup(id: String, body_config: Dictionary, appearance := {}) -> void:
 	cs.position.y = height / 2
 	add_child(cs)
 
+	rig_spec = RigSpec.for_body(body_config)
 	match kind:
-		"LEGGED_HUMANOID":
-			model = HumanoidModel.create(height, "LEGS", appearance)
-		"WHEELED_HUMANOID":
-			model = HumanoidModel.create(height, "WHEELS", appearance)
+		"LEGGED_HUMANOID", "WHEELED_HUMANOID":
+			model = HumanoidModel.create(height, rig_spec, appearance)
 		"QUADRUPED":
-			model = QuadrupedModel.create(footprint.x, int(body_config["arms"]) > 0, appearance)
+			model = QuadrupedModel.create(footprint.x, rig_spec, appearance)
 		_:
 			model = VisitorModel.create(footprint.y / 2, height, String(appearance.get("color", "visitor_slate")), id)
 	add_child(model)
@@ -221,8 +225,10 @@ func turn_to(yaw: float) -> void:
 
 
 ## Host-side gesture check (D-36): a body only performs gestures its config lists. Returns
-## false and records the refusal otherwise. No animation yet (V0 greybox).
-func perform_gesture(gesture: String, event_id := "") -> bool:
+## false and records the refusal otherwise. Optional `amplitude` and `tempo` (0.5-1.5; below 0
+## means not given) are clamped to the body's rig range; the world computes the gesture's
+## duration from the tempo (D-56), and the pose plays inside it.
+func perform_gesture(gesture: String, event_id := "", amplitude := -1.0, tempo := -1.0) -> bool:
 	if not Bodies.supports_gesture(body, gesture):
 		refused_gestures.append(gesture)
 		if world != null:
@@ -233,9 +239,21 @@ func perform_gesture(gesture: String, event_id := "") -> bool:
 	if world != null:
 		if event_id == "":
 			event_id = world.next_event_id()
-		_gesture = {"gesture": gesture, "event_id": event_id, "until_tick": world.clock.tick + GESTURE_DURATION_TICKS}
-		world.journal_write("GESTURE_PERFORMED", avatar_id, {"avatar_id": avatar_id, "event_id": event_id,
-			"gesture": gesture, "duration_ms": SimClock.ms_at(GESTURE_DURATION_TICKS)})
+		var tick := world.clock.tick
+		var amp := RigSpec.clamp_prosody(rig_spec, "amplitude", amplitude)
+		var tem := RigSpec.clamp_prosody(rig_spec, "tempo", tempo)
+		var duration := RigSpec.gesture_duration_ticks(tem)
+		_previous_gesture = _gesture if not active_gesture(tick).is_empty() else {}
+		_gesture = {"gesture": gesture, "event_id": event_id, "start_tick": tick, "duration": duration,
+			"until_tick": tick + duration, "amplitude": amp, "tempo": tem}
+		var payload := {"avatar_id": avatar_id, "event_id": event_id, "gesture": gesture,
+			"duration_ms": SimClock.ms_at(duration)}
+		# Only when asked for, so journals of runs without prosody stay byte-identical (D-56).
+		if amplitude >= 0.0:
+			payload["amplitude"] = amp
+		if tempo >= 0.0:
+			payload["tempo"] = tem
+		world.journal_write("GESTURE_PERFORMED", avatar_id, payload)
 	return true
 
 
@@ -246,17 +264,73 @@ func active_gesture(tick: int) -> Dictionary:
 	return _gesture
 
 
+## What the pose plays at `tick` (presentation, D-54): [{"gesture", "t" (0..1 of its duration),
+## "weight"}], the replaced gesture first while it fades out over the new one's attack.
+func gesture_layers(tick: int) -> Array:
+	var out := []
+	if active_gesture(tick).is_empty():
+		return out
+	var t := Poser.progress(_gesture, tick)
+	if not _previous_gesture.is_empty():
+		var tp := Poser.progress(_previous_gesture, tick)
+		var keep := 1.0 - smoothstep(0.0, Poser.ATTACK, t)
+		if tp < 1.0 and keep > 0.0:
+			out.append({"gesture": _previous_gesture, "t": tp, "weight": keep})
+	out.append({"gesture": _gesture, "t": t, "weight": 1.0})
+	return out
+
+
+## Turn the head toward another avatar (an id) or a point, for `hold_ticks`. Presentation only
+## (D-54): it changes the pose, never what anyone perceives, and nothing is journaled.
+func look_toward(target, hold_ticks := GAZE_HOLD_TICKS) -> void:
+	if world == null:
+		return
+	_gaze = {"until_tick": world.clock.tick + hold_ticks}
+	if target is String:
+		_gaze["target_id"] = target
+	elif target is Vector3:
+		_gaze["point"] = target
+
+
+## Where the head should look at `tick` (global), or null to look ahead.
+func gaze_point(tick: int):
+	if _gaze.is_empty() or tick > int(_gaze["until_tick"]):
+		return null
+	if _gaze.has("point"):
+		return _gaze["point"]
+	var other: Avatar = world.avatars.get(_gaze["target_id"]) if world != null else null
+	if other == null or other == self:
+		return null
+	return SenseModel.sample_points(other)["HEAD"]
+
+
+## Pose the skeleton for `tick` (called by the world after every avatar moved, if posing is on).
+func update_pose(tick: int) -> void:
+	if model != null and "poser" in model and model.poser != null:
+		(model.poser as Poser).update(self, tick)
+
+
+func rig() -> Rig:
+	if model != null and "rig" in model:
+		return model.rig
+	return null
+
+
 ## Show an expression from the catalog (EXPRESS; EXPRESSION_PRINCIPLES §1, D-14, D-52): its
 ## gesture, glyph and light together, or nothing. Returns "OK", "CAPABILITY_DENIED" (the body
 ## lacks a part) or "RATE_LIMITED" (less than 1/3 s since the last change: light safety, D-14).
 ## The gesture shares the expression's event id, so observers' reports tie together.
-func show_expression(expression: Dictionary, event_id: String) -> String:
+func show_expression(expression: Dictionary, event_id: String, amplitude := -1.0, tempo := -1.0) -> String:
 	if BeaconRules.refusal(body, expression) != "":
 		return "CAPABILITY_DENIED"
 	var tick := world.clock.tick if world != null else 0
 	if tick - _last_expression_tick < BeaconRules.MIN_CHANGE_TICKS:
 		return "RATE_LIMITED"
-	if expression.has("gesture") and not perform_gesture(String(expression["gesture"]), event_id):
+	if amplitude < 0.0 and expression.has("amplitude"):
+		amplitude = float(expression["amplitude"])
+	if tempo < 0.0 and expression.has("tempo"):
+		tempo = float(expression["tempo"])
+	if expression.has("gesture") and not perform_gesture(String(expression["gesture"]), event_id, amplitude, tempo):
 		return "CAPABILITY_DENIED"
 	_last_expression_tick = tick
 	current_expression = String(expression["expression_id"])
@@ -370,8 +444,6 @@ func _steer(dir: Vector3, wanted_speed: float, delta: float) -> void:
 		if other is Avatar:
 			var other_id := (other as Avatar).avatar_id
 			contacts[other_id] = int(contacts.get(other_id, 0)) + 1
-	if model != null and model.has_method("animate"):
-		model.animate(speed, delta)
 
 
 func _arrive() -> void:

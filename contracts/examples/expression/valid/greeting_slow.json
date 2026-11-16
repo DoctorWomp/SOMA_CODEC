@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "expression_id": "greeting_slow",
+  "meaning": "Hello: glad to see you.",
+  "gesture": "WAVE",
+  "amplitude": 0.8,
+  "tempo": 0.8,
+  "glyph": {
+    "glyph_id": "smile",
+    "visor": "^_^",
+    "strip": "^ ^"
+  },
+  "light": "WARM",
+  "light_pattern": "STEADY",
+  "hold_ms": 3000
+}

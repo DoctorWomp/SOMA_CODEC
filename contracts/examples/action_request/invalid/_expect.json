@@ -12,5 +12,7 @@
   "unknown_field": "additionalProperties",
   "wait_too_long": "maximum",
   "express_unknown_arg": "additionalProperties",
-  "express_bad_id": "pattern"
+  "express_bad_id": "pattern",
+  "gesture_amplitude_too_big": "maximum",
+  "express_tempo_too_slow": "minimum"
 }
