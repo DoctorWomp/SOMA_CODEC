@@ -31,7 +31,7 @@ from typing import Any
 
 from range_service import contracts
 from range_service.agents.factory import build_runtimes
-from range_service.agents.gateway import gateway_from_spec
+from range_service.agents.gateway import ProviderError, gateway_from_spec, tokenizer_for
 from range_service.configs import ConfigSet, load_and_check
 from range_service.link.sidecar import Sidecar
 
@@ -160,7 +160,7 @@ def summarize(journal: list[dict[str, Any]], runtimes: dict[str, Any]) -> dict[s
 
 
 def manifest(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: int, run_id: str,
-             tainted_reasons: list[str], details: dict[str, Any]) -> dict[str, Any]:
+             tainted_reasons: list[str], details: dict[str, Any], model_hash: str | None = None) -> dict[str, Any]:
     game_map = cs.items["maps"][scenario["map"]]
     avatars = []
     for avatar_id in sorted(scenario["cast"]):
@@ -176,7 +176,7 @@ def manifest(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: in
             "cognition_level": persona["cognition_level"], "persona_id": entry["persona"],
             "body_id": opts.body_overrides.get(avatar_id, entry["body"]), "perception_preset": entry["preset"],
             "perception_mask": preset["layers"], "sensor_package": entry["sensor_package"],
-            "model": {"model_id": model_id, "model_hash": None},
+            "model": {"model_id": model_id, "model_hash": model_hash if model_id else None},
             "capability_card": f"[{avatar_id} | {brain} | HORIZON: {entry['preset']} | memory: RCC | "
                                f"sensors: {entry['sensor_package']} | actions: v1]",
         })
@@ -206,16 +206,37 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     run_dir = opts.out_dir or (REPO / "runs" / run_id)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    runtimes = build_runtimes(scenario, cs, gateway=gateway_from_spec(opts.model), body_overrides=opts.body_overrides)
-    token = secrets.token_hex(24)
-    sidecar = Sidecar(token, {}, record_dir=run_dir / "sidecar", runtimes=runtimes, jitter_ms=opts.jitter_ms)
-    port = await sidecar.start()
-    env = dict(os.environ, RANGE_SESSION_TOKEN=token)
+    details: dict[str, Any] = {}
+    tokenizer = None
     try:
+        gateway = gateway_from_spec(opts.model, log_path=run_dir / "llama_server.log", seed=seed)
+    except (ValueError, ProviderError) as exc:
+        raise RunError(str(exc)) from exc
+    if gateway is not None:
+        try:
+            await gateway.start()   # llama: load the model, warm it up (T1)
+        except ProviderError as exc:
+            raise RunError(str(exc)) from exc
+    sidecar = None
+    try:
+        tokenizer = tokenizer_for(gateway)
+        runtimes = build_runtimes(scenario, cs, gateway=gateway, body_overrides=opts.body_overrides, tokenizer=tokenizer)
+        token = secrets.token_hex(24)
+        sidecar = Sidecar(token, {}, record_dir=run_dir / "sidecar", runtimes=runtimes, jitter_ms=opts.jitter_ms)
+        port = await sidecar.start()
+        env = dict(os.environ, RANGE_SESSION_TOKEN=token)
         code, lines = await _run_godot(godot_command(opts, scenario, run_dir, port, seed), env, opts.timeout_s,
                                        run_dir / "godot.log")
     finally:
-        await sidecar.stop()
+        if sidecar is not None:
+            await sidecar.stop()
+        if gateway is not None:
+            await gateway.stop()   # only the server this run started
+    if tokenizer is not None:
+        details["tokenizer"] = tokenizer.name
+    setup = getattr(gateway, "setup", None)
+    if setup is not None:
+        details.update(setup.manifest_settings())
 
     journal_path = run_dir / "journal.jsonl"
     if not journal_path.is_file():
@@ -226,14 +247,14 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     summary["sidecar_problems"] = list(sidecar.problems)
     errors = [line for line in lines if line.startswith(("ERROR", "SCRIPT ERROR"))]
     taint = []
-    details: dict[str, Any] = {}
     if summary["step_timeouts"]:
         taint.append("OTHER")
         details["taint_detail"] = "stepped run had step timeouts"
     if not any(e["kind"] == "RUN_ENDED" for e in journal):
         taint.append("OTHER")
         details["taint_detail"] = "the run did not end normally"
-    run_manifest = manifest(opts, cs, scenario, seed, run_id, sorted(set(taint)), details)
+    run_manifest = manifest(opts, cs, scenario, seed, run_id, sorted(set(taint)), details,
+                            model_hash=setup.model.sha256 if setup is not None else None)
     found = contracts.problems("run_manifest", run_manifest)
     if found:
         raise RunError(f"run manifest does not match its contract: {found[0]}")

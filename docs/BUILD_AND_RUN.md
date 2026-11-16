@@ -147,6 +147,23 @@ Rig step A (D-56): every gesture, the four robots side by side at the gesture's 
 xvfb-run -a -s "-screen 0 1600x900x24" .tools/godot/Godot_v4.7.2-stable_linux.x86_64 --path godot_app --rendering-method gl_compatibility --rendering-driver opengl3 --fixed-fps 60 --resolution 1600x900 res://dev/gesture_capture.tscn -- --out=$PWD/docs/gates/RIG_A_screenshots
 ```
 
+## Real models (G3b, D-57)
+
+Everything runs on 127.0.0.1. Nothing downloads without your "yes". Owner steps: [gates/G3b_OWNER_CHECKLIST.md](gates/G3b_OWNER_CHECKLIST.md).
+
+```bash
+uv run python tools/install_llama.py --check            # pinned llama.cpp b12443, NVIDIA driver check
+uv run python tools/install_llama.py --record-hashes    # Windows: CUDA 12 build (compare the checksums once)
+uv run python tools/install_llama.py --from-source      # Linux / cloud: static CPU build of the pinned commit
+uv run python tools/models.py scan <folder>             # register .gguf files in place (models/registry.local.yaml)
+uv run python tools/models.py plan                      # core set: found, missing, download size
+uv run python tools/models.py download F3 N1            # only what you name; SHA-256 checked
+uv run python tools/run_scenario.py SB04_POLITE_BID --model llama          # configs/inference.yaml
+uv run python tools/run_scenario.py SB04_POLITE_BID --model llama:F3       # another catalog model
+```
+
+`--model llama-attach:PORT` uses a llama-server you started yourself (key in `RANGE_LLAMA_API_KEY`). Tests never need a model: `range_service/agents/standin.py` plays the server.
+
 ## Smaller commands
 
 Check only the content files (useful after editing a YAML file):

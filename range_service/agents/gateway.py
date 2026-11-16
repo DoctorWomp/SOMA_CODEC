@@ -4,8 +4,9 @@ A provider-neutral interface between agents and models. Agents never call a mode
 
 - **Providers** implement ``complete(request) -> response``. G3a has ``FakeModel`` (deterministic,
   scriptable: valid, malformed, slow) and ``ReplayModel`` (serves a recorded run). G3b adds
-  ``llama-server`` (OpenAI-compatible HTTP on 127.0.0.1) and Ollama behind the same interface.
-  Nothing here opens a network connection.
+  ``LlamaProvider`` (llama-server on 127.0.0.1; agents/llama.py). A provider that runs a server
+  has ``start()`` and ``stop()``; the gateway passes them on. Each request carries the JSON
+  schema of the agent's allowed actions (agents/output_schema.py) for constrained output.
 - **Output** is one JSON object ``{"actions": [{"action", "args"}], "reason_summary"}`` with 1–3
   actions. A SPEAK, GESTURE or EXPRESS may add ``"commitment"`` (what it promises) or
   ``"fulfills_commitment": true``. Each becomes an ``action_request`` checked against contracts/action_request and the
@@ -63,6 +64,8 @@ class ModelRequest:
     # What the Demo policy would do now, as JSON. Only FakeModel may read it (to stand in for a
     # model deterministically); it is never part of the prompt.
     demo_hint: str | None = None
+    # JSON schema of a valid answer for this agent (constrained output, D-21); None = unconstrained.
+    output_schema: dict[str, Any] | None = None
 
 
 @dataclass
@@ -202,6 +205,14 @@ class ModelGateway:
         self._slots = asyncio.Semaphore(max_concurrent)
         self._calls = 0
 
+    async def start(self) -> None:
+        if hasattr(self.provider, "start"):
+            await self.provider.start()
+
+    async def stop(self) -> None:
+        if hasattr(self.provider, "stop"):
+            await self.provider.stop()
+
     def _call_id(self, agent_id: str) -> str:
         self._calls += 1
         return f"call_{agent_id}_{self._calls:06d}"[:64]
@@ -238,9 +249,13 @@ class ModelGateway:
 
     async def decide(self, *, agent_id: str, tier: str, prompt: str, prompt_sha256: str, max_tokens: int,
                      allowed_actions: list[str], tick: int, demo_hint: str | None = None) -> GatewayResult:
+        from .output_schema import answer_schema   # noqa: PLC0415 (it imports this module)
+
         deadline_ms = self.deadlines_ms[tier]
         calls: list[dict[str, Any]] = []
-        request = ModelRequest(agent_id, self._call_id(agent_id), tier, prompt, prompt_sha256, max_tokens, 0, demo_hint)
+        schema = answer_schema(tuple(allowed_actions))
+        request = ModelRequest(agent_id, self._call_id(agent_id), tier, prompt, prompt_sha256, max_tokens, 0, demo_hint,
+                               schema)
         for attempt in (0, 1):
             response, call = await self._one(request, deadline_ms)
             calls.append(call)
@@ -254,8 +269,20 @@ class ModelGateway:
             if attempt == 0:
                 repaired = prompt + "\n\n## REPAIR\n" + REPAIR_NOTE.format(error=error)
                 request = ModelRequest(agent_id, self._call_id(agent_id), tier, repaired,
-                                       hashlib.sha256(repaired.encode("utf-8")).hexdigest(), max_tokens, 1, demo_hint)
+                                       hashlib.sha256(repaired.encode("utf-8")).hexdigest(), max_tokens, 1, demo_hint,
+                                       schema)
         return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": "INVALID_OUTPUT"})
+
+
+def tokenizer_for(gateway: ModelGateway | None):
+    """The model's own tokenizer when the gateway talks to llama-server (D-51 re-measured at
+    G3b), else None (the runtime keeps the estimate). Call after ``await gateway.start()``."""
+    from .llama import LlamaProvider, ServerTokenizer   # noqa: PLC0415
+
+    if gateway is None or not isinstance(gateway.provider, LlamaProvider):
+        return None
+    p = gateway.provider
+    return ServerTokenizer(p.port, p.api_key, p.model_id)
 
 
 def fallback_actions() -> list[dict[str, Any]]:
@@ -268,9 +295,12 @@ MALFORMED_SAMPLES = [
 ]
 
 
-def gateway_from_spec(spec: str) -> ModelGateway | None:
-    """Model choice from the command line (G3a): ``none``, ``fake``, ``fake-slow:MS``,
-    ``fake-malformed`` or ``replay:PATH``. Real engines arrive at G3b."""
+def gateway_from_spec(spec: str, *, log_path: Path | None = None, seed: int | None = None) -> ModelGateway | None:
+    """Model choice from the command line: ``none``, ``fake``, ``fake-slow:MS``, ``fake-malformed``,
+    ``replay:PATH`` (G3a); ``llama`` (configs/inference.yaml as it is), ``llama:MODEL`` (another
+    catalog id, label or local id) or ``llama-attach:PORT`` (a server already running on
+    127.0.0.1:PORT, key in RANGE_LLAMA_API_KEY) (G3b). A llama gateway must be started
+    (``await gateway.start()``) and stopped; its ``setup`` describes the model for the manifest."""
     if spec == "none":
         return None
     if spec == "fake":
@@ -281,4 +311,20 @@ def gateway_from_spec(spec: str) -> ModelGateway | None:
         return ModelGateway(FakeModel(responder=scripted_responses(MALFORMED_SAMPLES), model_id="fake-malformed-v1"))
     if spec.startswith("replay:"):
         return ModelGateway(ReplayModel.from_file(Path(spec.split(":", 1)[1])))
-    raise ValueError(f"unknown model {spec!r}: use none, fake, fake-slow:MS, fake-malformed or replay:PATH")
+    if spec == "llama" or spec.startswith("llama:"):
+        from .inference import build_llama   # noqa: PLC0415
+
+        setup = build_llama(spec.split(":", 1)[1] if ":" in spec else None, log_path=log_path, seed=seed)
+        setup.gateway.setup = setup   # type: ignore[attr-defined]
+        return setup.gateway
+    if spec.startswith("llama-attach:"):
+        from .inference import load_inference   # noqa: PLC0415
+        from .llama import LlamaProvider   # noqa: PLC0415
+
+        inf = load_inference()
+        provider = LlamaProvider.attach(int(spec.split(":", 1)[1]), sampling=inf["sampling"],
+                                        structured_output=inf["structured_output"], thinking=inf["thinking"],
+                                        warm_up=False)
+        return ModelGateway(provider, deadlines_ms={t: s["deadline_ms"] for t, s in inf["tiers"].items()})
+    raise ValueError(f"unknown model {spec!r}: use none, fake, fake-slow:MS, fake-malformed, replay:PATH, "
+                     "llama, llama:MODEL or llama-attach:PORT")

@@ -1783,9 +1783,10 @@ func test_scenario_tape_and_world_view() -> String:
 	return ""
 
 
-## T25 and T27 in a live run. The sidecar's fake model takes 1.5 s per call (godot_check starts
-## it as RANGE_LINK_PORT_MODEL). The world must keep its tick every frame with no frame over 50 ms,
-## avatars keep moving, and Robot R's late actions are rejected as STALE_OBSERVATION.
+## T25 and T27 in a live run. Robot R's model takes 1.5 s per call: since G3b the sidecar
+## (RANGE_LINK_PORT_MODEL) reaches it through the real llama-server provider, and godot_check plays
+## the server with a slow stand-in. The world must keep its tick every frame with no frame over
+## 50 ms, avatars keep moving, and Robot R's late actions are rejected as STALE_OBSERVATION.
 func test_live_slow_model_t25_t27() -> String:
 	var port := int(OS.get_environment("RANGE_LINK_PORT_MODEL"))
 	if port <= 0:

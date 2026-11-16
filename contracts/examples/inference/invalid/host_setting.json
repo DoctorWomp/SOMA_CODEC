@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "inference_id": "inference",
+  "engine": {
+    "binary": "auto",
+    "startup_timeout_s": 300,
+    "warm_up": true,
+    "host": "0.0.0.0"
+  },
+  "servers": {
+    "focal": {
+      "model": "qwen35_9b_q4km",
+      "parallel_slots": 2,
+      "context_per_slot": 6144,
+      "kv_cache_type": "f16",
+      "flash_attention": "auto",
+      "gpu_layers": "all"
+    }
+  },
+  "sampling": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "seed": 0
+  },
+  "thinking": false,
+  "structured_output": true,
+  "tiers": {
+    "FOCAL": {
+      "server": "focal",
+      "deadline_ms": 4000,
+      "pin_slot": true
+    },
+    "C2": {
+      "server": "focal",
+      "deadline_ms": 6000,
+      "pin_slot": false
+    },
+    "C1": {
+      "server": "focal",
+      "deadline_ms": 3000,
+      "pin_slot": false
+    }
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/model_registry.schema.json",
+  "title": "Local model registry",
+  "description": "models/registry.local.yaml (git-ignored; D-21 owner note): the GGUF files on this machine, used in place by path and SHA-256. Written by tools/models.py scan and download; never committed, since paths are personal.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "local_id",
+          "path",
+          "size_bytes",
+          "mtime_ns",
+          "sha256",
+          "catalog_id",
+          "origin",
+          "header"
+        ],
+        "properties": {
+          "local_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,47}$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "mtime_ns": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "catalog_id": {
+            "description": "The catalog entry this exact file belongs to (by SHA-256), or null.",
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{1,47}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "enum": [
+              "SCANNED",
+              "DOWNLOADED"
+            ]
+          },
+          "header": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "architecture",
+              "name",
+              "size_label",
+              "quantization",
+              "file_type",
+              "context_length",
+              "parameter_count",
+              "gguf_version"
+            ],
+            "properties": {
+              "architecture": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "size_label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quantization": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "file_type": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "context_length": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "parameter_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gguf_version": {
+                "enum": [
+                  2,
+                  3
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

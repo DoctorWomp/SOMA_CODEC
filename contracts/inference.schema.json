@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/inference.schema.json",
+  "title": "Inference settings",
+  "description": "configs/inference.yaml (G3b; D-20, D-21, D-50, D-55): how RANGE runs real models in llama-server. The server always listens on 127.0.0.1, on a free port, with a per-session API key that is never logged; these settings cannot change that.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "inference_id",
+    "engine",
+    "servers",
+    "sampling",
+    "thinking",
+    "structured_output",
+    "tiers"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "inference_id": {
+      "const": "inference"
+    },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "binary",
+        "startup_timeout_s",
+        "warm_up"
+      ],
+      "properties": {
+        "binary": {
+          "description": "auto = the llama-server installed by tools/install_llama.py; otherwise a path to llama-server(.exe).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "startup_timeout_s": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 1800
+        },
+        "warm_up": {
+          "type": "boolean"
+        }
+      }
+    },
+    "servers": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 3,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]{1,31}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model",
+          "parallel_slots",
+          "context_per_slot",
+          "kv_cache_type",
+          "flash_attention",
+          "gpu_layers"
+        ],
+        "properties": {
+          "model": {
+            "description": "A catalog id or label, or a local id from models/registry.local.yaml.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]{2,48}$"
+          },
+          "parallel_slots": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16
+          },
+          "context_per_slot": {
+            "type": "integer",
+            "minimum": 512,
+            "maximum": 131072
+          },
+          "kv_cache_type": {
+            "enum": [
+              "f16",
+              "q8_0",
+              "q4_0"
+            ]
+          },
+          "flash_attention": {
+            "enum": [
+              "auto",
+              "on",
+              "off"
+            ]
+          },
+          "gpu_layers": {
+            "oneOf": [
+              {
+                "const": "all"
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 999
+              }
+            ]
+          }
+        }
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "temperature",
+        "top_p",
+        "seed"
+      ],
+      "properties": {
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "top_p": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "thinking": {
+      "description": "Thinking/reasoning mode (D-20): off by default; on is a separate, measured condition.",
+      "type": "boolean"
+    },
+    "structured_output": {
+      "description": "Constrain answers with a JSON schema built from the agent's allowed actions (D-21).",
+      "type": "boolean"
+    },
+    "tiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "FOCAL",
+        "C2",
+        "C1"
+      ],
+      "properties": {
+        "FOCAL": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "server",
+            "deadline_ms",
+            "pin_slot"
+          ],
+          "properties": {
+            "server": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{1,31}$"
+            },
+            "deadline_ms": {
+              "type": "integer",
+              "minimum": 200,
+              "maximum": 120000
+            },
+            "pin_slot": {
+              "description": "Each agent of this tier keeps its own slot, so its prompt prefix stays cached (T4).",
+              "type": "boolean"
+            }
+          }
+        },
+        "C2": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "server",
+            "deadline_ms",
+            "pin_slot"
+          ],
+          "properties": {
+            "server": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{1,31}$"
+            },
+            "deadline_ms": {
+              "type": "integer",
+              "minimum": 200,
+              "maximum": 120000
+            },
+            "pin_slot": {
+              "description": "Each agent of this tier keeps its own slot, so its prompt prefix stays cached (T4).",
+              "type": "boolean"
+            }
+          }
+        },
+        "C1": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "server",
+            "deadline_ms",
+            "pin_slot"
+          ],
+          "properties": {
+            "server": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{1,31}$"
+            },
+            "deadline_ms": {
+              "type": "integer",
+              "minimum": 200,
+              "maximum": 120000
+            },
+            "pin_slot": {
+              "description": "Each agent of this tier keeps its own slot, so its prompt prefix stays cached (T4).",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}

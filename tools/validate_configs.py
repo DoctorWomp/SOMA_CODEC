@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from range_service.configs import CONFIGS_DIR, KINDS, load_and_check  # noqa: E402
+from range_service.configs import CONFIGS_DIR, KINDS, SINGLE_FILES, load_and_check  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
 
     config_set, found = load_and_check(config_dir)
     total = sum(len(v) for v in config_set.items.values())
-    for kind in KINDS:
+    for kind in [*KINDS, *SINGLE_FILES]:
         for config_id in sorted(config_set.items[kind]):
             print(f"  loaded  {config_set.files[(kind, config_id)]}")
 

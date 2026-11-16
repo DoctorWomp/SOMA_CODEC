@@ -15,6 +15,7 @@ from range_service.configs import ConfigSet
 
 from .gateway import ModelGateway
 from .runtime import AgentRuntime
+from .tokenizer import Tokenizer
 
 PUBLIC_PERSONA_FIELDS = ("persona_id", "display_name", "role", "public_goal", "knows", "does_not_know",
                          "cognition_level", "allowed_actions", "default_body")
@@ -59,7 +60,7 @@ def task_goal_point(entry: dict[str, Any], game_map: dict[str, Any]) -> dict[str
 
 
 def build_runtimes(scenario: dict[str, Any], cs: ConfigSet, *, gateway: ModelGateway | None = None,
-                   body_overrides: dict[str, str] | None = None) -> dict[str, AgentRuntime]:
+                   body_overrides: dict[str, str] | None = None, tokenizer: Tokenizer | None = None) -> dict[str, AgentRuntime]:
     overrides = body_overrides or {}
     game_map = cs.items["maps"][scenario["map"]]
     catalog = cs.items["expressions"]
@@ -75,5 +76,6 @@ def build_runtimes(scenario: dict[str, Any], cs: ConfigSet, *, gateway: ModelGat
             expressions=expression_rules.available(body, catalog), setting=setting, task=entry.get("task"),
             task_goal=task_goal_point(entry, game_map), focal=focal, pin=bool(entry.get("pin_cognition")),
             controller=entry["controller"], gateway=gateway if entry["controller"] == "LLM_AGENT" else None,
+            tokenizer=tokenizer if entry["controller"] == "LLM_AGENT" else None,
             expression_gestures={eid: e["gesture"] for eid, e in catalog.items() if "gesture" in e})
     return out
