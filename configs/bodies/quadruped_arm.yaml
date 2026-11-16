@@ -32,5 +32,5 @@ sensors:
   acoustic_range_m: 10
   cadence_hz: 10
   dropout_rate: 0.0
-gestures: [HEAD_TILT, SIT_IN_PLACE, POINT, HAND_OVER]
+gestures: [HEAD_TILT, SIT_IN_PLACE, POINT, HAND_OVER, WAVE, BECKON, RAISED_HAND]   # gripper wave, beckon, raised gripper for "stop"; never finger gestures (D-36 amendment, owner 2026-11-16)
 expression_channels: [SPEECH, LIGHT]

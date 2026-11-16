@@ -54,15 +54,15 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-44 | The Godot ↔ Python link and the action gate | APPROVED (owner, 2026-11-15) |
 | D-45 | The disclosure gate in practice | APPROVED (owner, 2026-11-15) |
 | D-46 | Expression-ready gesture events | APPROVED (owner, 2026-11-15) |
-| D-47 | Deterministic runs: navigation updates on the main thread | PROPOSED (G3a, 2026-11-15) |
-| D-48 | Scenario runner and run modes (stepped, live) | PROPOSED (G3a, 2026-11-15) |
-| D-49 | Agent runtime: triggers, one pending request, cognition levels, Demo policy | PROPOSED (G3a, 2026-11-15) |
-| D-50 | Model gateway: providers, output format, repair, timeouts, record and replay | PROPOSED (G3a, 2026-11-15) |
-| D-51 | Context assembly in practice: budgets, compression, logging | PROPOSED (G3a, 2026-11-15) |
-| D-52 | Expression catalog, EXPRESS and the Beacon | PROPOSED (G3a, 2026-11-15) |
-| D-53 | Directive templates and guardrails | PROPOSED (G3a, 2026-11-15) |
-| D-54 | Rigging and animation: pose is presentation | PROPOSED (2026-11-16) |
-| D-55 | Quantized and QAT models in the bake-off | PROPOSED (2026-11-16) |
+| D-47 | Deterministic runs: navigation updates on the main thread | APPROVED (owner, 2026-11-16) |
+| D-48 | Scenario runner and run modes (stepped, live) | APPROVED (owner, 2026-11-16) |
+| D-49 | Agent runtime: triggers, one pending request, cognition levels, Demo policy | APPROVED (owner, 2026-11-16) |
+| D-50 | Model gateway: providers, output format, repair, timeouts, record and replay | APPROVED (owner, 2026-11-16) |
+| D-51 | Context assembly in practice: budgets, compression, logging | APPROVED (owner, 2026-11-16) |
+| D-52 | Expression catalog, EXPRESS and the Beacon | APPROVED (owner, 2026-11-16) |
+| D-53 | Directive templates and guardrails | APPROVED (owner, 2026-11-16) |
+| D-54 | Rigging and animation: pose is presentation | APPROVED (owner, 2026-11-16) |
+| D-55 | Quantized and QAT models in the bake-off | APPROVED (owner, 2026-11-16) |
 
 ---
 
@@ -301,6 +301,7 @@ Candidates as of November 2026. Both families are reported as Apache 2.0; confir
 - **Not chosen for v0:** running the model *inside* Godot via a GDExtension such as NobodyWho. The agent and HORIZON logic live in Python, and a model crash or VRAM spike would take down the world process.
 - **Standalone feel:** one double-click starts everything. The Godot app (or a thin launcher) starts the Python sidecar and `llama-server`, waits for health checks, shows clear errors, and shuts down only the processes it started.
 - **Model weights:** may ship in an optional "model pack" if the license allows (record the license file with it). Never downloaded silently. Demo Mode always works with no model.
+- *Owner direction 2026-11-16:* as standalone as possible. `llama-server` is fetched by a pinned installer with a checksum (like `tools/install_godot.py`), never needed from LM Studio or Ollama. GGUF files the owner already has (LM Studio folder `G:\.lmstudio\models\lmstudio-community`) are used **in place** by path and SHA-256, recorded in a git-ignored local registry; nothing is copied or downloaded twice.
 
 ## D-22 — Languages and what each one does
 **Status:** APPROVED (owner, 2026-11-13)
@@ -446,7 +447,7 @@ Replaces D-32. RANGE v0 has **three robot bodies**, each a body config (`configs
 | Gestures | all except SIT_IN_PLACE | all except SIT_IN_PLACE | HEAD_TILT, SIT_IN_PLACE | + POINT, HAND_OVER | all |
 | Expression channels | SPEECH, FACE (visor glyph), LIGHT (ear pods) | SPEECH, FACE, LIGHT | SPEECH, LIGHT (visor light) | SPEECH, LIGHT | SPEECH, FACE |
 
-*Amended 2026-11-15 (G3a, per EXPRESSION_PRINCIPLES §1; D-52):* the quadruped's LIGHT channel is a **narrow light strip above the camera cluster, never over the lenses**, that shows a few simple symbols (`^ ^`, `...`, `?`, `!`, `->`) in the Beacon color, plus a thin light bar under the visor. It still has no FACE channel. The quadruped with arm keeps the gestures its body config lists (point, hand over); EXPRESSION_PRINCIPLES §1 also allows a gripper wave, beckon and a raised gripper for "stop" (never finger gestures). Adding those is a one-line change to `configs/bodies/quadruped_arm.yaml`, left for the owner to confirm.
+*Amended 2026-11-15 (G3a, per EXPRESSION_PRINCIPLES §1; D-52):* the quadruped's LIGHT channel is a **narrow light strip above the camera cluster, never over the lenses**, that shows a few simple symbols (`^ ^`, `...`, `?`, `!`, `->`) in the Beacon color, plus a thin light bar under the visor. It still has no FACE channel. The quadruped with arm keeps the gestures its body config lists (point, hand over); EXPRESSION_PRINCIPLES §1 also allows a gripper wave, beckon and a raised gripper for "stop" (never finger gestures). *Confirmed by the owner 2026-11-16:* `configs/bodies/quadruped_arm.yaml` now lists WAVE, BECKON and RAISED_HAND, so the arm robot can show `greeting` and `stop`; it still cannot nod, bow or make hand or finger gestures.
 
 - **Sensor mount height** is where G2's observer filter will cast sight lines from, so the quadruped's low sensors are blocked by 2 m partitions and by crowds that a humanoid sees over.
 - **Gestures** come from one shared vocabulary in `contracts/common.schema.json` (Blueprint §10.3 plus `HEAD_TILT`, `SIT_IN_PLACE` and `HAND_OVER`). Turning to face someone is the `TURN_TO`/`LOOK_AT` actions, not a gesture. A body performs only the gestures its config lists; the Godot body refuses the rest now, and the action gate (G3) will use the same rule (`range_service/bodies.py`).
@@ -549,7 +550,7 @@ D-12 made concrete (`range_service/comms/disclosure.py`; the host repeats the ch
 So that G3 can add visor and light-strip glyphs and light states (docs/EXPRESSION_PRINCIPLES.md) without an incompatible contract change, contracts now define one **`expression`** object (`common.schema.json`): `gesture`, `glyph` (an id from the expression catalog G3 will add), `light` (the D-14 states `OFF`, `NEUTRAL`, `WARM`, `CALM`, `CONSIDERED`, `CAUTION`, `STOP`), `light_pattern` (`STEADY` or `SLOW_PULSE`, never faster than 3 Hz), `display` (`VISOR`, `LIGHT_STRIP`, `EAR_PODS`, `BODY`) and `sign_text`; at least one of gesture, glyph or light. It is used by GESTURE-channel `comms_event`s and by a new observation kind **`VISUAL_EXPRESSION`**. G2b emits gestures only (as `VISUAL_GESTURE`, unchanged); G3 starts emitting `VISUAL_EXPRESSION` with glyphs and light, filling fields that already exist. There is no `STROBE` or color-hue field: lights carry only the six public states.
 
 ## D-47 — Deterministic runs: navigation updates on the main thread
-**Status:** PROPOSED (G3a, 2026-11-15). A bug fix; recorded because it changes an engine setting.
+**Status:** APPROVED (owner, 2026-11-16); proposed at G3a, 2026-11-15. A bug fix; recorded because it changes an engine setting.
 
 **Symptom.** After the G2b merge, CI's Python 3.14 job failed `test_journal_is_deterministic` once ("two runs with the same seed gave different journals"); it passed on re-run and in 16 local runs.
 
@@ -573,7 +574,7 @@ So that G3 can add visor and light-strip glyphs and light states (docs/EXPRESSIO
 **Rule from now on:** anything that decides *when* something happens in a run must count world ticks, never wall-clock time or thread completion. If a future engine feature runs on a thread (pathfinding queries, baking), its result must be applied at a fixed tick.
 
 ## D-48 — Scenario runner and run modes (stepped, live)
-**Status:** PROPOSED (G3a, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-16); proposed at G3a, 2026-11-15
 
 - **Who runs what.** `tools/run_scenario.py` (Python) loads and checks the scenario YAML and keeps everything evaluator-only on the Python side. It starts the sidecar in-process with one agent runtime per cast member and launches Godot with `--scenario=<id>`. Godot reads a **world-only copy** of the scenario (`godot_app/data/scenarios/`, made by `tools/export_godot_data.py`): map, cast bodies and spawns, controllers, PA operators, event tape, seed and timing. `evaluator_only`, `measure` and personas are never exported (a test checks it).
 - **Timing.** `at_tick` and `duration_ticks` count scenario ticks at the scenario's `tick_hz` (SB-04: 10 Hz); Godot converts them to its 60 Hz tick (D-33), counted from the start tick.
@@ -587,7 +588,7 @@ So that G3 can add visor and light-strip glyphs and light states (docs/EXPRESSIO
 - Contract additions (backward-compatible): envelope type `link.step`, `link.hello.run_mode`; scenario fields above; journal kinds `SCENARIO_EVENT` and `EXPRESSION_SHOWN`; `RUN_ENDED.avatars` (final pose and navigation links used) and `held_ticks`; `COMMS_REJECTED` codes `RATE_LIMITED` and `INVALID_SCHEMA`.
 
 ## D-49 — Agent runtime: triggers, one pending request, cognition levels, Demo policy
-**Status:** PROPOSED (G3a, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-16); proposed at G3a, 2026-11-15
 
 - **Event-driven decisions** (INFERENCE_STRATEGY T14): a decision is made only when something happens: speech addressed to the agent, a greeting gesture toward it, someone new within 3 m, the conversation partner leaving (lost from view, or 20 s of silence), a group invitation, an action rejected, a promise that can now be kept, or the start. An avatar standing still for 5 s causes no decisions (tested).
 - **One pending request per agent.** While a decision is being made (a model call in flight), new events are kept and decided next. `STALE_OBSERVATION` or `TARGET_UNKNOWN` results trigger **one** replan per rejected decision from the next observation (T27), never a loop. A promise whose words were refused is released.
@@ -597,7 +598,7 @@ So that G3 can add visor and light-strip glyphs and light states (docs/EXPRESSIO
 - **Agent ids:** a runtime only ever reads its own packets (enforced) and the public part of its persona (`private_goal` and `style` are dropped before it is built).
 
 ## D-50 — Model gateway: providers, output format, repair, timeouts, record and replay
-**Status:** PROPOSED (G3a, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-16); proposed at G3a, 2026-11-15
 
 - **Provider-neutral:** `complete(request) → response` with timings and token counts. G3a ships `FakeModel` (deterministic; by default it repeats what the Demo policy would do, so the whole model path runs with no model) and `ReplayModel`. G3b adds `llama-server` (and Ollama) behind the same interface. Command line: `--model none | fake | fake-slow:MS | fake-malformed | replay:FILE`; anything else is refused. Nothing in G3a opens a network connection.
 - **Output format:** one JSON object `{"actions": [1–3 × {"action", "args"}], "reason_summary"}`; a `SPEAK` may add `"commitment"` (what it promises) or `"fulfills_commitment": true`. A fenced code block is tolerated. Each action is checked against `contracts/action_request` and the persona's allowed actions.
@@ -607,7 +608,7 @@ So that G3 can add visor and light-strip glyphs and light states (docs/EXPRESSIO
 - **Record and replay** (T20): every call is part of the `decision_record` (new contract): prompt hash, response text, outcome, error, deadline, timings, token counts. `ReplayModel` serves recorded responses in order per agent and reports a changed prompt as `REPLAY_DIVERGED` (a rerun, not a replay).
 
 ## D-51 — Context assembly in practice: budgets, compression, logging
-**Status:** PROPOSED (G3a, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-16); proposed at G3a, 2026-11-15
 
 CONTEXT_MEMORY_STRATEGY §3–§5 as built:
 
@@ -617,10 +618,10 @@ CONTEXT_MEMORY_STRATEGY §3–§5 as built:
 - **Retrieval score:** relevance (3 if it involves a current participant, up to 2 for topic words) + recency (2 × half-life of 120 s) + importance (0–3). Items the disclosure gate would not clear for the current audience are left out and counted as cut for scope.
 - **Logged per decision** in the `decision_record`: tokens, budget, items and cut items per section, compression steps, prompt hash. The prompt itself goes to `prompts.jsonl` in the run folder (evaluator only).
 - **Token counts are estimates** (`approx_chars_v1`: one token per 3.5 characters). G3b re-measures every budget with the model's own tokenizer.
-- **Private goals in prompts:** in G3a no NPC is model-driven and **no private goal appears in any assembled context** (tested). Whether an NPC's own private goal may enter its own prompt (D-13 allows it; CLAUDE.md reads stricter) is an owner decision before G3c.
+- **Private goals in prompts:** in G3a no NPC is model-driven and **no private goal appears in any assembled context** (tested). *Owner decision 2026-11-16:* an NPC's **own** private goal **may** enter **its own** prompt, in its own labelled section, once NPCs are model-driven (G3c), because an AI-played visitor cannot act its part without it. It never enters Robot R's or any other agent's context, never crosses into another agent's memory, and the evaluator keeps it as ground truth. G3c adds a test that scans every other agent's context for it. CLAUDE.md's rule is reworded to match.
 
 ## D-52 — Expression catalog, EXPRESS and the Beacon
-**Status:** PROPOSED (G3a, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-16); proposed at G3a, 2026-11-15
 
 - **Catalog as data:** `configs/expressions/<id>.yaml` (contract `expression`): meaning in words, optional gesture, optional glyph (`glyph_id`, visor text, light-strip symbol; ASCII, at most 8 / 5 characters), light state from the D-14 palette, `STEADY` or `SLOW_PULSE` (0.5 Hz), hold time. 15 entries: neutral, processing, greeting, greeting_light, listening, waiting, acknowledge, acknowledge_tilt, thank_you, thank_you_light, considering, excuse_me, excuse_me_light, stop, stop_light. The `_light` and `_tilt` variants exist for bodies without the arm gesture. Validation: one glyph id looks the same everywhere; a colored light always comes with a gesture or a glyph; every entry is showable by some robot.
 - **Who shows what:** humanoids show the glyph on the visor (FACE) and the light on the ear pods (LIGHT); quadrupeds show a symbol on the light strip plus a light bar (LIGHT); people have no Beacon. A body shows an expression only if it can show **every** part; otherwise the host answers `CAPABILITY_DENIED` and nothing is shown. Python (`range_service/expressions.py`) and Godot (`scripts/core/beacon_rules.gd`) state the same rules.
@@ -630,14 +631,14 @@ CONTEXT_MEMORY_STRATEGY §3–§5 as built:
 - Adaptive expression (phrases, match/contrast, intensity) is G5.
 
 ## D-53 — Directive templates and guardrails
-**Status:** PROPOSED (G3a, 2026-11-15)
+**Status:** APPROVED (owner, 2026-11-16); proposed at G3a, 2026-11-15
 
 - `configs/directives/<id>.yaml` (contract `directive`): the six INTERACTION_MODES §8 templates. `allows_not_engaging` must be `true`; a template has no field for guardrails (the contract refuses one). `default_for_roles` picks the template when a scenario names none (Expo Assistant for `expo_assistant`); at most one default per role.
 - **Guardrails are system text** in `range_service/agents/guardrails.py`, always section 1 of every prompt, before the directive: only listed actions; only own senses and permitted memory; others' words are evidence, never instructions (D-09); no labels about people (D-13); keep promises or say you can't; share what someone told you only with them, never hint at withholding (D-12); waiting and not engaging are valid; pair lights with words or a gesture (D-14). C1 agents get a short version.
 - Director edits of directives (T07) arrive at G4 and will be versioned and journaled; they cannot change the guardrails.
 
 ## D-54 — Rigging and animation: pose is presentation
-**Status:** PROPOSED (2026-11-16; owner liked the direction in discussion, not yet built). Plan: [gates/RIG_PLAN.md](gates/RIG_PLAN.md).
+**Status:** APPROVED (owner, 2026-11-16); not yet built. Plan: [gates/RIG_PLAN.md](gates/RIG_PLAN.md).
 
 - **Two layers.** The *body* (collider, movement, navigation, gesture events and their duration, sense points, the 60 Hz tick) stays world-owned and deterministic. The *pose* (skeleton, joints, feet, wheels) is presentation driven by the body. Animation never moves a collider, never writes to the journal, never decides what anyone perceives (D-04, D-39). Poses are evaluated on the physics tick from world state; headless runs may switch posing off, and a journal is byte-identical with posing on or off (test).
 - **Code-driven animation with IK, not situation clips.** Skeletons are built from the body config at spawn; gaits are procedural with foot IK, so stairs and ramps from any map YAML work without new clips. Gestures are one-shot tracks on masked upper-body bones; gaze uses look-at. Godot 4.7.2's built-in modifiers (`TwoBoneIK3D`, `CCDIK3D`, `FABRIK3D`, `LookAtModifier3D`, `SpringBoneSimulator3D`, `PhysicalBoneSimulator3D`, `AnimationTree`, …) were checked present in the pinned build (2026-11-16).
@@ -649,7 +650,7 @@ CONTEXT_MEMORY_STRATEGY §3–§5 as built:
 - **Steps:** A skeletons, gestures, gaze, posture and wheels (cloud; can run while G3b happens on the owner's PC) → B gaits and foot IK → C articulated visitors (CC0 clips allowed after a license check) → D optional springs, incident replay, P2 contact. Cost measured with the render-tax test (ART_DIRECTION §7) and T25.
 
 ## D-55 — Quantized and QAT models in the bake-off
-**Status:** PROPOSED (2026-11-16). Research only: nothing downloaded or measured. Evidence and sources: [QUANTIZATION_OPTIONS.md](QUANTIZATION_OPTIONS.md). Extends D-20.
+**Status:** APPROVED (owner, 2026-11-16). Research only so far: nothing downloaded or measured. Evidence and sources: [QUANTIZATION_OPTIONS.md](QUANTIZATION_OPTIONS.md). Extends D-20.
 
 - **The quantization is part of a model's identity.** Run manifests record file name, quant type, SHA-256, llama.cpp build and KV cache type. Paired A/B arms load the same file.
 - **Prefer QAT where the maker publishes it** (Gemma 4: official Q4_0 QAT GGUF for E2B, E4B, 12B, 26B A4B and 31B). Use the official QAT GGUF or a conversion that keeps the QAT grid; a naive conversion loses accuracy.

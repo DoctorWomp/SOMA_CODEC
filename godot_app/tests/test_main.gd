@@ -80,7 +80,7 @@ const ALLOWED_GESTURES := {
 	"wheeled_humanoid": ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD",
 		"OPEN_PALM", "BOW", "HEAD_TILT", "HAND_OVER"],
 	"quadruped": ["HEAD_TILT", "SIT_IN_PLACE"],
-	"quadruped_arm": ["HEAD_TILT", "SIT_IN_PLACE", "POINT", "HAND_OVER"],
+	"quadruped_arm": ["HEAD_TILT", "SIT_IN_PLACE", "POINT", "HAND_OVER", "WAVE", "BECKON", "RAISED_HAND"],   # gripper gestures: owner, 2026-11-16
 }
 
 ## SB-05 setup: start beside the stairs, goal on the platform, so the stairs are by far

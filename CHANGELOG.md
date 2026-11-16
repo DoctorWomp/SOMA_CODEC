@@ -12,6 +12,8 @@ All notable changes, by gate. Dates are when the work was done.
 - ART_DIRECTION §6 and G3_PLAN's G3b section point to the proposed amendments.
 - D-55's core bake-off set narrowed to 4B–12B models (owner direction); MoE and large dense models moved to "later".
 - CLAUDE.md status: G3a merged 2026-11-15 (PR #12).
+- Owner approved D-47 to D-55 (2026-11-16) and answered the two G3a questions: an NPC's own private goal may enter its own prompt only, from G3c (D-51; CLAUDE.md rule reworded); the quadruped with arm may wave, beckon and raise its gripper for "stop" (`configs/bodies/quadruped_arm.yaml`, tests updated).
+- G3_PLAN: G3b split into a cloud part and a PC part, with the owner's existing LM Studio models listed against the core set.
 
 ## G3a — Agent runtime, no real model (2026-11-15; merged 2026-11-15)
 

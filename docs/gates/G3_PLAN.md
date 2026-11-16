@@ -75,7 +75,7 @@ The link gains one envelope type, `link.step` (`SAMPLE_SENT` from Godot after a 
 - **Untrusted text stays labelled** (D-09): heard speech appears only as quoted evidence; the agent's own `reason_summary` is never fed back.
 - **Logged per call:** tokens per section, items cut and why, compression steps run.
 - **Token counts are estimates in G3a** (a fixed characters-per-token rule, labelled `approx_chars_v1`). CONTEXT_MEMORY_STRATEGY requires the real tokenizer: G3b swaps in `llama-server`'s tokenizer and re-checks every budget.
-- **Private goals in prompts:** in G3a no NPC is model-driven, and **no private goal appears in any assembled context**. Whether an NPC's *own* private goal may enter *its own* prompt (D-13 allows it; CLAUDE.md's rule reads stricter) is an owner question before G3c.
+- **Private goals in prompts:** in G3a no NPC is model-driven, and **no private goal appears in any assembled context**. *Owner decision 2026-11-16 (D-51):* from G3c an NPC's *own* private goal may enter *its own* prompt, labelled, and never anyone else's.
 
 ### Expression (EXPRESSION_PRINCIPLES §1)
 
@@ -132,7 +132,25 @@ The link gains one envelope type, `link.step` (`SAMPLE_SENT` from Godot after a 
 
 **Needs the owner's PC:** watching SB-04 and SB-05 with `--watch` (Forward+ renderer, real GPU), the Beacon's look, and everything in G3b.
 
-## G3b plan (owner's PC; nothing to do yet)
+## G3b plan
+
+**Owner direction (2026-11-16):** 4B–12B models first, QAT preferred, smaller models for C1 NPCs (D-55); as standalone as possible (D-21 note). G3b is split: a **cloud part** (everything that needs no GPU, tested against a stand-in OpenAI-compatible server) and a short **PC part** (install, register models, run the bake-off, paste the results back).
+
+**What the owner already has** (LM Studio folder `G:\.lmstudio\models\lmstudio-community`, folder names from a screenshot; the exact files and quantizations inside are not known yet and are read by the registry tool):
+
+| Needed for the core set (D-55) | On the PC already? |
+|---|---|
+| Qwen3.5-9B (F1 Q4, F2 Q6) | `Qwen3.5-9B-GGUF`: yes; which quantizations, to check |
+| Gemma 4 12B QAT (F3) | `gemma-4-12B-it-QAT-GGUF`: yes |
+| Gemma 4 E4B QAT (N1) | Only `gemma-4-E4B-it-GGUF` (not QAT). Use it as a non-QAT comparison; the QAT file is a download |
+| Qwen3.5-4B (N2 Q6, N3 Q4) | No: download |
+| Gemma 4 E2B QAT (S1) | No: download |
+| Qwen3.5-2B Q6 (S2) | No: download |
+| Later set: Gemma 4 26B A4B, Qwen3.6-27B, Gemma 4 31B (QAT and not) | Yes, all three folders |
+
+Also there, usable as optional extras: `Ministral-3-3B-Instruct-2512` (C1 candidate), `Ministral-3-14B-Reasoning-2512`, `gpt-oss-20b`, and older or specialist models (vision, OCR, a 70B) that are not candidates. Vision projector files (`mmproj-*.gguf`) are skipped: RANGE sends text only.
+
+### Previous estimate (before the inventory)
 
 What G3b will download, all on the owner's go-ahead and never automatically (D-20, D-21):
 

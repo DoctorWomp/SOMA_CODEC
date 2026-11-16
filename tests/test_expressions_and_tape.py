@@ -24,7 +24,8 @@ def test_who_can_show_what():
     assert {"greeting_light", "acknowledge_tilt", "listening", "stop_light", "waiting"} <= set(quad)
     assert set(rules.available(BODIES["wheeled_humanoid"], CATALOG)) == set(CATALOG)
     arm = rules.available(BODIES["quadruped_arm"], CATALOG)
-    assert "greeting" not in arm                                                       # the arm points, never waves
+    assert {"greeting", "stop"} <= set(arm)        # gripper wave and raised gripper (owner, 2026-11-16)
+    assert "acknowledge" not in arm                 # still no nod: no neck on a quadruped
 
 
 def test_refusal_reasons():

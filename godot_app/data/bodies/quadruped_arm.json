@@ -46,7 +46,10 @@
       "HEAD_TILT",
       "SIT_IN_PLACE",
       "POINT",
-      "HAND_OVER"
+      "HAND_OVER",
+      "WAVE",
+      "BECKON",
+      "RAISED_HAND"
     ],
     "expression_channels": [
       "SPEECH",

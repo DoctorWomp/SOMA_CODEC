@@ -70,7 +70,9 @@ def test_dimensions_are_plausible_and_sensors_sit_inside_the_body(body):
     ("wheeled_humanoid", {"WAVE", "POINT", "NOD", "BOW", "HAND_OVER", "HEAD_TILT"}, {"SIT_IN_PLACE"}),
     ("quadruped", {"HEAD_TILT", "SIT_IN_PLACE"},
      {"WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "OPEN_PALM", "HAND_OVER", "NOD", "SHAKE_HEAD", "BOW"}),
-    ("quadruped_arm", {"HEAD_TILT", "SIT_IN_PLACE", "POINT", "HAND_OVER"}, {"WAVE", "BECKON", "OPEN_PALM", "BOW"}),
+    # Gripper wave, beckon and raised gripper for "stop" (owner, 2026-11-16); never hand or finger gestures.
+    ("quadruped_arm", {"HEAD_TILT", "SIT_IN_PLACE", "POINT", "HAND_OVER", "WAVE", "BECKON", "RAISED_HAND"},
+     {"SMALL_WAVE", "OPEN_PALM", "BOW", "NOD", "SHAKE_HEAD"}),
 ])
 def test_gesture_permissions(body, body_id, allowed, refused):
     for gesture in allowed:
