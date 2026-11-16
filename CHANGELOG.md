@@ -10,8 +10,10 @@ All notable changes, by gate. Dates are when the work was done.
 
 ### Changed
 - ART_DIRECTION §6 and G3_PLAN's G3b section point to the proposed amendments.
+- D-55's core bake-off set narrowed to 4B–12B models (owner direction); MoE and large dense models moved to "later".
+- CLAUDE.md status: G3a merged 2026-11-15 (PR #12).
 
-## G3a — Agent runtime, no real model (2026-11-15; in review)
+## G3a — Agent runtime, no real model (2026-11-15; merged 2026-11-15)
 
 First part of G3 (`docs/gates/G3_PLAN.md`). G3b (a real model on the owner's PC) and G3c (two servers, NPC promotion) follow.
 

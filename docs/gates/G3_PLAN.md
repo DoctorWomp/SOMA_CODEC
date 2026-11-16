@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a BUILT, IN REVIEW (draft PR, 2026-11-15) · G3b and G3c planned · owner checks: [G3a_OWNER_CHECKLIST.md](G3a_OWNER_CHECKLIST.md)
+**Status:** G3a COMPLETE (merged 2026-11-15) · G3b and G3c planned · owner checks: [G3a_OWNER_CHECKLIST.md](G3a_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -144,7 +144,7 @@ What G3b will download, all on the owner's go-ahead and never automatically (D-2
 | Small reactive candidates: Qwen3.5-2B, Gemma 4 E2B (optional) | ~1.5–3 GB each | |
 | **Total for the whole bake-off** | **~25–35 GB of disk** | Files go in `G:\SOMA_CODEC\models\` (git-ignored) |
 
-**Proposed extension (D-55, [QUANTIZATION_OPTIONS.md](../QUANTIZATION_OPTIONS.md)):** add QAT and higher-precision variants, MoE models with experts partly in system RAM, KV cache q8_0 as a condition, and an offline prompt-set comparison. That raises the disk estimate to ~45–50 GB (core) or ~75–85 GB (everything).
+**Proposed extension (D-55, [QUANTIZATION_OPTIONS.md](../QUANTIZATION_OPTIONS.md)):** add QAT and higher-precision variants, MoE models with experts partly in system RAM, KV cache q8_0 as a condition, and an offline prompt-set comparison. Core set (owner direction 2026-11-16: 4B–12B first, QAT preferred, smaller models for C1 NPCs): ~35–40 GB.
 
 Sizes are estimates from published 4-bit file sizes for these model sizes; exact sizes are taken from the download pages before anything is fetched. Steps: a setup script that downloads only what the owner confirms and checks every file's hash; `configs/inference.yaml`; the bake-off on SB-04 and S001-style prompts (action-JSON validity, valid-action rate, p50/p95 latency, VRAM); then Option B (focal priority, slot pinning, deadline scheduler). `llama-server` listens on 127.0.0.1 only, so it needs no firewall rule.
 

@@ -75,34 +75,46 @@ Google ships small "drafter" models next to the Gemma 4 QAT checkpoints, and Qwe
 
 ## 4. Proposed bake-off matrix (G3b)
 
-Sizes are published file sizes where a source gave one; otherwise estimates marked ~. The owner confirms every download (D-20, D-21), and licenses are checked on each model card first.
+**Owner direction (2026-11-16):** start with **4B–12B models**, prefer QAT where it is offered, and use smaller models for background NPCs. Bigger MoE and dense models wait until the 4B–12B results are in.
 
-### Robot R (focal)
+Sizes are published figures where a source gave one, otherwise estimates marked ~. The owner confirms every download (D-20, D-21), and licenses are checked on each model card first. **Files the owner already has** (for example from LM Studio) can be registered by path and SHA-256 instead of downloaded again.
+
+### Core set (G3b)
+
+| ID | Role | Model | File | Approx. size | Why |
+|---|---|---|---|---|---|
+| F1 | Robot R | Qwen3.5-9B | UD-Q4_K_XL or Q4_K_M | ~6 GB | Baseline from D-20 |
+| F2 | Robot R | Qwen3.5-9B | Q6_K | ~7.5 GB | Same model, more bits: **measures what 4-bit costs us** |
+| F3 | Robot R | Gemma 4 12B | official QAT Q4_0 GGUF | 6.7 GB in memory (Google, weights + 20%) | QAT at the top of the size range |
+| N1 | Active NPCs (C2) | Gemma 4 E4B | official QAT Q4_0 GGUF | 4.5 GB in memory (Google) | QAT where small models are most fragile |
+| N2 | Active NPCs (C2) | Qwen3.5-4B | Q6_K | ~3.5 GB | High-precision control |
+| N3 | Active NPCs (C2) | Qwen3.5-4B | Q4_K_M | ~2.7 GB | **Measures small-model fragility** directly against N2 |
+| S1 | Reactive NPCs (C1) | Gemma 4 E2B | official QAT Q4_0 GGUF | 2.9 GB in memory (Google) | Short lines; also tried on the CPU (T16) |
+| S2 | Reactive NPCs (C1) | Qwen3.5-2B | Q6_K | ~1.8 GB | Same; kept at 6-bit because 2B models are the most fragile |
+
+Disk for the core set: **about 35–40 GB**.
+
+Background crowd (C0) uses **no model at all** (D-08, D-20): scripted routines only. "Smaller models for background NPCs" means the C1 reactive tier: staff answering a question, a guard.
+
+**Does it fit on 16 GB?** In Option C (INFERENCE_STRATEGY §4), the largest pairing adds up as follows. Every figure here is to be measured.
+
+| Item | Size |
+|---|---|
+| Gemma 4 12B QAT (Robot R) | 6.7 GB |
+| Gemma 4 E4B QAT (NPCs) | 4.5 GB |
+| Context caches | ~1.5–2 GB at f16, about half at q8_0 |
+| Godot | ~1–2 GB |
+| **Total** | **~14–15 GB, tight** |
+
+With the 9B at Q4 for Robot R, there's about 1 GB more headroom. Running the C1 model on the CPU instead (T16) frees its VRAM entirely.
+
+### Later, only if the core set falls short
 
 | ID | Model | File | Approx. size | Why |
 |---|---|---|---|---|
-| F1 | Qwen3.5-9B | UD-Q4_K_XL or Q4_K_M | ~6 GB | Baseline from D-20 |
-| F2 | Qwen3.5-9B | Q6_K | ~7.5 GB | Same model, more bits: **measures what 4-bit costs us** |
-| F3 | Gemma 4 12B | official QAT Q4_0 GGUF | 6.7 GB in memory (Google, weights + 20%) | QAT at the same size class |
-| F4 | Gemma 4 26B A4B | official QAT Q4_0 GGUF | 14.4 GB | Bigger model through MoE, with experts partly in system RAM |
-| F5 (optional) | Qwen3.6-35B-A3B | UD-Q4_K_XL | ~19–20 GB | Second MoE family; more offload needed |
-
-### Active NPCs
-
-| ID | Model | File | Approx. size | Why |
-|---|---|---|---|---|
-| N1 | Gemma 4 E4B | official QAT Q4_0 GGUF | 4.5 GB in memory (Google) | QAT where small models are most fragile |
-| N2 | Qwen3.5-4B | Q6_K | ~3.5 GB | High-precision control |
-| N3 | Qwen3.5-4B | Q4_K_M | ~2.7 GB | **Measures small-model fragility** directly against N2 |
-
-### Reactive NPCs (optional) and stepped-mode reference (optional)
-
-| ID | Model | File | Approx. size | Why |
-|---|---|---|---|---|
-| S1 | Gemma 4 E2B | official QAT Q4_0 GGUF | 2.9 GB in memory (Google) | |
-| R1 | Qwen3.5-27B or Gemma 4 31B | IQ3_XXS | ~11.5–12 GB | Big reference arm, stepped mode only |
-
-**Disk:** the core set (F1–F4, N1–N3) is roughly **45–50 GB**; with F5, S1 and R1 about **75–85 GB**. That's more than G3_PLAN's ~25–35 GB estimate, which assumed one 4-bit file per model. Files go in `G:\SOMA_CODEC\models\` (git-ignored).
+| F4 | Gemma 4 26B A4B (MoE) | official QAT Q4_0 GGUF | 14.4 GB | Bigger model; needs expert layers in system RAM |
+| F5 | Qwen3.6-35B-A3B (MoE) | UD-Q4_K_XL | ~19–20 GB | Second MoE family |
+| R1 | Qwen3.5-27B or Gemma 4 31B (dense) | IQ3_XXS | ~11.5–12 GB | Big reference arm, stepped mode only |
 
 ### Method
 
@@ -115,7 +127,7 @@ The second step is new; it is cheap and deterministic:
    - commitments kept (D-51);
    - tokens/s for prompt and generation, and VRAM.
 3. **Finalists** run SB-04 and S001 live and stepped, for p50/p95 latency against the 4 s deadline, T25 frame times with the model running, and scenario quality (D-20).
-4. **MoE candidates** sweep `--n-cpu-moe` (or `--fit`) to find the setting that leaves room for Godot and the NPC model, then report speed at that setting, not at the whole-card best case.
+4. **MoE candidates** (later set) sweep `--n-cpu-moe` (or `--fit`) to find the setting that leaves room for Godot and the NPC model, then report speed at that setting, not at the whole-card best case.
 
 **Record per run:** model file name, quant type, SHA-256, llama.cpp build and KV cache type, in the run manifest, so every result says exactly which file produced it.
 
