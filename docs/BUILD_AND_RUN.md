@@ -160,6 +160,8 @@ uv run python tools/models.py plan                      # core set: found, missi
 uv run python tools/models.py download F3 N1            # only what you name; SHA-256 checked
 uv run python tools/run_scenario.py SB04_POLITE_BID --model llama          # configs/inference.yaml
 uv run python tools/run_scenario.py SB04_POLITE_BID --model llama:F3       # another catalog model
+uv run python tools/bakeoff.py offline                  # bake-off on the committed prompt set (D-58)
+uv run python tools/bakeoff.py live --models F1 F3      # finalists: SB-04 live and stepped
 ```
 
 `--model llama-attach:PORT` uses a llama-server you started yourself (key in `RANGE_LLAMA_API_KEY`). Tests never need a model: `range_service/agents/standin.py` plays the server.
