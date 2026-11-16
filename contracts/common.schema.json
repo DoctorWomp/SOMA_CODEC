@@ -30,6 +30,12 @@
         "HAND_OVER"
       ]
     },
+    "prosody_factor": {
+      "description": "Motion prosody (D-54, D-56): how big (amplitude) or how fast (tempo) a gesture is played, 1 = the body's normal. Bounded 0.5-1.5; the body config's rig block may narrow it further and the body clamps to that. The world computes the gesture's duration from the clamped tempo.",
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 1.5
+    },
     "expression_channel": {
       "description": "Ways a body can express itself (D-14, D-19). SPEECH: voice, shown as a text bubble in RANGE. FACE: a readable face (a person's face, or a robot's visor glyph display). LIGHT: a Beacon light strip or visor light.",
       "enum": [

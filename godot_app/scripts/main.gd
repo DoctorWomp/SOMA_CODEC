@@ -6,6 +6,9 @@ extends Node3D
 ## Scenario mode (G3a, D-48), used by tools/run_scenario.py:
 ##   -- --scenario=SB04_POLITE_BID [--run-mode=STEPPED|LIVE] [--seed=N] [--journal=PATH]
 ##      [--bodies=robot_r:quadruped,...] [--link-port=PORT --link-agents=a,b] [--quit-when-done]
+##
+## Either mode: -- --no-pose keeps every robot in its rest pose (D-54: posing is presentation and
+## the journal is the same with it on or off).
 
 const MAP_ID := "sandbox_flats"
 
@@ -22,6 +25,8 @@ const MAP_ID := "sandbox_flats"
 @export var body_overrides := {}
 ## Scenario mode without --link-port (tests): connect to this port when above 0.
 @export var link_port := 0
+## Skeleton poses (gestures, gaze, wheels; D-54). Off with -- --no-pose.
+@export var posing := true
 
 var world: RangeWorld
 var demo: DemoRoutes
@@ -41,6 +46,7 @@ func _ready() -> void:
 		return
 	DisplayServer.window_set_title("SOMA RANGE — Sandbox Flats (G1)")
 	world = RangeWorld.new()
+	world.posing_enabled = posing
 	add_child(world)
 	if not world.build(MAP_ID, DemoRoutes.body_ids()):
 		push_error("main: could not build %s; see the errors above" % MAP_ID)
@@ -91,6 +97,8 @@ func _read_args() -> void:
 					body_overrides[parts[0]] = parts[1]
 		elif arg == "--quit-when-done":
 			quit_when_done = true
+		elif arg == "--no-pose":
+			posing = false
 
 
 ## Scenario mode: build the scenario's world and cast, link the agents, play the tape, end the run.
@@ -104,6 +112,7 @@ func _run_scenario() -> void:
 		return
 	DisplayServer.window_set_title("SOMA RANGE — %s (%s)" % [scenario_id, run_mode.to_lower()])
 	world = RangeWorld.new()
+	world.posing_enabled = posing
 	add_child(world)
 	world.sensing_enabled = false
 	if not world.build(String(scen["map"]), ScenarioPlayer.body_ids(scen, body_overrides)):

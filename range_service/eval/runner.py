@@ -54,6 +54,7 @@ class RunOptions:
     jitter_ms: int = 0
     timeout_s: float = 900.0
     godot_args: list[str] = field(default_factory=list)   # extra engine options, e.g. a renderer
+    posing: bool = True   # skeleton poses (presentation only, D-54); the journal is the same either way
 
 
 @dataclass
@@ -102,6 +103,8 @@ def godot_command(opts: RunOptions, scenario: dict[str, Any], run_dir: Path, por
             f"--link-agents={','.join(sorted(scenario['cast']))}", "--quit-when-done"]
     if opts.body_overrides:
         cmd.append("--bodies=" + ",".join(f"{a}:{b}" for a, b in sorted(opts.body_overrides.items())))
+    if not opts.posing:
+        cmd.append("--no-pose")
     return cmd
 
 

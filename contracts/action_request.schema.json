@@ -437,6 +437,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 160
+        },
+        "amplitude": {
+          "$ref": "common.schema.json#/$defs/prosody_factor"
+        },
+        "tempo": {
+          "$ref": "common.schema.json#/$defs/prosody_factor"
         }
       }
     },
@@ -555,7 +561,7 @@
       }
     },
     "args_express": {
-      "description": "Show an expression from the catalog: its gesture, glyph and light together (D-14, EXPRESSION_PRINCIPLES §1). The host refuses it if the body lacks any part.",
+      "description": "Show an expression from the catalog: its gesture, glyph and light together (D-14, EXPRESSION_PRINCIPLES §1). The host refuses it if the body lacks any part. Optional amplitude and tempo override the catalog entry's.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -567,6 +573,12 @@
         },
         "target_id": {
           "$ref": "common.schema.json#/$defs/nullable_id"
+        },
+        "amplitude": {
+          "$ref": "common.schema.json#/$defs/prosody_factor"
+        },
+        "tempo": {
+          "$ref": "common.schema.json#/$defs/prosody_factor"
         }
       }
     }

@@ -49,6 +49,23 @@
     "expression_channels": [
       "SPEECH",
       "LIGHT"
-    ]
+    ],
+    "rig": {
+      "skeleton": "QUADRUPED",
+      "head_turn_speed_deg_s": 150,
+      "gesture_amplitude": {
+        "min": 0.5,
+        "max": 1.5
+      },
+      "gesture_tempo": {
+        "min": 0.5,
+        "max": 1.5
+      },
+      "gait": {
+        "step_height_m": 0.06,
+        "step_length_m": 0.35,
+        "cadence_hz": 2.2
+      }
+    }
   }
 }

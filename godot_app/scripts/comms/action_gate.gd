@@ -30,7 +30,7 @@ const ARGS := {
 	"LOOK_AT": [[], ["point", "target_id"]],
 	"TURN_TO": [[], ["yaw_rad", "target_id"]],
 	"SPEAK": [["channel", "text"], ["addressee_id", "group_id", "disclosure_scope"]],
-	"GESTURE": [["gesture"], ["target_id", "sign_text"]],
+	"GESTURE": [["gesture"], ["target_id", "sign_text", "amplitude", "tempo"]],
 	"WAIT": [["duration_ms"], []],
 	"YIELD": [[], ["to_id"]],
 	"INTERACT": [["object_id", "affordance"], []],
@@ -42,7 +42,7 @@ const ARGS := {
 	"DECLINE_GROUP": [["group_id"], []],
 	"LEAVE_GROUP": [["group_id"], []],
 	"NO_OP": [[], []],
-	"EXPRESS": [["expression_id"], ["target_id"]],
+	"EXPRESS": [["expression_id"], ["target_id", "amplitude", "tempo"]],
 }
 const GESTURES := ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD", "OPEN_PALM", "BOW",
 	"HEAD_TILT", "SIT_IN_PLACE", "HAND_OVER"]
@@ -140,7 +140,7 @@ func _check_shape(req: Dictionary) -> String:
 			return "INVALID_SCHEMA"
 	match String(req["action"]):
 		"GESTURE":
-			if not GESTURES.has(args["gesture"]):
+			if not GESTURES.has(args["gesture"]) or not _prosody_ok(args):
 				return "INVALID_SCHEMA"
 		"SPEAK":
 			if not args["channel"] in ["LOCAL", "GROUP", "PA"] or not _is_text(args["text"]):
@@ -161,7 +161,23 @@ func _check_shape(req: Dictionary) -> String:
 		"EXPRESS":
 			if not args["expression_id"] is String or _expression_regex.search(args["expression_id"]) == null:
 				return "INVALID_SCHEMA"
+			if not _prosody_ok(args):
+				return "INVALID_SCHEMA"
 	return "OK"
+
+
+## Optional amplitude and tempo (D-56): numbers from 0.5 to 1.5 (the body narrows them further).
+func _prosody_ok(args: Dictionary) -> bool:
+	for key in ["amplitude", "tempo"]:
+		if args.has(key):
+			var v = args[key]
+			if not (v is float or v is int) or float(v) < RigSpec.PROSODY_MIN or float(v) > RigSpec.PROSODY_MAX:
+				return false
+	return true
+
+
+static func _prosody(args: Dictionary, key: String) -> float:
+	return float(args[key]) if args.has(key) else -1.0
 
 
 func _is_id(v) -> bool:
@@ -196,7 +212,8 @@ func _execute(agent: Avatar, action: String, args: Dictionary) -> Dictionary:
 				if who == null:
 					return {"reason_code": "TARGET_UNKNOWN"}
 				target = who.avatar_id
-			return world.comms.send_gesture(agent, String(args["gesture"]), target, String(args.get("sign_text", "")))
+			return world.comms.send_gesture(agent, String(args["gesture"]), target, String(args.get("sign_text", "")),
+				_prosody(args, "amplitude"), _prosody(args, "tempo"))
 		"SPEAK", "REQUEST_CLARIFICATION":
 			return _speak(agent, args if action == "SPEAK" else {"channel": "LOCAL", "text": args["text"],
 				"addressee_id": args.get("addressee_id")})
@@ -223,11 +240,15 @@ func _execute(agent: Avatar, action: String, args: Dictionary) -> Dictionary:
 					return {"reason_code": "TARGET_UNKNOWN"}
 				var v := who.global_position - agent.global_position
 				agent.turn_to(atan2(-v.x, -v.z))
+				if action == "LOOK_AT":
+					agent.look_toward(who.avatar_id)
 			elif args.has("yaw_rad"):
 				agent.turn_to(float(args["yaw_rad"]))
 			else:
 				var p: Dictionary = args["point"]
 				agent.turn_to(atan2(-(float(p["x"]) - agent.global_position.x), -(float(p["z"]) - agent.global_position.z)))
+				if action == "LOOK_AT":
+					agent.look_toward(Vector3(float(p["x"]), float(p.get("y", agent.sensor_mount_height)), float(p["z"])))
 			return ok
 		"EXPRESS":
 			var addressee = null
@@ -236,7 +257,8 @@ func _execute(agent: Avatar, action: String, args: Dictionary) -> Dictionary:
 				if who == null:
 					return {"reason_code": "TARGET_UNKNOWN"}
 				addressee = who.avatar_id
-			return world.comms.send_expression(agent, String(args["expression_id"]), addressee)
+			return world.comms.send_expression(agent, String(args["expression_id"]), addressee,
+				_prosody(args, "amplitude"), _prosody(args, "tempo"))
 		"WAIT", "NO_OP":
 			return ok
 		"YIELD":

@@ -54,6 +54,14 @@ const TESTS := [
 	"test_beacon_rendering_and_rate",
 	"test_scenario_tape_and_world_view",
 	"test_live_slow_model_t25_t27",
+	"test_rig_skeletons",
+	"test_rig_joint_limits",
+	"test_gesture_fits_world_duration",
+	"test_posed_hand_at_sense_point",
+	"test_pose_never_changes_the_world",
+	"test_wheels_spin_from_actual_speed",
+	"test_gaze_layer",
+	"test_gesture_prosody_actions",
 ]
 
 ## Where tests write journals and packets for tools/godot_check.py to validate in Python.
@@ -80,7 +88,7 @@ const ALLOWED_GESTURES := {
 	"wheeled_humanoid": ["WAVE", "SMALL_WAVE", "RAISED_HAND", "POINT", "BECKON", "NOD", "SHAKE_HEAD",
 		"OPEN_PALM", "BOW", "HEAD_TILT", "HAND_OVER"],
 	"quadruped": ["HEAD_TILT", "SIT_IN_PLACE"],
-	"quadruped_arm": ["HEAD_TILT", "SIT_IN_PLACE", "POINT", "HAND_OVER"],
+	"quadruped_arm": ["HEAD_TILT", "SIT_IN_PLACE", "POINT", "HAND_OVER", "WAVE", "BECKON", "RAISED_HAND"],   # gripper gestures: owner, 2026-11-16
 }
 
 ## SB-05 setup: start beside the stairs, goal on the platform, so the stairs are by far
@@ -380,14 +388,15 @@ func test_robot_models() -> String:
 			"HipL", "KneeR", "AnkleL", "BadgeFront", "ForearmBand1"],
 		"wheeled_humanoid": ["Head", "Visor", "EarPodL", "Torso", "ShoulderR", "WristR", "WheelFL", "WheelFR",
 			"WheelBL", "WheelBR", "ColumnLower", "ColumnUpper", "BadgeBack", "ForearmBand2"],
-		"quadruped": ["SensorHead", "Visor", "LensC", "VisorLight", "DorsalRail", "LegFL", "LegFR", "LegBL",
-			"LegBR", "BadgeL", "BadgeR", "TrimL3"],
-		"quadruped_arm": ["SensorHead", "Visor", "DorsalRail", "Arm", "ArmShoulder", "ArmElbow", "Gripper"],
+		# Rig step A (D-56): parts hang from bones named after the joints.
+		"quadruped": ["SensorHead", "Visor", "LensC", "VisorLight", "DorsalRail", "HipFlexFL", "KneeFR", "HipAbdBL",
+			"FootBR", "BadgeL", "BadgeR", "TrimL3"],
+		"quadruped_arm": ["SensorHead", "Visor", "DorsalRail", "ArmBase", "ArmShoulder", "ArmElbow", "ArmWrist", "Gripper"],
 	}
 	var no_parts := {
-		"legged_humanoid": ["WheelFL", "Arm"],
+		"legged_humanoid": ["WheelFL", "ArmBase", "TorsoMount"],
 		"wheeled_humanoid": ["HipL", "KneeL"],
-		"quadruped": ["Arm", "Gripper", "Head"],
+		"quadruped": ["ArmBase", "Gripper", "Head"],
 		"quadruped_arm": ["Head"],
 	}
 	var appearance := {"badge": "7", "trim": "robot_trim_teal", "bands": 3}
@@ -1827,3 +1836,454 @@ func test_live_slow_model_t25_t27() -> String:
 	world.end_run()
 	return ""
 
+
+
+# ---------- rig step A: skeletons, gestures, gaze, posture, wheels (D-54, D-56) ----------
+
+## Joint names per body, the same as range_service/bodies.py (tests/test_bodies.py pins them too).
+const EXPECTED_JOINTS := {
+	"legged_humanoid": ["AnkleL", "AnkleR", "ElbowL", "ElbowR", "FingersL", "FingersR", "HipL", "HipR",
+		"KneeL", "KneeR", "Neck", "ShoulderL", "ShoulderR", "SpineLower", "SpineUpper", "ThumbL", "ThumbR",
+		"ToeL", "ToeR", "WristL", "WristR"],
+	"wheeled_humanoid": ["ElbowL", "ElbowR", "FingersL", "FingersR", "Neck", "ShoulderL", "ShoulderR",
+		"SpineLower", "SpineUpper", "ThumbL", "ThumbR", "TorsoMount", "WristL", "WristR"],
+	"quadruped": ["HipAbdBL", "HipAbdBR", "HipAbdFL", "HipAbdFR", "HipFlexBL", "HipFlexBR", "HipFlexFL",
+		"HipFlexFR", "KneeBL", "KneeBR", "KneeFL", "KneeFR", "Neck"],
+	"quadruped_arm": ["ArmBase", "ArmElbow", "ArmShoulder", "ArmWrist", "Gripper", "HipAbdBL", "HipAbdBR",
+		"HipAbdFL", "HipAbdFR", "HipFlexBL", "HipFlexBR", "HipFlexFL", "HipFlexFR", "KneeBL", "KneeBR",
+		"KneeFL", "KneeFR", "Neck"],
+}
+## Gesture durations in ticks for clamped tempos, the same numbers as tests/test_bodies.py (D-56).
+const EXPECTED_DURATIONS := {0.5: 180, 0.8: 113, 1.0: 90, 1.2: 75, 1.5: 60}
+const ARM_JOINTS := ["ShoulderL", "ShoulderR", "ElbowL", "ElbowR", "WristL", "WristR", "ArmBase", "ArmShoulder",
+	"ArmElbow", "ArmWrist", "Gripper"]
+
+
+func _arm_angles(r: Rig) -> String:
+	var parts: PackedStringArray = []
+	for j in ARM_JOINTS:
+		if r.angles.has(j):
+			parts.append("%s=%s" % [j, r.angles[j]])
+	return ",".join(parts)
+
+
+## Largest difference (radians) between a rig's angles and its rest pose, root posture included.
+func _from_rest(r: Rig) -> float:
+	var rest := r.rest_angles()
+	var most := 0.0
+	for j in r.angles:
+		for axis in r.angles[j]:
+			most = maxf(most, absf(float(r.angles[j][axis]) - float(rest[j][axis])))
+	most = maxf(most, r.root_pose.basis.get_euler().length() + r.root_pose.origin.length())
+	return most
+
+
+## Every robot body has a skeleton built from its config: the expected joints, every part hanging
+## from a bone, and a rest pose inside the limits. Visitors have none yet (step C); bodies
+## without an arm have no arm bones.
+func test_rig_skeletons() -> String:
+	var w := await _world(ALL_BODIES)
+	if w == null:
+		return "world failed to build"
+	var x := 4.0
+	for body_id in ALL_BODIES:
+		var a := w.spawn_avatar(body_id, body_id, Vector3(x, 0, 16.5), 0.0)
+		x += 2.5
+		var r := a.rig()
+		if body_id == "human_walker":
+			if r != null or not a.rig_spec.is_empty():
+				return "the visitor has a skeleton; visitors are rig step C"
+			continue
+		if r == null:
+			return "%s has no skeleton" % body_id
+		var joints := r.angles.keys()
+		joints.sort()
+		if joints != EXPECTED_JOINTS[body_id]:
+			return "%s joints %s, expected %s" % [body_id, joints, EXPECTED_JOINTS[body_id]]
+		for mi in a.model.find_children("*", "MeshInstance3D", true, false):
+			var n: Node = mi
+			while n != a.model and not n is BoneAttachment3D:
+				n = n.get_parent()
+			if n == a.model:
+				return "%s part %s is not attached to a bone" % [body_id, mi.name]
+		var err := r.check_pose()
+		if err != "" or r.clamp_count > 0:
+			return "%s rest pose: %s %s" % [body_id, err, r.clamp_log]
+		if Array(a.body["gestures"]).has("WAVE") != (r.find_bone("ShoulderR") >= 0 or r.find_bone("ArmBase") >= 0):
+			return "%s: arm bones do not match whether it can wave" % body_id
+		if body_id == "quadruped" and (r.find_bone("ArmBase") >= 0 or r.find_bone("Gripper") >= 0):
+			return "the quadruped without an arm has arm bones"
+		var neck_yaw := r.limits("Neck", "yaw")
+		if absf(rad_to_deg(neck_yaw.x)) > 85.0 + 1e-3 or rad_to_deg(neck_yaw.y) > 85.0 + 1e-3:
+			return "%s head yaw limits %s exceed ±85° (D-54)" % [body_id, neck_yaw]
+	for tempo in EXPECTED_DURATIONS:
+		if RigSpec.gesture_duration_ticks(tempo) != EXPECTED_DURATIONS[tempo]:
+			return "tempo %.2f lasts %d ticks, expected %d" % [tempo, RigSpec.gesture_duration_ticks(tempo), EXPECTED_DURATIONS[tempo]]
+	return ""
+
+
+## No joint ever passes its limit: every gesture each body can make, at the extremes of amplitude
+## and tempo, while the head follows targets behind, above and below and the bodies drive and turn.
+## Every bone carries exactly the rotation its clamped angles describe, and no layer ever asks for
+## more than a joint allows (Rig counts each clamp; there must be none). Bodies without an arm
+## never move one, and head and posture gestures leave the arms alone.
+func test_rig_joint_limits() -> String:
+	var w := await _world(ROBOT_BODIES + ["human_walker"])
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["legged_humanoid", "legged_humanoid", 4.0, 16.5, 0.0],
+		["wheeled_humanoid", "wheeled_humanoid", 7.5, 16.5, 0.0], ["quadruped", "quadruped", 11.0, 16.5, 0.0],
+		["quadruped_arm", "quadruped_arm", 14.5, 16.5, 0.0], ["watcher", "human_walker", 9.0, 19.0, PI]])
+	var prosody := [[0.5, 0.5], [1.5, 1.5], [1.5, 0.6]]
+	var rounds := 11
+	var checked := 0
+	for r_i in rounds:
+		for p_i in prosody.size():
+			var longest := 0
+			for body_id in ROBOT_BODIES:
+				var a: Avatar = av[body_id]
+				var gestures: Array = ALLOWED_GESTURES[body_id]
+				var g := String(gestures[(r_i + p_i) % gestures.size()])
+				var rest_arms := _arm_angles(a.rig())
+				if not a.perform_gesture(g, "", float(prosody[p_i][0]), float(prosody[p_i][1])):
+					return "%s refused %s" % [body_id, g]
+				a.set_meta("rest_arms", rest_arms if g in ["NOD", "SHAKE_HEAD", "HEAD_TILT", "BOW", "SIT_IN_PLACE"] else "")
+				longest = maxi(longest, int(a.active_gesture(w.clock.tick)["until_tick"]) - w.clock.tick)
+				# Gaze targets all round: the watcher, behind and above, low in front, far to the side.
+				match (r_i + p_i) % 4:
+					0:
+						a.look_toward("watcher")
+					1:
+						a.look_toward(a.global_position + Vector3(0.3, 2.5, 2.0))
+					2:
+						a.look_toward(a.global_position + Vector3(0.0, -0.5, -0.8))
+					3:
+						a.look_toward(a.global_position + Vector3(-4.0, 1.0, 0.5))
+				if r_i % 3 == 1:
+					a.navigate_to(w.ground_point(a.global_position.x, 14.5 if a.global_position.z > 15.5 else 16.5))
+				elif r_i % 3 == 2:
+					a.turn_to(a.rotation.y + PI * 0.75)
+			for t_i in longest + 3:
+				await get_tree().physics_frame
+				for body_id in ROBOT_BODIES:
+					var a: Avatar = av[body_id]
+					var rig := a.rig()
+					var err := rig.check_pose()
+					if err != "":
+						return "%s at tick %d (%s): %s" % [body_id, w.clock.tick, a.current_gesture, err]
+					if rig.clamp_count > 0:
+						return "%s asked beyond a joint limit during %s: %s" % [body_id, a.current_gesture, rig.clamp_log]
+					var rest_arms := String(a.get_meta("rest_arms"))
+					if rest_arms != "" and _arm_angles(rig) != rest_arms:
+						return "%s moved an arm during %s" % [body_id, a.current_gesture]
+					checked += 1
+	if checked < 4 * rounds * prosody.size() * 60:
+		return "only %d poses checked" % checked
+	return ""
+
+
+## Each gesture finishes inside its world duration: the world sets the event's duration from the
+## clamped tempo (90 ticks / tempo), the pose leaves the rest pose during it and is exactly back
+## at rest by the event's last tick. A body clamps tempo and amplitude to its rig range.
+func test_gesture_fits_world_duration() -> String:
+	var w := await _world(ROBOT_BODIES)
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["legged_humanoid", "legged_humanoid", 4.0, 16.5, 0.0],
+		["wheeled_humanoid", "wheeled_humanoid", 7.5, 16.5, 0.0], ["quadruped", "quadruped", 11.0, 16.5, 0.0],
+		["quadruped_arm", "quadruped_arm", 14.5, 16.5, 0.0]])
+	for tempo in [0.5, 0.8, 1.0, 1.5]:
+		for r_i in 11:
+			var ends := {}
+			for body_id in ROBOT_BODIES:
+				var a: Avatar = av[body_id]
+				var gestures: Array = ALLOWED_GESTURES[body_id]
+				if r_i >= gestures.size():
+					continue
+				a.perform_gesture(String(gestures[r_i]), "", 1.0, tempo)
+				var shown := a.active_gesture(w.clock.tick)
+				var expected := RigSpec.gesture_duration_ticks(RigSpec.clamp_prosody(a.rig_spec, "tempo", tempo))
+				if int(shown["until_tick"]) - int(shown["start_tick"]) != expected:
+					return "%s %s at tempo %.1f lasts %d ticks, expected %d" % [body_id, gestures[r_i], tempo,
+						int(shown["until_tick"]) - int(shown["start_tick"]), expected]
+				ends[body_id] = {"until": int(shown["until_tick"]), "mid": int(shown["start_tick"]) + expected / 2.0,
+					"moved": false, "gesture": gestures[r_i]}
+			if ends.is_empty():
+				continue
+			var last := 0
+			for body_id in ends:
+				last = maxi(last, int(ends[body_id]["until"]))
+			while w.clock.tick < last + 2:
+				await get_tree().physics_frame
+				for body_id in ends:
+					var e: Dictionary = ends[body_id]
+					var d := _from_rest(av[body_id].rig())
+					if w.clock.tick < int(e["until"]) and d > 1e-3:
+						e["moved"] = true
+					if w.clock.tick >= int(e["until"]) and d > 1e-4:
+						return "%s %s at tempo %.1f is still posed at tick %d, its event ended at %d" % [
+							body_id, e["gesture"], tempo, w.clock.tick, e["until"]]
+			for body_id in ends:
+				if not ends[body_id]["moved"]:
+					return "%s %s at tempo %.1f never left the rest pose" % [body_id, ends[body_id]["gesture"], tempo]
+	# Clamping to the body's rig range (configs/bodies: quadruped_arm's tempo range 0.7-1.3).
+	var q: Avatar = av["quadruped_arm"]
+	var range_t: Vector2 = q.rig_spec["tempo"]
+	q.perform_gesture("WAVE", "", 1.5, 1.5)
+	var g := q.active_gesture(w.clock.tick)
+	if not is_equal_approx(float(g["tempo"]), range_t.y) or int(g["until_tick"]) - int(g["start_tick"]) != RigSpec.gesture_duration_ticks(range_t.y):
+		return "quadruped_arm did not clamp tempo 1.5 to its range %s: %s" % [range_t, g]
+	return ""
+
+
+## The posed hand is within 10 cm of the sense model's HAND point at the gesture's peak (halfway),
+## for every hand gesture, at every amplitude, with the bodies turned to an arbitrary heading.
+## Head gestures: the head stays within 10 cm of the sense model's HEAD point.
+func test_posed_hand_at_sense_point() -> String:
+	var w := await _world(ROBOT_BODIES)
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["legged_humanoid", "legged_humanoid", 4.0, 16.5, 0.7],
+		["wheeled_humanoid", "wheeled_humanoid", 7.5, 16.5, -2.2], ["quadruped", "quadruped", 11.0, 16.5, 1.9],
+		["quadruped_arm", "quadruped_arm", 14.5, 16.5, 0.7]])
+	var worst := 0.0
+	var measured := 0
+	for amp in [0.5, 1.0, 1.5]:
+		for r_i in 11:
+			var peaks := {}
+			for body_id in ROBOT_BODIES:
+				var gestures: Array = ALLOWED_GESTURES[body_id]
+				if r_i >= gestures.size() or gestures[r_i] in ["BOW", "SIT_IN_PLACE"]:
+					continue
+				var a: Avatar = av[body_id]
+				a.perform_gesture(String(gestures[r_i]), "", amp)
+				var shown := a.active_gesture(w.clock.tick)
+				peaks[body_id] = {"tick": int(shown["start_tick"]) + roundi((int(shown["until_tick"]) - int(shown["start_tick"])) / 2.0),
+					"gesture": String(gestures[r_i]), "until": int(shown["until_tick"])}
+			var last := 0
+			for body_id in peaks:
+				last = maxi(last, int(peaks[body_id]["until"]))
+			while w.clock.tick < last + 1:
+				await get_tree().physics_frame
+				for body_id in peaks:
+					if w.clock.tick != int(peaks[body_id]["tick"]):
+						continue
+					var a: Avatar = av[body_id]
+					var g := String(peaks[body_id]["gesture"])
+					var want: Vector3 = SenseModel.sample_points(a, g)["HAND"]
+					var at: Vector3
+					if SenseModel.HEAD_GESTURES.has(g):
+						var head: Node3D = a.model.find_child("Head" if a.kind != "QUADRUPED" else "HeadShell", true, false)
+						at = head.global_position
+					elif a.kind == "QUADRUPED":
+						at = (a.rig().attach("Gripper").find_child("HandCenter", false, false) as Node3D).global_position
+					else:
+						at = (a.rig().attach("WristR").find_child("HandCenter", false, false) as Node3D).global_position
+					var dist := at.distance_to(want)
+					worst = maxf(worst, dist)
+					measured += 1
+					if dist > 0.10:
+						return "%s %s (amplitude %.1f): hand at %s, sense HAND point %s, %.3f m apart" % [
+							body_id, g, amp, _v(at), _v(want), dist]
+	if measured < 3 * 20:
+		return "only %d peaks measured" % measured
+	print("  note  posed hand vs sense HAND point: worst %.3f m over %d gesture peaks" % [worst, measured])
+	return ""
+
+
+## Pose is presentation (D-54): the demo's journal is byte-identical with posing on or off, and
+## the same tick gives the same pose in two runs with posing on.
+func test_pose_never_changes_the_world() -> String:
+	var digests: Array[String] = []
+	var poses: Array = []
+	for run in [["pose_a", true], ["pose_b", true], ["pose_off", false]]:
+		var main: Node = load("res://scenes/main.tscn").instantiate()
+		main.journal_path = artifacts_dir.path_join(String(run[0]) + ".jsonl")
+		main.run_seed = 11
+		main.posing = run[1]
+		add_child(main)
+		_node = main
+		var trace := {}
+		var last_tick := -1
+		for i in 60 * 30:
+			await get_tree().physics_frame
+			if main.world != null and main.world.clock.tick != last_tick and main.world.clock.tick % 5 == 0:
+				last_tick = main.world.clock.tick
+				var row: PackedStringArray = []
+				for a in main.world.avatar_list():
+					if (a as Avatar).rig() != null:
+						row.append((a as Avatar).rig().digest())
+				trace[last_tick] = "|".join(row)
+			if main.demo != null and main.demo.finished:
+				break
+		if main.demo == null or not main.demo.finished:
+			return "the demo did not finish in %s" % run[0]
+		digests.append(main.world.end_run())
+		poses.append(trace)
+		await _cleanup()
+	if digests[0] == "" or digests.count(digests[0]) != digests.size():
+		return "journals differ with posing on, on and off: %s (pose must never change the world, D-54)" % [digests]
+	var changes := 0
+	var compared := 0
+	var previous := ""
+	for tick in poses[0]:
+		if not poses[1].has(tick):
+			continue   # the first sampled frame can differ by one sample between runs
+		compared += 1
+		if poses[1][tick] != poses[0][tick]:
+			return "two runs with posing on gave different poses at tick %d" % tick
+		if previous != "" and poses[0][tick] != previous:
+			changes += 1
+		previous = poses[0][tick]
+	if compared < poses[0].size() - 2:
+		return "only %d of %d sampled ticks were in both runs" % [compared, poses[0].size()]
+	if changes < 20:
+		return "the demo's poses changed only %d times; posing does not seem to run" % changes
+	var off_values := {}
+	for tick in poses[2]:
+		off_values[poses[2][tick]] = true
+	if off_values.size() != 1:
+		return "with posing off the robots still moved their joints"
+	return ""
+
+
+## Wheels spin from the body's measured travel, not from the speed asked for: rolling forward
+## matches the distance covered, pushing against a wall leaves them still, and turning on the spot
+## spins the two sides opposite ways (skid steer, never sideways; D-33).
+func test_wheels_spin_from_actual_speed() -> String:
+	var w := await _world(["wheeled_humanoid"])
+	if w == null:
+		return "world failed to build"
+	var a := w.spawn_avatar("robot", "wheeled_humanoid", Vector3(19.0, 0, 9.0), PI)   # facing +z, partition_b at z 12.9
+	await _ticks(3)
+	var r := a.rig()
+	var spun := {"WheelFL": 0.0, "WheelFR": 0.0}
+	var before := {"WheelFL": float(r.spin["WheelFL"]), "WheelFR": float(r.spin["WheelFR"])}
+	var start := a.global_position
+	a.drive(Vector3(0, 0, 0.8))
+	var stalled_spin := 0.0
+	var stalled_ticks := 0
+	var last_pos := a.global_position
+	for i in 60 * 6:
+		await get_tree().physics_frame
+		var step := 0.0
+		for wheel in spun:
+			step = wrapf(float(r.spin[wheel]) - float(before[wheel]), -PI, PI)
+			spun[wheel] = float(spun[wheel]) + step
+			before[wheel] = float(r.spin[wheel])
+		var moved := a.global_position.distance_to(last_pos)
+		last_pos = a.global_position
+		if a.speed > 0.3 and moved < 1e-5 and i > 60:
+			stalled_ticks += 1
+			stalled_spin += absf(step)
+	var travelled := Vector2(a.global_position.x - start.x, a.global_position.z - start.z).length()
+	var expected := -travelled / HumanoidModel.WHEEL_RADIUS_M
+	if absf(float(spun["WheelFL"]) - expected) > 0.05 or absf(float(spun["WheelFR"]) - expected) > 0.05:
+		return "wheels turned %.3f / %.3f rad for %.3f m travelled; expected %.3f" % [spun["WheelFL"], spun["WheelFR"], travelled, expected]
+	if stalled_ticks < 60:
+		return "the robot never stalled against partition_b (%d ticks)" % stalled_ticks
+	if stalled_spin > 1e-3:
+		return "wheels spun %.4f rad while the body pushed against the wall without moving" % stalled_spin
+	# Turning on the spot: left and right turn opposite ways.
+	a.stop()
+	await _ticks(5)
+	var left0 := float(r.spin["WheelBL"])
+	var right0 := float(r.spin["WheelBR"])
+	a.turn_to(a.rotation.y + PI / 4)
+	await _ticks(20)
+	var dl := wrapf(float(r.spin["WheelBL"]) - left0, -PI, PI)
+	var dr := wrapf(float(r.spin["WheelBR"]) - right0, -PI, PI)
+	if not (dl * dr < 0.0 and absf(dl) > 0.05):
+		return "turning on the spot spun the wheels %.3f (left) and %.3f (right); expected opposite" % [dl, dr]
+	return ""
+
+
+## Gaze: LOOK_AT turns the head toward the target at the body's head speed and never past ±85°;
+## a gesture with a target looks at it; when the hold ends the head comes back to the front.
+func test_gaze_layer() -> String:
+	var w := await _world(["legged_humanoid", "quadruped", "human_walker"])
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["robot", "legged_humanoid", 6.0, 16.5, 0.0], ["dog", "quadruped", 9.0, 16.5, 0.0],
+		["visitor", "human_walker", 4.0, 15.5, 0.0]])
+	var robot: Avatar = av["robot"]
+	var dog: Avatar = av["dog"]
+	robot.look_toward("visitor", 120)
+	dog.look_toward(dog.global_position + Vector3(0, 0.5, 3.0), 120)   # straight behind
+	var speed := float(robot.rig_spec["head_turn_speed"]) / 60.0
+	var prev := 0.0
+	for i in 100:
+		await get_tree().physics_frame
+		var yaw := float(robot.rig().angles["Neck"]["yaw"])
+		if absf(yaw - prev) > speed + 1e-5:
+			return "the head turned %.4f rad in one tick; head speed allows %.4f" % [absf(yaw - prev), speed]
+		prev = yaw
+	# The visitor is ahead-left: x 2 m to the left, 1 m ahead → about +63° (positive = left).
+	var want := atan2(2.0, 1.0)
+	if absf(prev - want) > deg_to_rad(6.0):
+		return "the head looks %.1f°, expected about %.1f° toward the visitor" % [rad_to_deg(prev), rad_to_deg(want)]
+	var dog_yaw := absf(float(dog.rig().angles["Neck"]["yaw"]))
+	if absf(dog_yaw - deg_to_rad(85.0)) > 1e-3:
+		return "a target straight behind should hold the head at 85°, got %.2f°" % rad_to_deg(dog_yaw)
+	await _ticks(150)
+	if absf(float(robot.rig().angles["Neck"]["yaw"])) > 1e-4:
+		return "the head did not come back to the front when the gaze hold ended"
+	# A gesture with an addressee looks at them.
+	w.comms.send_gesture(robot, "WAVE", "visitor")
+	await _ticks(40)
+	if float(robot.rig().angles["Neck"]["yaw"]) < deg_to_rad(30.0):
+		return "waving at the visitor did not turn the head toward them"
+	return ""
+
+
+## Optional amplitude and tempo on GESTURE and EXPRESS (D-56): checked by the action gate,
+## clamped by the body, recorded in the journal only when given, and the duration follows tempo.
+func test_gesture_prosody_actions() -> String:
+	var w := await _world(["legged_humanoid", "quadruped_arm"])
+	if w == null:
+		return "world failed to build"
+	var path := artifacts_dir.path_join("prosody.jsonl")
+	w.start_run(5, path)
+	var av := await _place(w, [["robot", "legged_humanoid", 6.0, 16.5, 0.0], ["dog", "quadruped_arm", 9.0, 16.5, 0.0]])
+	var gate := w.actions
+	var t := w.clock.tick
+	var cases := [
+		["robot", "GESTURE", {"gesture": "WAVE", "amplitude": 2.0}, "INVALID_SCHEMA"],
+		["robot", "GESTURE", {"gesture": "WAVE", "tempo": "fast"}, "INVALID_SCHEMA"],
+		["robot", "GESTURE", {"gesture": "WAVE", "amplitude": 1.3, "tempo": 1.25}, "OK"],
+		["dog", "GESTURE", {"gesture": "WAVE", "tempo": 1.5}, "OK"],
+		["robot", "EXPRESS", {"expression_id": "acknowledge", "tempo": 0.4}, "INVALID_SCHEMA"],
+	]
+	var n := 0
+	for c in cases:
+		n += 1
+		var res: Dictionary = gate.submit(_req(String(c[0]), t, String(c[1]), c[2], n), ["robot", "dog"])
+		if res["reason_code"] != c[3]:
+			return "%s %s gave %s, expected %s" % [c[0], c[2], res["reason_code"], c[3]]
+	await _ticks(25)
+	n += 1
+	var res2: Dictionary = gate.submit(_req("robot", w.clock.tick, "EXPRESS", {"expression_id": "acknowledge", "tempo": 0.8}, n), ["robot"])
+	if res2["reason_code"] != "OK":
+		return "EXPRESS with a tempo was refused: %s" % res2["reason_code"]
+	n += 1
+	await _ticks(70)
+	gate.submit(_req("robot", w.clock.tick, "GESTURE", {"gesture": "NOD"}, n), ["robot"])
+	w.end_run()
+	var performed := []
+	for line in FileAccess.get_file_as_string(path).split("\n", false):
+		var e: Dictionary = JSON.parse_string(line)
+		if e["kind"] == "GESTURE_PERFORMED":
+			performed.append(e["payload"])
+	if performed.size() != 4:
+		return "expected 4 GESTURE_PERFORMED entries, got %d" % performed.size()
+	var p0: Dictionary = performed[0]
+	if not is_equal_approx(float(p0["amplitude"]), 1.3) or not is_equal_approx(float(p0["tempo"]), 1.25) or int(p0["duration_ms"]) != SimClock.ms_at(72):
+		return "the first wave was journaled as %s (expected amplitude 1.3, tempo 1.25, 72 ticks)" % p0
+	var dog_range: Vector2 = av["dog"].rig_spec["tempo"]
+	if not is_equal_approx(float(performed[1]["tempo"]), dog_range.y):
+		return "the quadruped's tempo 1.5 was not clamped to its range %s: %s" % [dog_range, performed[1]]
+	if int(performed[2]["duration_ms"]) != SimClock.ms_at(113) or not is_equal_approx(float(performed[2]["tempo"]), 0.8):
+		return "EXPRESS tempo 0.8 should give a 113-tick nod, got %s" % performed[2]
+	if performed[3].has("amplitude") or performed[3].has("tempo") or int(performed[3]["duration_ms"]) != SimClock.ms_at(90):
+		return "a gesture without prosody must journal exactly as before: %s" % performed[3]
+	return ""

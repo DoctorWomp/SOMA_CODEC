@@ -12,5 +12,7 @@
   "unknown_channel": "enum",
   "unknown_collider_shape": "enum",
   "unknown_field": "additionalProperties",
-  "unknown_gesture": "enum"
+  "unknown_gesture": "enum",
+  "rig_unknown_skeleton": "enum",
+  "rig_unknown_axis": "enum"
 }

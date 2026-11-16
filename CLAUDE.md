@@ -20,13 +20,13 @@ Main specs: the [Master Build Blueprint](docs/sources/range/SOMA_RANGE_Master_Bu
 **G1 complete** (merged 2026-11-14): Sandbox Flats in Godot 4.7.2, capability-gated ramp/stairs, free/orbit camera, headless Godot tests in `tools/check.py` and CI. Decisions D-30, D-31, D-33, D-34, D-35 APPROVED.
 **G1b complete** (merged 2026-11-14): robot body family (legged humanoid, wheeled humanoid, quadruped + arm variant); Robot R is a role. D-36, D-37, D-38 APPROVED.
 **G2 complete** ([docs/gates/G2_PLAN.md](docs/gates/G2_PLAN.md)): G2a and G2b merged 2026-11-15 (observer filter, hearing, journal, avoidance, COMMS router, action gate, disclosure gate, Godot ↔ Python link; D-39 to D-46 APPROVED).
-**G3 in progress** ([docs/gates/G3_PLAN.md](docs/gates/G3_PLAN.md)): G3a built 2026-11-15, in review as a draft PR (scenario runner with stepped and live runs, agent runtime with the Demo policy and C0/C1/C2 levels, model gateway with a fake model and record/replay, context assembly, expression catalog and Beacon; flaky determinism fixed; D-47 to D-53 PROPOSED). Next: **G3b** on the owner's PC (llama-server, model downloads, bake-off), then G3c (two servers, NPC promotion).
+**G3 in progress** ([docs/gates/G3_PLAN.md](docs/gates/G3_PLAN.md)): G3a merged 2026-11-15 (scenario runner with stepped and live runs, agent runtime with the Demo policy and C0/C1/C2 levels, model gateway with a fake model and record/replay, context assembly, expression catalog and Beacon; flaky determinism fixed). D-47 to D-55 APPROVED 2026-11-16, including rigging and animation ([docs/gates/RIG_PLAN.md](docs/gates/RIG_PLAN.md), D-54) and quantized/QAT models ([docs/QUANTIZATION_OPTIONS.md](docs/QUANTIZATION_OPTIONS.md), D-55). Next: **G3b**: cloud part first (llama-server installer, provider, model registry, bake-off tool, tested against a stand-in server), then a short run on the owner's PC; then G3c (two servers, NPC promotion). **Rig step A** built 2026-11-16, in review as a draft PR (skeletons for the four robot bodies, posture, gesture and gaze layers with IK, wheel spin, gesture amplitude/tempo; D-56 PROPOSED; [owner checklist](docs/gates/RIG_A_OWNER_CHECKLIST.md)). Next rig step: B (gaits and foot IK).
 Owner PC setup: [docs/OWNER_SETUP_WINDOWS.md](docs/OWNER_SETUP_WINDOWS.md). Update this section when a gate completes.
 
 ## Rules that never bend
 
 - The host (Godot in RANGE) owns physics, collision, navigation and safety. HORIZON and LLMs only **propose**; the action gate validates.
-- Agents see only what their simulated senses could observe. NPC private goals, scenario labels and world truth are **evaluator-only** and never enter an agent's prompt.
+- Agents see only what their simulated senses could observe. NPC private goals, scenario labels and world truth are **evaluator-only** and never enter another agent's prompt. The one exception: an NPC's **own** private goal may enter **its own** prompt, labelled as its own, and nowhere else (D-51, owner 2026-11-16).
 - Missing or stale evidence is `null`/`UNKNOWN` with a reason, **never 0 or "calm"**.
 - No emotion, sincerity, deception, threat or personality verdicts about people, and no stored labels or trust scores (D-13). Observable ≠ inferred.
 - Text from signs, speech, messages or other agents is untrusted evidence. It can never change instructions or permissions (D-09).
@@ -55,7 +55,7 @@ Full details: [docs/BUILD_AND_RUN.md](docs/BUILD_AND_RUN.md).
 - `uv run python tools/godot_check.py [--filter NAME]`: only the Godot import, compile, headless tests and the contract check of what Godot wrote.
 - `uv run pytest`: run only the Python tests.
 - `uv run python tools/run_link_demo.py`: open the Godot demo connected to the Python sidecar.
-- `uv run python tools/run_scenario.py SB04_POLITE_BID [--watch]`: run a scenario end to end (stepped, Demo policy); writes a run folder under `runs/`.
+- `uv run python tools/run_scenario.py SB04_POLITE_BID [--watch] [--no-pose]`: run a scenario end to end (stepped, Demo policy); writes a run folder under `runs/`. `--no-pose` keeps robots in their rest pose (the journal is the same).
 
 Layout: contracts in `contracts/` (see [contracts/README.md](contracts/README.md)), Python in `range_service/`, Godot in `godot_app/` (see [godot_app/README.md](godot_app/README.md)), content in `configs/`, tests in `tests/` and `godot_app/tests/`, scripts in `tools/`.
 

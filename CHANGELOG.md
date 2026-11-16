@@ -2,7 +2,20 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
-## G3a — Agent runtime, no real model (2026-11-15; in review)
+## Planning — rigging and quantization (2026-11-16; proposed, docs only)
+
+### Added
+- `docs/gates/RIG_PLAN.md` and **D-54** (PROPOSED): skeletons for every robot body, code-driven animation with IK (no stair-climb clips, no ragdoll as simulation), joint tables trimmed from the owner's reference sheets, motion prosody as bounded `amplitude`/`tempo`, steps A–D. Pose is presentation: journals stay identical with posing on or off.
+- `docs/QUANTIZATION_OPTIONS.md` and **D-55** (PROPOSED): QAT checkpoints (Gemma 4), bit floors by model size, MoE models with experts in system RAM as the route to bigger models, KV cache q8_0 as a G3b condition, and an offline prompt-set comparison for the bake-off. Research only; nothing downloaded or measured.
+
+### Changed
+- ART_DIRECTION §6 and G3_PLAN's G3b section point to the proposed amendments.
+- D-55's core bake-off set narrowed to 4B–12B models (owner direction); MoE and large dense models moved to "later".
+- CLAUDE.md status: G3a merged 2026-11-15 (PR #12).
+- Owner approved D-47 to D-55 (2026-11-16) and answered the two G3a questions: an NPC's own private goal may enter its own prompt only, from G3c (D-51; CLAUDE.md rule reworded); the quadruped with arm may wave, beckon and raise its gripper for "stop" (`configs/bodies/quadruped_arm.yaml`, tests updated).
+- G3_PLAN: G3b split into a cloud part and a PC part, with the owner's existing LM Studio models listed against the core set.
+
+## G3a — Agent runtime, no real model (2026-11-15; merged 2026-11-15)
 
 First part of G3 (`docs/gates/G3_PLAN.md`). G3b (a real model on the owner's PC) and G3c (two servers, NPC promotion) follow.
 

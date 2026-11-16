@@ -40,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=None, help="run folder (default: runs/<scenario>_<seed>_<time>)")
     parser.add_argument("--watch", action="store_true", help="open the Godot window instead of running headless")
     parser.add_argument("--jitter-ms", type=int, default=0, help="test: random delay before each agent answer")
+    parser.add_argument("--no-pose", action="store_true",
+                        help="keep robots in their rest pose (posing is presentation; the journal is the same)")
     parser.add_argument("--godot-arg", action="append", default=[], metavar="ARG",
                         help="extra Godot option, e.g. --godot-arg=--rendering-method --godot-arg=gl_compatibility")
     args = parser.parse_args(argv)
@@ -54,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         overrides[avatar_id] = body_id
     opts = RunOptions(args.scenario, godot, mode=args.mode.upper(), model=args.model, seed=args.seed,
                       body_overrides=overrides, out_dir=args.out, headless=not args.watch, jitter_ms=args.jitter_ms,
-                      godot_args=args.godot_arg)
+                      godot_args=args.godot_arg, posing=not args.no_pose)
     try:
         result = asyncio.run(run_scenario(opts))
     except RunError as exc:

@@ -3,5 +3,6 @@
   "strobe_pattern": "enum",
   "glyph_too_long": "pattern",
   "glyph_without_text": "minProperties",
-  "held_too_long": "maximum"
+  "held_too_long": "maximum",
+  "tempo_without_gesture": "dependentRequired"
 }

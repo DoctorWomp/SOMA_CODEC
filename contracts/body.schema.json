@@ -232,6 +232,121 @@
       "items": {
         "$ref": "common.schema.json#/$defs/expression_channel"
       }
+    },
+    "rig": {
+      "description": "Optional skeleton settings (D-54, D-56; docs/gates/RIG_PLAN.md). Pose is presentation only: nothing here changes the collider, movement, senses or journal. Without this block a robot body gets its family's defaults (the skeleton follows from kind and arms). Joint names and axes per family are listed in RIG_PLAN.md and checked by tools/validate_configs.py.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "skeleton"
+      ],
+      "properties": {
+        "skeleton": {
+          "description": "Skeleton family. HUMANOID: legged and wheeled humanoids (the wheeled one has a torso mount and wheels instead of legs). QUADRUPED: a rigid body with four 3-joint legs and a 3-axis head.",
+          "enum": [
+            "HUMANOID",
+            "QUADRUPED"
+          ]
+        },
+        "arm_module": {
+          "description": "Adds the 7-bone arm module (dorsal mount). Needs arms >= 1. Default: true for a quadruped with an arm.",
+          "type": "boolean"
+        },
+        "joint_limits_deg": {
+          "description": "Overrides of the family's joint limits, per joint and axis, e.g. {Neck: {yaw: [-60, 60]}}. Head yaw is never beyond +/-85 degrees.",
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Z][A-Za-z]{1,23}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "enum": [
+                "yaw",
+                "pitch",
+                "roll",
+                "flex",
+                "curl",
+                "abduct",
+                "open"
+              ]
+            },
+            "additionalProperties": {
+              "description": "[min, max] in degrees.",
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "number",
+                "minimum": -360,
+                "maximum": 360
+              }
+            }
+          }
+        },
+        "head_turn_speed_deg_s": {
+          "description": "How fast the head turns toward a gaze target.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 720
+        },
+        "gesture_amplitude": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "min",
+            "max"
+          ],
+          "properties": {
+            "min": {
+              "$ref": "common.schema.json#/$defs/prosody_factor"
+            },
+            "max": {
+              "$ref": "common.schema.json#/$defs/prosody_factor"
+            }
+          },
+          "description": "The range this body clamps a gesture's amplitude to. Must include 1."
+        },
+        "gesture_tempo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "min",
+            "max"
+          ],
+          "properties": {
+            "min": {
+              "$ref": "common.schema.json#/$defs/prosody_factor"
+            },
+            "max": {
+              "$ref": "common.schema.json#/$defs/prosody_factor"
+            }
+          },
+          "description": "The range this body clamps a gesture's tempo to. Must include 1."
+        },
+        "gait": {
+          "description": "Gait parameters for legged bodies, used from rig step B (foot IK).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "step_height_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 0.5
+            },
+            "step_length_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1.5
+            },
+            "cadence_hz": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 5
+            }
+          }
+        }
+      }
     }
   }
 }

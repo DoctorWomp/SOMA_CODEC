@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "action_request_id": "act_robot_r_0008",
+  "agent_id": "robot_r",
+  "based_on_tick_id": 246,
+  "action": "GESTURE",
+  "args": {
+    "gesture": "WAVE",
+    "target_id": "anon_k3j9x2m1qa",
+    "amplitude": 0.7,
+    "tempo": 1.2
+  }
+}

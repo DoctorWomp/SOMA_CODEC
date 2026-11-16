@@ -42,6 +42,9 @@ var avoidance_map: RID
 var held := false
 var held_samples := 0               # samples at which the world waited for agents
 var sensing_enabled := true         # a scenario turns senses on when it starts
+## Skeleton poses (D-54, D-56): presentation only, evaluated after every avatar moved in a tick.
+## Off: robots keep their rest pose. The journal is byte-identical either way (tested).
+var posing_enabled := true
 var run_active := false             # between start_run() and end_run()
 var _hold_reasons := {}
 ## The tick at which every navigation map could answer queries (-1 until then). Map updates run
@@ -91,6 +94,7 @@ func build(map_id: String, body_ids: Array) -> bool:
 	actions = ActionGate.new()
 	add_child(actions)
 	actions.setup(self)
+	add_child(PoseStep.new(self))
 	add_child(TickGate.new(self))
 	return true
 
@@ -129,6 +133,23 @@ class TickGate extends Node:
 	func _physics_process(_delta: float) -> void:
 		if not world._hold_reasons.is_empty() and not world.held:
 			world._set_held(true)
+
+
+## Poses every avatar's skeleton from this tick's world state, after all movement (avatars run at
+## priority 0) and before a hold applies. Reads the world, writes only bone poses (D-54).
+class PoseStep extends Node:
+	var world: RangeWorld
+
+	func _init(target_world: RangeWorld) -> void:
+		world = target_world
+		name = "PoseStep"
+		process_physics_priority = 900
+
+	func _physics_process(_delta: float) -> void:
+		if not world.posing_enabled:
+			return
+		for a in world.avatar_list():
+			(a as Avatar).update_pose(world.clock.tick)
 
 
 static func _area(zone: Dictionary) -> float:

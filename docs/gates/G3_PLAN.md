@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a BUILT, IN REVIEW (draft PR, 2026-11-15) · G3b and G3c planned · owner checks: [G3a_OWNER_CHECKLIST.md](G3a_OWNER_CHECKLIST.md)
+**Status:** G3a COMPLETE (merged 2026-11-15) · G3b and G3c planned · owner checks: [G3a_OWNER_CHECKLIST.md](G3a_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -75,7 +75,7 @@ The link gains one envelope type, `link.step` (`SAMPLE_SENT` from Godot after a 
 - **Untrusted text stays labelled** (D-09): heard speech appears only as quoted evidence; the agent's own `reason_summary` is never fed back.
 - **Logged per call:** tokens per section, items cut and why, compression steps run.
 - **Token counts are estimates in G3a** (a fixed characters-per-token rule, labelled `approx_chars_v1`). CONTEXT_MEMORY_STRATEGY requires the real tokenizer: G3b swaps in `llama-server`'s tokenizer and re-checks every budget.
-- **Private goals in prompts:** in G3a no NPC is model-driven, and **no private goal appears in any assembled context**. Whether an NPC's *own* private goal may enter *its own* prompt (D-13 allows it; CLAUDE.md's rule reads stricter) is an owner question before G3c.
+- **Private goals in prompts:** in G3a no NPC is model-driven, and **no private goal appears in any assembled context**. *Owner decision 2026-11-16 (D-51):* from G3c an NPC's *own* private goal may enter *its own* prompt, labelled, and never anyone else's.
 
 ### Expression (EXPRESSION_PRINCIPLES §1)
 
@@ -132,7 +132,25 @@ The link gains one envelope type, `link.step` (`SAMPLE_SENT` from Godot after a 
 
 **Needs the owner's PC:** watching SB-04 and SB-05 with `--watch` (Forward+ renderer, real GPU), the Beacon's look, and everything in G3b.
 
-## G3b plan (owner's PC; nothing to do yet)
+## G3b plan
+
+**Owner direction (2026-11-16):** 4B–12B models first, QAT preferred, smaller models for C1 NPCs (D-55); as standalone as possible (D-21 note). G3b is split: a **cloud part** (everything that needs no GPU, tested against a stand-in OpenAI-compatible server) and a short **PC part** (install, register models, run the bake-off, paste the results back).
+
+**What the owner already has** (LM Studio folder `G:\.lmstudio\models\lmstudio-community`, folder names from a screenshot; the exact files and quantizations inside are not known yet and are read by the registry tool):
+
+| Needed for the core set (D-55) | On the PC already? |
+|---|---|
+| Qwen3.5-9B (F1 Q4, F2 Q6) | `Qwen3.5-9B-GGUF`: yes; which quantizations, to check |
+| Gemma 4 12B QAT (F3) | `gemma-4-12B-it-QAT-GGUF`: yes |
+| Gemma 4 E4B QAT (N1) | Only `gemma-4-E4B-it-GGUF` (not QAT). Use it as a non-QAT comparison; the QAT file is a download |
+| Qwen3.5-4B (N2 Q6, N3 Q4) | No: download |
+| Gemma 4 E2B QAT (S1) | No: download |
+| Qwen3.5-2B Q6 (S2) | No: download |
+| Later set: Gemma 4 26B A4B, Qwen3.6-27B, Gemma 4 31B (QAT and not) | Yes, all three folders |
+
+Also there, usable as optional extras: `Ministral-3-3B-Instruct-2512` (C1 candidate), `Ministral-3-14B-Reasoning-2512`, `gpt-oss-20b`, and older or specialist models (vision, OCR, a 70B) that are not candidates. Vision projector files (`mmproj-*.gguf`) are skipped: RANGE sends text only.
+
+### Previous estimate (before the inventory)
 
 What G3b will download, all on the owner's go-ahead and never automatically (D-20, D-21):
 
@@ -143,6 +161,8 @@ What G3b will download, all on the owner's go-ahead and never automatically (D-2
 | NPC candidates: Gemma 4 E4B, Qwen3.5-4B | ~2.5–5 GB each | |
 | Small reactive candidates: Qwen3.5-2B, Gemma 4 E2B (optional) | ~1.5–3 GB each | |
 | **Total for the whole bake-off** | **~25–35 GB of disk** | Files go in `G:\SOMA_CODEC\models\` (git-ignored) |
+
+**Proposed extension (D-55, [QUANTIZATION_OPTIONS.md](../QUANTIZATION_OPTIONS.md)):** add QAT and higher-precision variants, MoE models with experts partly in system RAM, KV cache q8_0 as a condition, and an offline prompt-set comparison. Core set (owner direction 2026-11-16: 4B–12B first, QAT preferred, smaller models for C1 NPCs): ~35–40 GB.
 
 Sizes are estimates from published 4-bit file sizes for these model sizes; exact sizes are taken from the download pages before anything is fetched. Steps: a setup script that downloads only what the owner confirms and checks every file's hash; `configs/inference.yaml`; the bake-off on SB-04 and S001-style prompts (action-JSON validity, valid-action rate, p50/p95 latency, VRAM); then Option B (focal priority, slot pinning, deadline scheduler). `llama-server` listens on 127.0.0.1 only, so it needs no firewall rule.
 

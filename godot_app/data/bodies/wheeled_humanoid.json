@@ -59,6 +59,18 @@
       "SPEECH",
       "FACE",
       "LIGHT"
-    ]
+    ],
+    "rig": {
+      "skeleton": "HUMANOID",
+      "head_turn_speed_deg_s": 180,
+      "gesture_amplitude": {
+        "min": 0.5,
+        "max": 1.5
+      },
+      "gesture_tempo": {
+        "min": 0.5,
+        "max": 1.5
+      }
+    }
   }
 }
