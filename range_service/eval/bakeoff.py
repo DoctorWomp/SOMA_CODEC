@@ -60,11 +60,40 @@ def offline_gate(actions: list[dict[str, Any]], item: dict[str, Any]) -> list[st
     return found
 
 
+_OPEN_LINE = re.compile(r"^- OPEN (?:mem_\S+ )?-\d+s to ([^:]+):", re.MULTILINE)
+PROMISE_TARGET_ARGS = ("addressee_id", "target_id", "to_id")
+
+
+def promised_to(item: dict[str, Any]) -> set[str]:
+    """Who the agent has open promises to: from the item's reference (prompts_v2) or, for older
+    sets, read off the COMMITMENTS section of the prompt the agent was shown."""
+    ref = item["reference"].get("promised_to")
+    if ref is not None:
+        return set(ref)
+    found: set[str] = set()
+    for group in _OPEN_LINE.findall(item["prompt"]):
+        found |= {t.strip() for t in group.split(",") if t.strip().startswith("anon_")}
+    return found
+
+
 def kept_commitment(actions: list[dict[str, Any]], item: dict[str, Any]) -> bool | None:
-    """None when the situation did not call for keeping a promise (the Demo policy kept none)."""
+    """Flagged: did an action set ``fulfills_commitment``? None when the situation did not call for
+    keeping a promise (the Demo policy kept none)."""
     if not item["reference"].get("demo_fulfilled"):
         return None
     return any(a.get("fulfills_commitment") for a in actions)
+
+
+def kept_in_behavior(actions: list[dict[str, Any]], item: dict[str, Any]) -> bool | None:
+    """Kept in behavior: did an action address, face, approach or gesture at a person the agent
+    had promised to help, flag or no flag? None outside promise situations, or when the prompt
+    names nobody the promise was made to."""
+    if not item["reference"].get("demo_fulfilled"):
+        return None
+    targets = promised_to(item)
+    if not targets:
+        return None
+    return any(a.get("args", {}).get(k) in targets for a in actions for k in PROMISE_TARGET_ARGS)
 
 
 # ---------- per-condition scoring ----------
@@ -85,6 +114,10 @@ def score_item(item: dict[str, Any], result: Any) -> dict[str, Any]:
         "signature": [signature(a) for a in actions],
         "gate_ok": bool(actions) and not problems, "gate_problems": problems,
         "kept": kept_commitment(actions, item),
+        "kept_behavior": kept_in_behavior(actions, item),
+        # Every answer that could not be used, raw, with why (to diagnose failures like F2's).
+        "invalid_answers": [{"attempt": c.get("attempt"), "outcome": c.get("outcome"), "error": c.get("error"),
+                             "response_text": c.get("response_text")} for c in calls if c.get("outcome") != "VALID"],
         "prompt_tps": round(processed / t["prefill_ms"] * 1000, 1) if t.get("prefill_ms") and processed > 0 else None,
         "gen_tps": round(first["generated_tokens"] / t["generation_ms"] * 1000, 1)
         if t.get("generation_ms") and first.get("generated_tokens") else None,
@@ -104,6 +137,7 @@ def _median(values: list[float | None]) -> float | None:
 
 def summarize_condition(items: list[dict[str, Any]]) -> dict[str, Any]:
     kept = [i["kept"] for i in items if i["kept"] is not None]
+    behaved = [i.get("kept_behavior") for i in items if i.get("kept_behavior") is not None]
     return {
         "n": len(items),
         "valid_before_repair": _rate([i["first_valid"] for i in items]),
@@ -112,6 +146,8 @@ def summarize_condition(items: list[dict[str, Any]]) -> dict[str, Any]:
         "valid_action_rate": _rate([i["gate_ok"] for i in items]),
         "commitments_kept": _rate(kept) if kept else None,
         "commitments_note": None if kept else "no prompt in the set called for keeping a promise",
+        "commitments_kept_behavior": _rate(behaved) if behaved else None,
+        "invalid_answers": sum(len(i.get("invalid_answers", [])) for i in items),
         "prompt_tps_median": _median([i["prompt_tps"] for i in items]),
         "gen_tps_median": _median([i["gen_tps"] for i in items]),
         "latency_ms_p50": _median([i["total_ms"] for i in items]),
@@ -140,9 +176,34 @@ def reference_for(model: dict[str, Any], others: list[dict[str, Any]]) -> dict[s
 
 # ---------- VRAM ----------
 
-def vram_mib(pid: int | None) -> tuple[int | None, str | None]:
-    """GPU memory used by one process, from nvidia-smi. (None, reason) when it cannot be read."""
-    exe = shutil.which("nvidia-smi")
+def _smi() -> str | None:
+    return shutil.which("nvidia-smi")
+
+
+def gpu_memory_used_mib() -> int | None:
+    """Total memory in use on the first GPU (nvidia-smi), or None."""
+    exe = _smi()
+    if exe is None:
+        return None
+    try:
+        out = subprocess.run([exe, "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    first = out.strip().splitlines()[0].strip() if out.strip() else ""
+    return int(first) if first.isdigit() else None
+
+
+VRAM_DELTA_NOTE = ("measured as the change in total GPU memory from before the server started to after it was "
+                   "ready (per-process memory is N/A, as nvidia-smi reports on Windows)")
+
+
+def vram_mib(pid: int | None, total_before: int | None = None) -> tuple[int | None, str | None]:
+    """GPU memory used by one server process. First nvidia-smi's per-process figure; where that is
+    N/A (Windows/WDDM) or missing, the change in total GPU memory since ``total_before`` (taken
+    just before the server started). (None, reason) when neither can be read. A note with a
+    value says how it was measured."""
+    exe = _smi()
     if exe is None:
         return None, "nvidia-smi not found (no NVIDIA GPU or driver)"
     if pid is None:
@@ -152,11 +213,42 @@ def vram_mib(pid: int | None) -> tuple[int | None, str | None]:
                              capture_output=True, text=True, timeout=20).stdout
     except (OSError, subprocess.TimeoutExpired) as exc:
         return None, f"nvidia-smi failed: {exc}"
+    listed = False
     for line in out.splitlines():
         parts = [p.strip() for p in line.split(",")]
-        if len(parts) == 2 and parts[0] == str(pid) and parts[1].isdigit():
-            return int(parts[1]), None
-    return None, "the server process uses no GPU memory (CPU build, or layers not offloaded)"
+        if len(parts) == 2 and parts[0] == str(pid):
+            listed = True
+            if parts[1].isdigit():
+                return int(parts[1]), None
+    if total_before is not None:
+        now = gpu_memory_used_mib()
+        if now is not None and now > total_before:
+            return now - total_before, VRAM_DELTA_NOTE
+        return None, ("per-process memory is not reported and total GPU memory did not grow after the server "
+                      "started (were any layers offloaded?)")
+    why = "reported as N/A" if listed else "not listed"
+    return None, f"the server's per-process GPU memory is {why} by nvidia-smi, and no before/after total was taken"
+
+
+class Progress:
+    """One console line rewritten in place. Each update pads over the previous text, so a shorter
+    line never leaves old characters behind (bake-off bug 2026-11-17)."""
+
+    def __init__(self, stream: Any = None) -> None:
+        import sys   # noqa: PLC0415
+        self.stream = stream or sys.stdout
+        self._width = 0
+
+    def update(self, text: str) -> None:
+        self.stream.write("\r" + text.ljust(self._width))
+        self.stream.flush()
+        self._width = max(self._width, len(text))
+
+    def done(self) -> None:
+        if self._width:
+            self.stream.write("\n")
+            self.stream.flush()
+        self._width = 0
 
 
 # ---------- report ----------
@@ -171,7 +263,7 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
     offline = results.get("offline", [])
     if offline:
         lines += ["## Offline prompt set", "",
-                  "| Model | Quant | KV | n | Valid before repair | Repair | Final valid | Valid actions | Promises kept | "
+                  "| Model | Quant | KV | n | Valid before repair | Repair | Final valid | Valid actions | Promises kept (flag / behavior) | "
                   "Agree vs higher precision | Agree q8_0 vs f16 | Prompt tok/s | Gen tok/s | p50 ms | VRAM MiB |",
                   "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
 
@@ -183,7 +275,7 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
             akv = c.get("agreement_kv")
             lines.append(f"| {c['label']} {c['model']} | {c['quant']}{' QAT' if c['qat'] else ''} | {c['kv']} | {s['n']} | "
                          f"{f(s['valid_before_repair'])} | {f(s['repair_rate'])} | {f(s['final_valid'])} | "
-                         f"{f(s['valid_action_rate'])} | {f(s['commitments_kept'])} | "
+                         f"{f(s['valid_action_rate'])} | {f(s['commitments_kept'])} / {f(s.get('commitments_kept_behavior'))} | "
                          f"{f(ag['first_action']) + ' vs ' + ag['reference'] if ag else '–'} | {f(akv['first_action']) if akv else '–'} | "
                          f"{f(s['prompt_tps_median'])} | {f(s['gen_tps_median'])} | {f(s['latency_ms_p50'])} | "
                          f"{c['vram_mib'] if c['vram_mib'] is not None else '– (' + str(c['vram_note']) + ')'} |")
@@ -198,6 +290,10 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
                          f"{r['fallbacks']} | {r['p50_ms']} | {r['p95_ms']} | {r['journal'][:12]} |")
         lines.append("")
     lines += ["Agreement = share of prompts where both conditions chose the same first action (and its key argument). "
-              "Valid actions = the offline action-gate check. – = not measured (see results.json for the reason)."]
+              "Valid actions = the offline action-gate check. Promises kept: *flag* = the answer set "
+              "`fulfills_commitment`; *behavior* = it addressed, faced, approached or gestured at the person it had "
+              "promised to help. VRAM: per process, or the change in total GPU memory where per-process memory is N/A "
+              "(see vram_note). Every unusable answer is saved raw in results.json (`invalid_answers`). "
+              "– = not measured (see results.json for the reason)."]
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, md_path

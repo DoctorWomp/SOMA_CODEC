@@ -119,24 +119,26 @@ def cmd_build_set(args: argparse.Namespace) -> int:
 async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, limit: int | None) -> dict:
     setup = build_llama(entry["id"], kv_cache_type=kv, inference=inf,
                         log_path=RESULTS / f"server_{entry['label']}_{kv}.log")
+    total_before = bk.gpu_memory_used_mib()     # for Windows, where per-process memory is N/A
     started = time.perf_counter()
     await setup.gateway.start()
     load_s = round(time.perf_counter() - started, 1)
     proc = setup.provider.server.process if setup.provider.server else None
-    vram, note = bk.vram_mib(proc.pid if proc else None)
+    vram, note = bk.vram_mib(proc.pid if proc else None, total_before)
     scored = []
+    progress = bk.Progress()
+    todo = items[:limit] if limit else items
     try:
-        for n, item in enumerate(items[:limit] if limit else items, start=1):
+        for n, item in enumerate(todo, start=1):
             result = await setup.gateway.decide(agent_id=item["agent_id"], tier=item["tier"], prompt=item["prompt"],
                                                 prompt_sha256=item["prompt_sha256"], max_tokens=item["max_tokens"],
                                                 allowed_actions=item["allowed_actions"], tick=item["based_on_tick_id"])
             s = bk.score_item(item, result)
             scored.append(s)
-            print(f"\r  {entry['label']} {kv}: {n}/{len(items[:limit] if limit else items)} "
-                  f"({'ok' if s['final_valid'] else s['fallback']})   ", end="", flush=True)
+            progress.update(f"  {entry['label']} {kv}: {n}/{len(todo)} ({'ok' if s['final_valid'] else s['fallback']})")
     finally:
+        progress.done()
         await setup.gateway.stop()
-    print()
     return {"label": entry["label"], "id": entry["id"], "model": entry["model"], "quant": entry["quant"],
             "qat": entry["qat"], "kv": kv, "sha256": setup.model.sha256, "load_s": load_s,
             "vram_mib": vram, "vram_note": note, "summary": bk.summarize_condition(scored), "items": scored}

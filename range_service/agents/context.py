@@ -44,8 +44,9 @@ BUDGETS: dict[str, dict[str, int]] = {
     # ~600 estimated tokens, so guardrails got more and observations less than §4.1's starting split.
     "FOCAL": {"GUARDRAILS": 650, "IDENTITY": 300, "COMMITMENTS": 200, "SETTING": 200, "FACTS": 350,
               "EPISODES": 350, "CONVERSATION": 750, "OBSERVATIONS": 800, "DECISION": 150},
-    "C2": {"GUARDRAILS": 600, "IDENTITY": 200, "COMMITMENTS": 100, "SETTING": 100, "FACTS": 100,
-           "EPISODES": 100, "CONVERSATION": 300, "OBSERVATIONS": 300, "DECISION": 100},
+    # G3c-1 (D-59): C2 guardrails +50 for the promise-keeping rule, taken from observations.
+    "C2": {"GUARDRAILS": 650, "IDENTITY": 200, "COMMITMENTS": 100, "SETTING": 100, "FACTS": 100,
+           "EPISODES": 100, "CONVERSATION": 300, "OBSERVATIONS": 250, "DECISION": 100},
     "C1": {"GUARDRAILS": 150, "IDENTITY": 120, "COMMITMENTS": 60, "SETTING": 0, "FACTS": 0,
            "EPISODES": 0, "CONVERSATION": 80, "OBSERVATIONS": 0, "DECISION": 90},
 }
@@ -114,7 +115,8 @@ class ContextAssembler:
         lines = []
         for item in memory.open_commitments():
             to = ", ".join(item["audience_present"]) or "nobody in particular"
-            lines.append(f"- OPEN {ago(now_ms, item['observed_at_ms'])} to {to}: {item['content']['text'][:120]}")
+            lines.append(f"- OPEN {item['memory_id']} {ago(now_ms, item['observed_at_ms'])} to {to}: "
+                         f"{item['content']['text'][:120]}")
         for item in memory.items:
             if item["store"] == "COMMITMENTS_AND_REFUSALS" and item["content"].get("commitment_state") == "DECLINED" \
                     and now_ms - item["observed_at_ms"] <= 300_000:

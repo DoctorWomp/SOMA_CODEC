@@ -213,7 +213,10 @@ def install_from_source(jobs: int) -> int:
     try:
         subprocess.run(["cmake", "-S", str(src), "-B", str(build), *generator, "-DCMAKE_BUILD_TYPE=Release",
                         "-DLLAMA_CURL=OFF", "-DLLAMA_BUILD_TESTS=OFF", "-DLLAMA_BUILD_EXAMPLES=OFF",
-                        "-DBUILD_SHARED_LIBS=OFF"], check=True)
+                        "-DBUILD_SHARED_LIBS=OFF",
+                        # No web UI: RANGE runs the server with --no-webui, and the prebuilt UI is a
+                        # separate download from Hugging Face that can change under the pinned tag.
+                        "-DLLAMA_BUILD_UI=OFF", "-DLLAMA_USE_PREBUILT_UI=OFF"], check=True)
         subprocess.run(["cmake", "--build", str(build), "--target", "llama-server", "-j", str(jobs)], check=True)
     except subprocess.CalledProcessError as exc:
         print(f"error: the build failed ({exc.cmd[0]} exited with {exc.returncode}); see the output above.\n"

@@ -101,3 +101,97 @@ def test_report_writes_markdown_and_json(tmp_path):
     text = m.read_text()
     assert "| F1 Qwen3.5-9B | Q4_K_M | f16 | 1 | 100% |" in text and "6100" in text and "| LIVE | yes |" in text
     assert json.loads(Path(j).read_text())["offline"][0]["vram_mib"] == 6100
+
+
+# ---------- regression tests for the measurement bugs found in the first bake-off (2026-11-17, D-58) ----------
+
+class _Smi:
+    """A fake nvidia-smi: per-process memory as Windows reports it (N/A), and total memory that grows."""
+
+    def __init__(self, per_process: str, totals: list[int]) -> None:
+        self.per_process = per_process
+        self.totals = list(totals)
+
+    def __call__(self, cmd, **_kw):
+        out = self.per_process if "--query-compute-apps=pid,used_memory" in cmd else f"{self.totals.pop(0)}\n"
+        return type("R", (), {"stdout": out})()
+
+
+def test_vram_falls_back_to_the_change_in_total_gpu_memory_on_windows(monkeypatch):
+    monkeypatch.setattr(bk.shutil, "which", lambda _name: "nvidia-smi")
+    monkeypatch.setattr(bk.subprocess, "run", _Smi("4242, [N/A]\n", [1200, 8300]))
+    before = bk.gpu_memory_used_mib()
+    mib, note = bk.vram_mib(4242, before)
+    assert mib == 7100 and "change in total GPU memory" in note
+    assert "CPU" not in note                    # the old message blamed a CPU build
+
+
+def test_vram_never_blames_a_cpu_build_when_it_cannot_measure(monkeypatch):
+    monkeypatch.setattr(bk.shutil, "which", lambda _name: "nvidia-smi")
+    monkeypatch.setattr(bk.subprocess, "run", _Smi("4242, [N/A]\n", []))
+    mib, note = bk.vram_mib(4242)
+    assert mib is None and "N/A" in note and "CPU" not in note
+    monkeypatch.setattr(bk.subprocess, "run", _Smi("4242, 6100\n", []))
+    assert bk.vram_mib(4242) == (6100, None)    # per-process memory still wins where it is reported
+
+
+PROMISE = dict(ITEM, prompt="## COMMITMENTS\n- OPEN mem_robot_r_00012 -40s to anon_k3j9x2m1qa: Help them after "
+                            "the current conversation.\n## OBSERVATIONS\n- anon_k3j9x2m1qa: OBSERVED")
+
+
+def test_promise_kept_in_behavior_is_scored_apart_from_the_flag():
+    spoke = bk.score_item(PROMISE, _result([{"action": "SPEAK", "args": {"channel": "LOCAL", "text": "Thanks for waiting!",
+                                                                         "addressee_id": "anon_k3j9x2m1qa"}}]))
+    assert spoke["kept"] is False and spoke["kept_behavior"] is True          # what F3 did: kept, not flagged
+    walked = bk.score_item(PROMISE, _result([{"action": "MOVE_TO", "args": {"target_id": "anon_k3j9x2m1qa"}}]))
+    assert walked["kept_behavior"] is True                                   # what F1 did: approached
+    waited = bk.score_item(PROMISE, _result([{"action": "WAIT", "args": {"duration_ms": 1000}}]))
+    assert waited["kept"] is False and waited["kept_behavior"] is False
+    s = bk.summarize_condition([spoke, walked, waited])
+    assert s["commitments_kept"] == 0.0 and s["commitments_kept_behavior"] == 0.667
+    assert bk.promised_to(PROMISE) == {"anon_k3j9x2m1qa"}
+    assert bk.promised_to(dict(PROMISE, reference={"demo_fulfilled": True, "promised_to": ["anon_aaaaaaaaaa"]})) \
+        == {"anon_aaaaaaaaaa"}
+
+
+def test_the_prompt_shows_promise_ids_and_when_to_set_the_flag():
+    from range_service.agents import guardrails
+    from tests.agent_helpers import CONFIGS, Scene, robot
+
+    body = CONFIGS.items["bodies"]["wheeled_humanoid"]
+    text = guardrails.guardrails_section("FOCAL", ["SPEAK", "WAIT"], body, [])
+    assert "OPEN promises are listed under COMMITMENTS with an id" in text and '"fulfills_commitment": true' in text
+    rt = robot()
+    memory_id = rt.memory.commit("Help them after the current conversation.", "anon_k3j9x2m1qa", now_ms=0)["memory_id"]
+    job = rt.observe(Scene().see("anon_k3j9x2m1qa", 16, 9).packet())
+    assert f"- OPEN {memory_id} " in job.assembled.prompt
+    assert bk.promised_to({"reference": {}, "prompt": job.assembled.prompt}) == {"anon_k3j9x2m1qa"}
+
+
+def test_every_unusable_answer_is_kept_raw_with_its_error():
+    calls = [{"attempt": 0, "outcome": "INVALID_OUTPUT", "error": "the answer is not valid JSON",
+              "response_text": "Sure! I'll wave.", "prompt_tokens": 9, "cached_tokens": 0, "generated_tokens": 5,
+              "timings": {"prefill_ms": 1, "generation_ms": 1, "total_ms": 2}},
+             {"attempt": 1, "outcome": "INVALID_OUTPUT", "error": "action 1: 'FLY' is not one of your actions",
+              "response_text": '{"actions": [{"action": "FLY", "args": {}}]}', "prompt_tokens": 9, "cached_tokens": 0,
+              "generated_tokens": 5, "timings": {"prefill_ms": 1, "generation_ms": 1, "total_ms": 2}}]
+    s = bk.score_item(ITEM, GatewayResult([{"action": "WAIT", "args": {"duration_ms": 1000}}], None, calls,
+                                          {"action": "WAIT", "reason": "INVALID_OUTPUT"}))
+    assert [a["response_text"] for a in s["invalid_answers"]] == ["Sure! I'll wave.", '{"actions": [{"action": "FLY", "args": {}}]}']
+    assert s["invalid_answers"][1]["error"].startswith("action 1") and s["invalid_answers"][0]["attempt"] == 0
+    assert bk.summarize_condition([s])["invalid_answers"] == 2
+    ok = bk.score_item(ITEM, _result([{"action": "WAIT", "args": {"duration_ms": 1}}]))
+    assert ok["invalid_answers"] == []
+
+
+def test_progress_line_never_leaves_old_text_behind():
+    import io
+
+    out = io.StringIO()
+    p = bk.Progress(out)
+    p.update("  F1 f16: 9/40 (PROVIDER_ERROR)")
+    p.update("  F1 f16: 10/40 (ok)")
+    p.done()
+    last = out.getvalue().split("\r")[-1]
+    assert last.rstrip("\n").rstrip() == "  F1 f16: 10/40 (ok)"
+    assert len(last.rstrip("\n")) >= len("  F1 f16: 9/40 (PROVIDER_ERROR)")   # padded over the longer line
