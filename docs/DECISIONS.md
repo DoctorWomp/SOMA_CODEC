@@ -738,3 +738,29 @@ Choices made while building step A that D-54 and the plan left open:
 
   These are plumbing checks, not results: nothing about GPU speed, VRAM or decision quality was measured.
 - **Not in G3b-1:** the priority scheduler (Option B) and the bake-off tool (G3b-2), the Ollama provider (D-21 alternative; not needed while llama-server is bundled), two servers (Option C, G3c), and context-aware schemas (for example offering GROUP only to an agent in a group).
+
+## D-58 — G3b-2 as built: priority scheduler (Option B) and the bake-off tool
+**Status:** PROPOSED (2026-11-16), G3b-2. Builds INFERENCE_STRATEGY step 3 (T4, T12), D-20 and D-55. Owner steps: [gates/G3b_OWNER_CHECKLIST.md](gates/G3b_OWNER_CHECKLIST.md) §6–§8.
+
+- **Scheduler** (`range_service/agents/scheduler.py`, `configs/inference.yaml` `scheduler`; default `mode: PRIORITY`).
+  - **Reserved slots:** `reserved_slots` engine slots (default 1) belong to pinned agents (Robot R). A pinned agent always gets its own slot and never queues.
+  - **No borrowing of Robot R's slot:** every other agent uses only the shared slots, so NPC prompts never evict Robot R's cached prefix. The granted slot id is sent to llama-server as `id_slot`.
+  - **Priority with aging:** the shared slots go to the waiting call with the best priority (FOCAL 0, C2 1, C1 2). Every `aging_ms` (2 s) of waiting counts as one priority step better, so nobody starves.
+  - **Stale-drop:** a queued call whose deadline is closer than `min_service_ms` (300 ms) is dropped before it reaches the model. It is recorded as `TIMEOUT` with the error "dropped before reaching the model", and the agent WAITs (T25). No contract change.
+  - **Supersede:** a newer call from the same agent replaces its queued one.
+  - **Option A stays available** as `mode: FIFO` (arrival order) for comparison.
+- **Measured against the stand-in** (no model; 150 ms per call; six NPCs keeping two slots busy): under FIFO, Robot R queued behind the NPCs; with PRIORITY its queue time stayed under 20 ms and every one of its calls used slot 0 (`tests/test_scheduler.py`). The owner's GPU run measures it with real models.
+- **Bake-off tool** (`tools/bakeoff.py`, scoring in `range_service/eval/bakeoff.py`).
+  - **Offline prompt set** `bakeoff/prompts_v1.jsonl`: 40 of Robot R's logged SB-04 decision contexts, 10 per robot body, built through the G3a pipeline with the Demo policy as stand-in. 4 of them call for keeping a promise. Committed, so the offline bake-off needs no Godot; results name the set's SHA-256. Until NPCs are model-driven (G3c), every candidate, including NPC candidates, is scored on Robot R's prompts.
+  - **Conditions:** each registered core model × KV cache f16 and q8_0. Temperature 0, one llama-server at a time, no deadlines (speed is measured instead), scheduler FIFO.
+  - **Scores:**
+    - valid output before repair, repair rate and final valid rate;
+    - **valid-action rate:** an offline check of what the action gate would refuse (a gesture the body lacks, an expression it cannot show, a GROUP message without a group, a target that is not a perceived track);
+    - **commitments kept:** in prompts where the Demo policy kept a promise, did the model set `fulfills_commitment`? A failed answer counts as not kept;
+    - prompt and generation tokens/s from the server's timings, and p50 latency;
+    - **VRAM:** the server process's memory from `nvidia-smi`; null with a reason when it cannot be read;
+    - **decision agreement:** with the same model at higher precision (F1 vs F2, N3 vs N2) and q8_0 vs f16 of the same model. Agreement means the same first action with the same deciding argument (gesture, expression, channel, addressee or target), not the same words.
+  - **`live`** runs SB-04 in Godot (headless) in LIVE and STEPPED mode for the finalists the owner names. It records decisions, deadline misses, fallbacks, p50/p95 call latency and the journal hash.
+  - **Output:** `results/bakeoff/results.md` (a table to paste back) and `results.json`. `results/` is git-ignored.
+- **Smoke-tested in the cloud** (CPU, model T1 only, so plumbing and not results): the offline run on 4 prompts × f16/q8_0 gave valid answers with the agreement and speed columns filled and VRAM "not measured: no NVIDIA GPU"; the `live` run on T1 finished OK in both modes, with every call missing the 4 s deadline on the CPU (LIVE 1 decision, STEPPED 9), as expected. **BLOCKED on the owner's GPU:** every real number in the bake-off.
+- **Not in G3b-2:** two servers (Option C, G3c), persona snapshots and pre-warming (T5, T6), speculative decoding (T17), and NPC prompts in the set (G3c).

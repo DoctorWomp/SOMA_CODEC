@@ -23,6 +23,12 @@ sampling:
   seed: 0                    # 0 = use the run's seed
 thinking: false              # D-20: thinking mode off by default; on is a separate measured condition
 structured_output: true      # JSON-schema-constrained answers: valid action JSON by construction (D-21)
+scheduler:                   # INFERENCE_STRATEGY step 3 (T4, T12): Option B on one server
+  mode: PRIORITY             # PRIORITY (Option B) or FIFO (Option A: arrival order, for comparison)
+  reserved_slots: 1          # slots owned by pinned agents (Robot R); the rest are shared
+  priorities: {FOCAL: 0, C2: 1, C1: 2}
+  aging_ms: 2000             # each 2 s of waiting counts as one priority step (no starvation)
+  min_service_ms: 300        # drop a queued call whose deadline is closer than this (stale)
 tiers:                       # deadlines as D-50; the slot policy as INFERENCE_STRATEGY T4
   FOCAL: {server: focal, deadline_ms: 4000, pin_slot: true}
   C2: {server: focal, deadline_ms: 6000, pin_slot: false}

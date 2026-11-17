@@ -1,12 +1,12 @@
-# G3b — What to do on your PC (part 1: real models)
+# G3b — What to do on your PC: real models and the bake-off
 
-About 30–60 minutes, mostly waiting for hashes and downloads. Repository at `G:\SOMA_CODEC`, Godot at `G:\Godot` (`GODOT_BIN` is set). What was built and why: [D-57](../DECISIONS.md). The bake-off itself comes with G3b-2.
+About 1–2 hours in all, mostly waiting for hashes, downloads and the bake-off itself. Repository at `G:\SOMA_CODEC`, Godot at `G:\Godot` (`GODOT_BIN` is set). What was built and why: [D-57](../DECISIONS.md) (models, server) and [D-58](../DECISIONS.md) (scheduler, bake-off).
 
 **Nothing downloads unless you type `yes`.** Everything runs on `127.0.0.1` (your own PC only).
 
 ## 1. Get the branch and update
 
-1. GitHub Desktop → **Fetch origin** → **Current branch** → `claude/g3b-1-real-models`.
+1. GitHub Desktop → **Fetch origin** → **Current branch** → `claude/g3b-2-scheduler-bakeoff` (it includes G3b-1).
 2. In PowerShell:
    ```powershell
    cd G:\SOMA_CODEC
@@ -100,11 +100,37 @@ uv run python tools/run_scenario.py SB04_POLITE_BID --model llama:F3 --watch
 
 **Paste back:** the summary lines both runs print (from `Run folder:` to `OK` or `FAIL`).
 
-## 7. If Windows Firewall asks
+## 7. The bake-off, offline part (≈ 30–60 minutes)
+
+```powershell
+uv run python tools/bakeoff.py offline
+```
+
+This sends the 40 committed Robot R prompts (`bakeoff\prompts_v1.jsonl`) to every core model you have, once with KV cache f16 and once with q8_0. Each model is loaded alone, one after another; Godot does not run. Close games or other GPU programs first: VRAM is measured.
+
+- [ ] It ends with `Results: …\results\bakeoff\results.md`. Each line shows valid answers, repairs, valid actions, promises kept, agreement, tokens/s, p50 and VRAM.
+
+To run only some models: `uv run python tools/bakeoff.py offline --models F1 F2 F3`.
+
+## 8. The bake-off, live part (finalists)
+
+Pick two or three finalists from the table (best valid actions and agreement, fast enough for the 4 s deadline), then:
+
+```powershell
+uv run python tools/bakeoff.py live --models F1 F3
+```
+
+Each model plays SB-04 headless twice, once LIVE and once STEPPED. That is about 2–3 minutes per run.
+
+- [ ] The "Live and stepped SB-04" table appears in `results.md`, with `Run OK: yes`, deadline misses, fallbacks and p50/p95.
+
+**Paste back:** the whole `results\bakeoff\results.md`.
+
+## 9. If Windows Firewall asks
 
 llama-server listens on `127.0.0.1` only, so it should not need any firewall rule. If Windows still asks about **llama-server**, **Python** or **Godot**, tick **Private networks** only, or click **Cancel**. Never allow Public networks. Cancelling does not break anything here.
 
-## 8. If something fails
+## 10. If something fails
 
 - **`llama-server not found`:** step 2 did not finish. Run `uv run python tools/install_llama.py --check`.
 - **`model … is not on this machine`:** run `uv run python tools/models.py plan`, then scan or download it.

@@ -17,6 +17,7 @@ from range_service.models import registry as reg
 
 from .gateway import ModelGateway, ProviderError
 from .llama import LlamaProvider, LlamaServer, ServerSettings, ServerTokenizer, default_binary
+from .scheduler import SlotScheduler
 
 INFERENCE_PATH = CONFIGS_DIR / "inference.yaml"
 ENGINE = "llama.cpp b12443"   # tools/install_llama.py VERSION
@@ -74,6 +75,7 @@ class LlamaSetup:
             "model.parallel_slots": server["parallel_slots"], "model.context_per_slot": server["context_per_slot"],
             "model.thinking": self.provider.thinking, "model.structured_output": self.provider.structured_output,
             "model.temperature": self.provider.sampling.get("temperature"),
+            "model.scheduler": "PRIORITY" if self.gateway.scheduler is not None else "FIFO",
         }
 
 
@@ -102,5 +104,18 @@ def build_llama(model: str | None = None, *, server_name: str = "focal", kv_cach
     provider = LlamaProvider(server=LlamaServer(binary, settings, log_path, inf["engine"]["startup_timeout_s"]),
                              pinned_tiers=pinned, sampling=sampling, structured_output=inf["structured_output"],
                              warm_up=inf["engine"]["warm_up"])
-    gateway = ModelGateway(provider, deadlines_ms={t: s["deadline_ms"] for t, s in inf["tiers"].items()})
+    gateway = ModelGateway(provider, deadlines_ms={t: s["deadline_ms"] for t, s in inf["tiers"].items()},
+                           max_concurrent=server["parallel_slots"], scheduler=make_scheduler(inf, server_name))
     return LlamaSetup(gateway, provider, resolved, server)
+
+
+def make_scheduler(inf: dict[str, Any], server_name: str = "focal") -> SlotScheduler | None:
+    """Option B (PRIORITY) from configs/inference.yaml, or None for FIFO (Option A)."""
+    sched = inf["scheduler"]
+    if sched["mode"] != "PRIORITY":
+        return None
+    server = inf["servers"][server_name]
+    pinned = tuple(t for t, s in inf["tiers"].items() if s["pin_slot"] and s["server"] == server_name)
+    return SlotScheduler(server["parallel_slots"], pinned_tiers=pinned, reserved=sched["reserved_slots"],
+                         priorities=sched["priorities"], aging_ms=sched["aging_ms"],
+                         min_service_ms=sched["min_service_ms"])

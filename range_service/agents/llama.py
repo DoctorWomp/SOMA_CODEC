@@ -187,8 +187,11 @@ class LlamaProvider:
             await self.server.stop()
 
     def slot_for(self, request: ModelRequest) -> int:
-        """Pinned slot (T4): each agent of a pinned tier keeps the same slot; slot 0 first. The
-        last slot stays free for everyone else, so -1 (any free slot) for the rest."""
+        """The slot a scheduler granted, if any (G3b-2). Otherwise the pinned slot (T4): each
+        agent of a pinned tier keeps the same slot, slot 0 first; the last slot stays free for
+        everyone else, so -1 (any free slot) for the rest."""
+        if request.slot >= 0:
+            return request.slot
         if request.tier not in self.pinned_tiers or self.parallel_slots < 2:
             return -1
         if request.agent_id not in self.pins and len(self.pins) < self.parallel_slots - 1:
