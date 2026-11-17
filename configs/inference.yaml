@@ -32,6 +32,7 @@ vram:                        # both servers must fit (G3c-1): estimated before t
 personas:                    # INFERENCE_STRATEGY T5, T6 (G3c-1)
   snapshots: true            # at scene load, warm and save each model-driven NPC's persona prefix (slot save/restore)
   prewarm: true              # when a promotion becomes likely, put that prefix into a free NPC slot first
+  system_prefix: true        # NPC prompts: persona prefix as a system message, so hybrid/SWA models reuse all of it
 sampling:
   temperature: 0.0           # decisions are compared across models and runs (D-55)
   top_p: 1.0

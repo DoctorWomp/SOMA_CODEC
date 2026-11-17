@@ -74,6 +74,10 @@ class ModelRequest:
     # The agent's stable persona prefix (guardrails + identity) and its key (G3c-1, T5/T6): the
     # provider uses them to tell whether the slot already holds the prefix, or to restore it.
     prefix_key: str | None = None
+    # The prefix text itself, for NPC calls (G3c-1): a provider may send it as a separate system
+    # message, so a hybrid or sliding-window model can reuse it (llama-server makes its context
+    # checkpoints at message starts). The prompt hash is the whole prompt's either way.
+    prefix: str | None = None
 
 
 @dataclass
@@ -87,6 +91,7 @@ class ModelResponse:
     generated_tokens: int | None = None
     slot: int | None = None
     prefix_state: str | None = None   # WARM, RESTORED, COLD or UNKNOWN (G3c-1); None if no persona prefix
+    truncated: bool = False           # the engine stopped at the token limit (finish_reason "length")
 
 
 class Provider(Protocol):
@@ -326,7 +331,7 @@ class ModelGateway:
 
     async def decide(self, *, agent_id: str, tier: str, prompt: str, prompt_sha256: str, max_tokens: int,
                      allowed_actions: list[str], tick: int, demo_hint: str | None = None,
-                     prefix_key: str | None = None) -> GatewayResult:
+                     prefix_key: str | None = None, prefix: str | None = None) -> GatewayResult:
         from .output_schema import answer_schema   # noqa: PLC0415 (it imports this module)
 
         if tier in self.refuse_tiers:
@@ -335,7 +340,7 @@ class ModelGateway:
         calls: list[dict[str, Any]] = []
         schema = answer_schema(tuple(allowed_actions))
         request = ModelRequest(agent_id, self._call_id(agent_id), tier, prompt, prompt_sha256, max_tokens, 0, demo_hint,
-                               schema, prefix_key=prefix_key)
+                               schema, prefix_key=prefix_key, prefix=prefix)
         for attempt in (0, 1):
             response, call = await self._one(request, deadline_ms)
             calls.append(call)
@@ -345,12 +350,14 @@ class ModelGateway:
             actions, reason_summary, error = parse_output(response.text, allowed_actions, agent_id, tick)
             if error is None:
                 return GatewayResult(actions or [], reason_summary, calls)
+            if response.truncated:
+                error = f"the answer was cut off at the {max_tokens}-token limit ({error})"
             call["outcome"], call["error"] = "INVALID_OUTPUT", error[:300]
             if attempt == 0:
                 repaired = prompt + "\n\n## REPAIR\n" + REPAIR_NOTE.format(error=error)
                 request = ModelRequest(agent_id, self._call_id(agent_id), tier, repaired,
                                        hashlib.sha256(repaired.encode("utf-8")).hexdigest(), max_tokens, 1, demo_hint,
-                                       schema, prefix_key=prefix_key)
+                                       schema, prefix_key=prefix_key, prefix=prefix)
         return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": "INVALID_OUTPUT"})
 
 

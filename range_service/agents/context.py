@@ -50,7 +50,8 @@ BUDGETS: dict[str, dict[str, int]] = {
     "C1": {"GUARDRAILS": 150, "IDENTITY": 120, "COMMITMENTS": 60, "SETTING": 0, "FACTS": 0,
            "EPISODES": 0, "CONVERSATION": 80, "OBSERVATIONS": 0, "DECISION": 90},
 }
-OUTPUT_CAPS = {"FOCAL": 200, "C2": 120, "C1": 60}
+# C1 raised from 60 to 100 at G3c-1 (D-59): model-driven C1 NPCs were cut off mid-answer at 60.
+OUTPUT_CAPS = {"FOCAL": 200, "C2": 120, "C1": 100}
 MAX_EPISODE_CARDS_IN_CONTEXT = 3
 RECENCY_HALF_LIFE_MS = 120_000
 

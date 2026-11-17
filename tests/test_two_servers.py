@@ -257,3 +257,16 @@ def test_prewarm_never_waits_or_takes_robot_rs_slot(setup_env):
 def test_request_carries_prefix_key_to_the_provider():
     r = ModelRequest("a", "c", "C2", "p", "0" * 64, 10, 0, None, answer_schema(tuple(ACTIONS)), prefix_key="k")
     assert r.prefix_key == "k" and json.dumps(r.output_schema)
+
+
+def test_npc_persona_prefix_goes_as_a_system_message_robot_r_stays_one_message():
+    from range_service.agents.llama import LlamaProvider
+
+    p = LlamaProvider(port=1, api_key="k" * 20, warm_up=False)
+    npc = p._body(PROMPT, 64, None, 2, PREFIX)["messages"]
+    assert [m["role"] for m in npc] == ["system", "user"] and npc[0]["content"] == PREFIX
+    assert npc[1]["content"].startswith("## COMMITMENTS") and PREFIX + "\n\n" + npc[1]["content"] == PROMPT
+    assert [m["role"] for m in p._body(PROMPT, 64, None, 0)["messages"]] == ["user"]            # Robot R
+    assert [m["role"] for m in p._body("other text", 64, None, 0, PREFIX)["messages"]] == ["user"]   # not a prefix
+    off = LlamaProvider(port=1, api_key="k" * 20, warm_up=False, system_prefix=False)
+    assert [m["role"] for m in off._body(PROMPT, 64, None, 2, PREFIX)["messages"]] == ["user"]

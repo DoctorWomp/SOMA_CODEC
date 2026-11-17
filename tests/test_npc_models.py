@@ -158,6 +158,21 @@ def test_npc_spec_follows_the_robot_model():
         models_from_specs("llama", "fake")
 
 
+def test_llama_npc_model_choice(monkeypatch):
+    from range_service.agents import inference as infmod   # noqa: PLC0415
+    from range_service.agents import runmodels   # noqa: PLC0415
+
+    seen = []
+    monkeypatch.setattr(infmod, "build_inference", lambda focal, npc, **kw: seen.append((focal, npc)) or
+                        type("I", (), {"focal": type("S", (), {"gateway": ModelGateway(FakeModel())})()})())
+    monkeypatch.setattr(runmodels, "_is_llama", runmodels._is_llama)
+    for npc_model, want in (("auto", ("T1", None)), ("llama", ("T1", None)), ("llama:T1", ("T1", "T1")),
+                            ("llama:N1", ("T1", "N1")), ("none", ("T1", "none"))):
+        seen.clear()
+        models_from_specs("llama:T1", npc_model)
+        assert seen == [want], npc_model
+
+
 # ---------- the canary scanner itself: it must catch a planted leak ----------
 
 def _run_dir(tmp: Path, prompts: list[dict], extra: dict[str, str] | None = None) -> Path:

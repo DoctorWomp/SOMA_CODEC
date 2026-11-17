@@ -173,3 +173,24 @@ def test_configured_scheduler_is_option_b_with_one_reserved_slot():
     assert isinstance(s, SlotScheduler) and s.reserved == 1 and s.slots == inf["servers"]["focal"]["parallel_slots"]
     inf["scheduler"]["mode"] = "FIFO"
     assert make_scheduler(inf) is None
+
+
+def test_synthetic_load_tier_ranks_after_every_real_agent():
+    """G3c-1 bake-off: LOAD calls fill free slots but never go before a real NPC."""
+    import asyncio
+
+    from range_service.agents.scheduler import SlotScheduler
+
+    async def run():
+        s = SlotScheduler(1, pinned_tiers=(), reserved=0, aging_ms=0)
+        first = await s.acquire("visitor_x", "C2", 1e12)              # the only slot is busy
+        load = asyncio.create_task(s.acquire("npc_load_0", "LOAD", 1e12))
+        await asyncio.sleep(0)
+        real = asyncio.create_task(s.acquire("visitor_y", "C1", 1e12))  # queued after the load call
+        await asyncio.sleep(0)
+        s.release(first)
+        assert await real == first and not load.done()                 # the real NPC goes first
+        s.release(first)
+        assert await load == first
+
+    asyncio.run(run())

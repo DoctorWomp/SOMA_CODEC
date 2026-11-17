@@ -385,7 +385,10 @@ class AgentRuntime:
                     agent_id=self.agent_id, tier=job.tier, prompt=job.assembled.prompt,
                     prompt_sha256=job.assembled.record["prompt_sha256"], max_tokens=OUTPUT_CAPS.get(job.tier, 120),
                     allowed_actions=self.allowed_actions, tick=job.tick, demo_hint=job.demo_hint,
-                    prefix_key=job.prefix_key)
+                    prefix_key=job.prefix_key,
+                    # NPCs: the persona prefix may go as its own (system) message; Robot R's prompt
+                    # shape stays one message, as the G3b bake-off measured it.
+                    prefix=self.persona_prefix(job.tier)[1] if self.npc_model else None)
                 model_calls, fallback = result.model_calls, result.fallback
                 proposals = [_proposal_from_model(a, self.memory, self.conversation) for a in result.actions]
             requests = self._emit(job, proposals, model_calls, fallback)

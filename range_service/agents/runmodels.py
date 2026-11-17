@@ -118,7 +118,12 @@ def models_from_specs(model: str, npc_model: str = "auto", *, run_dir: Path | No
         cfg = inf.get("personas", {"snapshots": True, "prewarm": True})
         if npc_spec not in ("none",) and not _is_llama(npc_spec):
             raise ValueError("with a llama --model, --npc-model must be auto, none, llama or llama:MODEL")
-        npc_override = None if npc_spec in ("llama", model) else (npc_spec.split(":", 1)[1] if _is_llama(npc_spec) else "none")
+        if npc_model in ("auto", "llama"):
+            npc_override = None                          # the NPC server's model from configs/inference.yaml
+        elif npc_spec == "none":
+            npc_override = "none"
+        else:
+            npc_override = npc_spec.split(":", 1)[1]     # llama:MODEL, even when it is Robot R's model
         iset = build_inference(model.split(":", 1)[1] if ":" in model else None, npc_override, run_dir=run_dir, seed=seed,
                                inference=inf)
         iset.focal.gateway.setup = iset.focal   # type: ignore[attr-defined]

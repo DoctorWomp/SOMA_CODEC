@@ -15,7 +15,7 @@ G3c-1: ``--slot-save`` answers ``POST /slots/{id}?action=save|restore`` as a ser
 last prompt; a restore puts the saved prompt back), so warm and cold calls can be told apart.
 
 Modes: ``normal`` answers at once; ``slow`` waits ``--delay-ms`` first; ``malformed`` answers
-text that is not JSON; ``disconnect`` closes the connection without answering. The answer is
+text that is not JSON; ``truncate`` answers JSON cut off mid-way with ``finish_reason: length``; ``disconnect`` closes the connection without answering. The answer is
 the next line of ``--answers`` if given, else a WAIT (or NO_OP) chosen from the request's JSON
 schema, so it is always one of the agent's allowed actions. Prints ``LISTENING 127.0.0.1:PORT``.
 """
@@ -56,6 +56,9 @@ class Behaviour:
             return text
         if self.mode == "malformed":
             return "Sure! I would wave at them now."
+        if self.mode == "truncate":
+            return '{"actions": [{"action": "WAIT", "args": {"duration_ms": 1000}}], "reason_summary": "I am waiting bec'
+
         choices = (((body.get("response_format") or {}).get("schema") or {}).get("properties", {})
                    .get("actions", {}).get("items", {}).get("anyOf", []))
         allowed = [c["properties"]["action"]["const"] for c in choices]
@@ -138,7 +141,8 @@ async def _handle(b: Behaviour, reader: asyncio.StreamReader, writer: asyncio.St
                 if isinstance(slot, int) and slot >= 0:
                     b.slot_words[slot] = words
             writer.write(_reply(200, {
-                "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": text}}],
+                "choices": [{"index": 0, "finish_reason": "length" if b.mode == "truncate" else "stop",
+                             "message": {"role": "assistant", "content": text}}],
                 "usage": {"prompt_tokens": n_prompt, "completion_tokens": n_gen, "total_tokens": n_prompt + n_gen},
                 "timings": {"cache_n": cache_n, "prompt_n": n_prompt - cache_n, "prompt_ms": 12.5,
                             "predicted_n": n_gen, "predicted_ms": 40.0 + b.delay_ms},
@@ -163,7 +167,7 @@ async def serve(b: Behaviour, port: int = 0) -> asyncio.Server:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m range_service.agents.standin", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--mode", default="normal", choices=["normal", "slow", "malformed", "disconnect"])
+    parser.add_argument("--mode", default="normal", choices=["normal", "slow", "malformed", "disconnect", "truncate"])
     parser.add_argument("--delay-ms", type=int, default=0)
     parser.add_argument("--answers", default=None, help="a file with one answer per line, served in order")
     parser.add_argument("--port", type=int, default=0)

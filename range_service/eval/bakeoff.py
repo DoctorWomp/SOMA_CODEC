@@ -76,10 +76,17 @@ def promised_to(item: dict[str, Any]) -> set[str]:
     return found
 
 
+def promise_due(item: dict[str, Any]) -> bool:
+    """Does this prompt call for keeping a promise? v2 items say so (``promise_due``); v1 items
+    count when the Demo policy kept one."""
+    ref = item["reference"]
+    return bool(ref.get("promise_due", ref.get("demo_fulfilled")))
+
+
 def kept_commitment(actions: list[dict[str, Any]], item: dict[str, Any]) -> bool | None:
     """Flagged: did an action set ``fulfills_commitment``? None when the situation did not call for
-    keeping a promise (the Demo policy kept none)."""
-    if not item["reference"].get("demo_fulfilled"):
+    keeping a promise."""
+    if not promise_due(item):
         return None
     return any(a.get("fulfills_commitment") for a in actions)
 
@@ -88,7 +95,7 @@ def kept_in_behavior(actions: list[dict[str, Any]], item: dict[str, Any]) -> boo
     """Kept in behavior: did an action address, face, approach or gesture at a person the agent
     had promised to help, flag or no flag? None outside promise situations, or when the prompt
     names nobody the promise was made to."""
-    if not item["reference"].get("demo_fulfilled"):
+    if not promise_due(item):
         return None
     targets = promised_to(item)
     if not targets:
@@ -99,6 +106,7 @@ def kept_in_behavior(actions: list[dict[str, Any]], item: dict[str, Any]) -> boo
 # ---------- per-condition scoring ----------
 
 def score_item(item: dict[str, Any], result: Any) -> dict[str, Any]:
+    """One prompt's answer, scored. ``role`` is ROBOT_R or NPC (prompts_v2; v1 is all Robot R)."""
     calls = result.model_calls
     first = calls[0] if calls else {}
     actions = result.actions if result.fallback is None else []
@@ -107,6 +115,7 @@ def score_item(item: dict[str, Any], result: Any) -> dict[str, Any]:
     processed = (first.get("prompt_tokens") or 0) - (first.get("cached_tokens") or 0)
     return {
         "item_id": item["item_id"],
+        "role": item.get("role", "ROBOT_R"),
         "first_valid": first.get("outcome") == "VALID",
         "repaired": len(calls) > 1 and result.fallback is None,
         "final_valid": result.fallback is None,
@@ -152,6 +161,12 @@ def summarize_condition(items: list[dict[str, Any]]) -> dict[str, Any]:
         "gen_tps_median": _median([i["gen_tps"] for i in items]),
         "latency_ms_p50": _median([i["total_ms"] for i in items]),
     }
+
+
+def summarize_by_role(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The same summary for Robot R's prompts and for NPC prompts separately (prompts_v2)."""
+    roles = sorted({i.get("role", "ROBOT_R") for i in items})
+    return {role: summarize_condition([i for i in items if i.get("role", "ROBOT_R") == role]) for role in roles}
 
 
 def agreement(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -261,16 +276,22 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
              f"Engine: {results.get('engine')} · prompt set: {results.get('prompt_set')} "
              f"({results.get('prompt_set_sha256', '')[:12]}) · temperature 0", ""]
     offline = results.get("offline", [])
-    if offline:
-        lines += ["## Offline prompt set", "",
+
+    def f(v: Any) -> str:
+        return "–" if v is None else (f"{v:.0%}" if isinstance(v, float) and v <= 1.0 and not isinstance(v, bool) else str(v))
+    roles = sorted({r for c in offline for r in (c.get("summary_by_role") or {"ROBOT_R": None})},
+                   key=lambda r: (r != "ROBOT_R", r))
+    for role in roles:
+        rows = [c for c in offline if role in (c.get("summary_by_role") or {"ROBOT_R": None})]
+        if not rows:
+            continue
+        title = {"ROBOT_R": "Robot R prompts", "NPC": "NPC prompts (visitors at C1/C2)"}.get(role, role)
+        lines += [f"## Offline prompt set: {title}" if len(roles) > 1 else "## Offline prompt set", "",
                   "| Model | Quant | KV | n | Valid before repair | Repair | Final valid | Valid actions | Promises kept (flag / behavior) | "
                   "Agree vs higher precision | Agree q8_0 vs f16 | Prompt tok/s | Gen tok/s | p50 ms | VRAM MiB |",
                   "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-
-        def f(v: Any) -> str:
-            return "–" if v is None else (f"{v:.0%}" if isinstance(v, float) and v <= 1.0 and not isinstance(v, bool) else str(v))
-        for c in offline:
-            s = c["summary"]
+        for c in rows:
+            s = (c.get("summary_by_role") or {}).get(role) or c["summary"]
             ag = c.get("agreement_precision")
             akv = c.get("agreement_kv")
             lines.append(f"| {c['label']} {c['model']} | {c['quant']}{' QAT' if c['qat'] else ''} | {c['kv']} | {s['n']} | "
@@ -282,13 +303,22 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
         lines.append("")
     live = results.get("live", [])
     if live:
-        lines += ["## Live and stepped SB-04", "",
-                  "| Model | Mode | Run OK | Decisions | Deadline misses | Fallbacks | p50 ms | p95 ms | Journal |",
-                  "|---|---|---|---|---|---|---|---|---|"]
+        lines += ["## SB-04 in Godot: Robot R and the NPC server (Option C)", "",
+                  "| Robot R model | NPC model | Mode | Option | Run OK | Robot R decisions | Deadline misses | Fallbacks | "
+                  "Robot R p50 ms | Robot R p95 ms | NPC calls | NPC p50 ms | Promotion warm p50 ms (n) | "
+                  "Promotion cold p50 ms (n) | VRAM focal / NPC MiB | Journal |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for r in live:
-            lines.append(f"| {r['label']} | {r['mode']} | {'yes' if r['ok'] else 'NO'} | {r['decisions']} | {r['timeouts']} | "
-                         f"{r['fallbacks']} | {r['p50_ms']} | {r['p95_ms']} | {r['journal'][:12]} |")
-        lines.append("")
+            pw, pc = r.get("promotion_warm_p50_ms"), r.get("promotion_cold_p50_ms")
+            lines.append(f"| {r['label']} | {r.get('npc_label', '–')} | {r['mode']} | {r.get('option') or '–'} | "
+                         f"{'yes' if r['ok'] else 'NO'} | {r['decisions']} | {r['timeouts']} | {r['fallbacks']} | "
+                         f"{f(r['p50_ms'])} | {f(r['p95_ms'])} | {f(r.get('npc_calls'))} | {f(r.get('npc_p50_ms'))} | "
+                         f"{f(pw)} ({r.get('promotion_warm_n', 0)}) | {f(pc)} ({r.get('promotion_cold_n', 0)}) | "
+                         f"{f(r.get('vram_focal_mib'))} / {f(r.get('vram_npc_mib'))} | {r['journal'][:12]} |")
+        lines += ["", "Modes: LIVE (pre-warm on), LIVE_COLD (pre-warm off), LIVE_LOAD (pre-warm on, plus "
+                  "synthetic NPC calls kept running on the NPC server, to measure Robot R under NPC load), STEPPED. "
+                  "Robot R columns count Robot R's calls only. Promotion latency: promotion event to the NPC's first "
+                  "action the world accepted; warm = the first call found the persona prefix in its slot.", ""]
     lines += ["Agreement = share of prompts where both conditions chose the same first action (and its key argument). "
               "Valid actions = the offline action-gate check. Promises kept: *flag* = the answer set "
               "`fulfills_commitment`; *behavior* = it addressed, faced, approached or gestured at the person it had "

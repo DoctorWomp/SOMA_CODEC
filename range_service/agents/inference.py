@@ -106,7 +106,8 @@ def build_llama(model: str | None = None, *, server_name: str = "focal", kv_cach
     pinned = tuple(t for t, s in inf["tiers"].items() if s["pin_slot"] and s["server"] == server_name)
     provider = LlamaProvider(server=LlamaServer(binary, settings, log_path, inf["engine"]["startup_timeout_s"]),
                              pinned_tiers=pinned, sampling=sampling, structured_output=inf["structured_output"],
-                             warm_up=inf["engine"]["warm_up"] if warm_up is None else warm_up)
+                             warm_up=inf["engine"]["warm_up"] if warm_up is None else warm_up,
+                             system_prefix=inf.get("personas", {}).get("system_prefix", True))
     gateway = ModelGateway(provider, deadlines_ms={t: s["deadline_ms"] for t, s in inf["tiers"].items()},
                            max_concurrent=server["parallel_slots"], scheduler=make_scheduler(inf, server_name),
                            server=server_name)

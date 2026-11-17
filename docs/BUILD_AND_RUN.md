@@ -160,9 +160,12 @@ uv run python tools/models.py plan                      # core set: found, missi
 uv run python tools/models.py download F3 N1            # only what you name; SHA-256 checked
 uv run python tools/run_scenario.py SB04_POLITE_BID --model llama          # configs/inference.yaml
 uv run python tools/run_scenario.py SB04_POLITE_BID --model llama:F3       # another catalog model
-uv run python tools/bakeoff.py offline                  # bake-off on the committed prompt set (D-58)
-uv run python tools/bakeoff.py live --models F1 F3      # finalists: SB-04 live and stepped
+uv run python tools/run_scenario.py SB04_POLITE_BID --model llama --npc-model none   # NPCs on templates (Option B)
+uv run python tools/bakeoff.py offline                  # bake-off on bakeoff/prompts_v2.jsonl (D-58, D-59)
+uv run python tools/bakeoff.py live --models F3 F1 --npc-model N3   # Option C: Robot R under NPC load, promotions, VRAM
 ```
+
+**Two servers (G3c-1, D-59):** `--model llama` starts Robot R's server and the NPC server from `configs/inference.yaml` (Option C). Visitors promoted to C1/C2 decide through the NPC model; `--npc-model` chooses it (`auto` follows `--model`; `none` keeps the templates; `fake` and `replay:` drive NPCs without a model). If the NPC server cannot start or would not fit the VRAM budget, the run uses one server (Option B) and says why. A run folder adds `inference_events.jsonl`, `promotions.jsonl` and `slot_snapshots/`.
 
 `--model llama-attach:PORT` uses a llama-server you started yourself (key in `RANGE_LLAMA_API_KEY`). Tests never need a model: `range_service/agents/standin.py` plays the server.
 

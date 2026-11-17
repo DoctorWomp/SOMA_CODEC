@@ -150,7 +150,7 @@ class LlamaProvider:
     def __init__(self, *, server: LlamaServer | None = None, port: int = 0, api_key: str = "",
                  model_id: str = "llama", parallel_slots: int = 1, pinned_tiers: tuple[str, ...] = ("FOCAL",),
                  sampling: dict[str, Any] | None = None, thinking: bool = False, structured_output: bool = True,
-                 warm_up: bool = True) -> None:
+                 warm_up: bool = True, system_prefix: bool = True) -> None:
         self.server = server
         self._port = port
         self._key = api_key
@@ -161,6 +161,10 @@ class LlamaProvider:
         self.thinking = server.settings.thinking if server else thinking
         self.structured_output = structured_output
         self.warm_up = warm_up
+        # G3c-1: send an NPC's persona prefix as a system message (configs/inference.yaml
+        # personas.system_prefix). llama-server b12443 checkpoints hybrid and sliding-window
+        # models at message starts, so only then can the whole prefix be reused.
+        self.system_prefix = system_prefix
         self.pins: dict[str, int] = {}
         self.requests = 0
         # Persona snapshots and pre-warming (T5, T6; G3c-1). What each slot holds, as far as this
@@ -209,9 +213,16 @@ class LlamaProvider:
             self.pins[request.agent_id] = len(self.pins)
         return self.pins.get(request.agent_id, -1)
 
-    def _body(self, prompt: str, max_tokens: int, schema: dict[str, Any] | None, slot: int) -> dict[str, Any]:
+    def _messages(self, prompt: str, prefix: str | None) -> list[dict[str, str]]:
+        if prefix and self.system_prefix and prompt.startswith(prefix) and len(prompt) > len(prefix):
+            return [{"role": "system", "content": prefix},
+                    {"role": "user", "content": prompt[len(prefix):].lstrip("\n")}]
+        return [{"role": "user", "content": prompt}]
+
+    def _body(self, prompt: str, max_tokens: int, schema: dict[str, Any] | None, slot: int,
+              prefix: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": self._messages(prompt, prefix),
             "max_tokens": max_tokens,
             "temperature": self.sampling.get("temperature", 0.0),
             "top_p": self.sampling.get("top_p", 1.0),
@@ -267,8 +278,15 @@ class LlamaProvider:
 
     async def _warm_prefix(self, prefix: str, slot: int) -> None:
         """Process the prefix alone in ``slot`` (one token generated), so the engine's prefix cache
-        holds it: the real prompt starts with exactly this text (INFERENCE_STRATEGY T3)."""
-        await self._post(self._body(prefix, 1, None, slot))
+        holds it: the real prompt starts with exactly this text (INFERENCE_STRATEGY T3). With
+        ``system_prefix`` the prefix goes in a system message followed by a placeholder user turn,
+        exactly as the real call will send it."""
+        if self.system_prefix:
+            body = self._body("", 1, None, slot)
+            body["messages"] = [{"role": "system", "content": prefix}, {"role": "user", "content": "(waiting)"}]
+        else:
+            body = self._body(prefix, 1, None, slot)
+        await self._post(body)
 
     @staticmethod
     def snapshot_name(key: str) -> str:
@@ -335,10 +353,12 @@ class LlamaProvider:
         self.requests += 1
         slot = self.slot_for(request)
         prefix_state = await self._prepare_slot(request, slot)
-        data = await self._post(self._body(request.prompt, request.max_tokens, request.output_schema, slot))
+        data = await self._post(self._body(request.prompt, request.max_tokens, request.output_schema, slot,
+                                           request.prefix))
         try:
             text = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
+            finish = data["choices"][0].get("finish_reason")
+        except (KeyError, IndexError, TypeError, AttributeError) as exc:
             raise ProviderError("llama-server: the reply has no choices[0].message.content") from exc
         if not isinstance(text, str):
             raise ProviderError("llama-server: the answer is not text")
@@ -358,7 +378,7 @@ class LlamaProvider:
             prefill_ms=num(timings.get("prompt_ms")), generation_ms=num(timings.get("predicted_ms")),
             prompt_tokens=prompt_tokens, cached_tokens=cached,
             generated_tokens=num(timings.get("predicted_n")) if "predicted_n" in timings else num(usage.get("completion_tokens")),
-            slot=slot if slot >= 0 else None, prefix_state=prefix_state,
+            slot=slot if slot >= 0 else None, prefix_state=prefix_state, truncated=finish == "length",
         )
 
 

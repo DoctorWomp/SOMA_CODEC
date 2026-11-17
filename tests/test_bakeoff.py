@@ -7,8 +7,8 @@ from pathlib import Path
 
 from range_service.agents.gateway import GatewayResult
 from range_service.eval import bakeoff as bk
-from tools.bakeoff import PROMPT_SET, load_set
-from tools.godot_check import private_strings
+from tools.bakeoff import PROMPT_SET, PROMPT_SET_V1, load_set
+from tools.godot_check import is_own_goal, own_goal_owners, private_strings
 
 ITEM = {"item_id": "x", "body_id": "quadruped", "gestures": ["HEAD_TILT", "SIT_IN_PLACE"],
         "expressions": ["greeting_light", "acknowledge_tilt"], "prompt": "A visitor anon_k3j9x2m1qa waves.",
@@ -22,7 +22,8 @@ def _result(actions, calls=1, fallback=None, outcome="VALID"):
 
 
 def test_committed_prompt_set_is_robot_r_in_every_body_with_nothing_private():
-    items, sha = load_set(PROMPT_SET)
+    items, sha = load_set(PROMPT_SET_V1)
+    assert sha.startswith("ee2b7c03be96")                                # v1 is frozen: results stay comparable
     assert len(items) >= 30 and len(sha) == 64
     assert {i["body_id"] for i in items} == {"wheeled_humanoid", "legged_humanoid", "quadruped", "quadruped_arm"}
     assert any(i["reference"]["demo_fulfilled"] for i in items)          # promise situations are in it
@@ -30,6 +31,41 @@ def test_committed_prompt_set_is_robot_r_in_every_body_with_nothing_private():
     for item in items:
         assert item["agent_id"] == "robot_r" and item["allowed_actions"] and item["prompt"].startswith("## GUARDRAILS")
         assert not [s for s in secrets if s in item["prompt"]], item["item_id"]   # T17
+
+
+def test_prompt_set_hash_ignores_windows_line_endings(tmp_path):
+    crlf = tmp_path / "set.jsonl"
+    crlf.write_bytes(PROMPT_SET_V1.read_bytes().replace(b"\n", b"\r\n"))
+    assert load_set(crlf)[1] == load_set(PROMPT_SET_V1)[1]
+
+
+def test_prompt_set_v2_has_npc_prompts_and_enough_promise_situations():
+    items, sha = load_set(PROMPT_SET)
+    assert len(sha) == 64 and len({i["item_id"] for i in items}) == len(items)
+    roles = {(i["role"], i["tier"]) for i in items}
+    assert {("ROBOT_R", "FOCAL"), ("NPC", "C1"), ("NPC", "C2")} <= roles
+    assert {i["agent_id"] for i in items if i["role"] == "NPC"} == {"visitor_x", "visitor_y"}
+    assert {i["body_id"] for i in items if i["role"] == "ROBOT_R"} == {"wheeled_humanoid", "legged_humanoid",
+                                                                       "quadruped", "quadruped_arm"}
+    promises = [i for i in items if bk.promise_due(i)]
+    assert len(promises) >= 16 and all(bk.promised_to(i) for i in promises)
+    secrets, owners = private_strings(), own_goal_owners()
+    for item in items:
+        assert item["prompt"].startswith("## GUARDRAILS") and item["allowed_actions"]
+        for secret in secrets:
+            if secret in item["prompt"]:
+                # D-51: only an NPC's own goal, in its own prompt, on its labelled line (T17).
+                assert item["role"] == "NPC" and is_own_goal(item["prompt"], secret, owners), item["item_id"]
+    npc_own = [i for i in items if i["role"] == "NPC" and "Your own private goal (known only to you): " in i["prompt"]]
+    assert len(npc_own) == len([i for i in items if i["role"] == "NPC"])
+
+
+def test_scores_split_by_role():
+    npc = dict(ITEM, role="NPC", item_id="n")
+    rows = [bk.score_item(ITEM, _result([{"action": "WAIT", "args": {"duration_ms": 1}}])),
+            bk.score_item(npc, _result([{"action": "WAIT", "args": {"duration_ms": 1}}], fallback={"action": "WAIT", "reason": "INVALID_OUTPUT"}))]
+    by = bk.summarize_by_role(rows)
+    assert by["ROBOT_R"]["final_valid"] == 1.0 and by["NPC"]["final_valid"] == 0.0
 
 
 def test_signature_ignores_wording_but_not_the_decision():
@@ -91,16 +127,24 @@ def test_vram_is_unknown_with_a_reason_without_a_gpu(monkeypatch):
 
 def test_report_writes_markdown_and_json(tmp_path):
     item = bk.score_item(ITEM, _result([{"action": "WAIT", "args": {"duration_ms": 1}}]))
-    results = {"created": "now", "engine": "llama.cpp b12443", "prompt_set": "prompts_v1.jsonl", "prompt_set_sha256": "0" * 64,
-               "offline": [{"label": "F1", "model": "Qwen3.5-9B", "quant": "Q4_K_M", "qat": False, "kv": "f16",
-                            "summary": bk.summarize_condition([item]), "agreement_precision": None, "agreement_kv": None,
-                            "vram_mib": 6100, "vram_note": None, "items": [item]}],
-               "live": [{"label": "F1 Qwen3.5-9B Q4_K_M", "mode": "LIVE", "ok": True, "decisions": 9, "timeouts": 0,
-                         "fallbacks": 0, "p50_ms": 900.0, "p95_ms": 1500, "journal": "abc"}]}
+    npc = bk.score_item(dict(ITEM, role="NPC", item_id="n"), _result([{"action": "WAIT", "args": {"duration_ms": 1}}]))
+    results = {"created": "now", "engine": "llama.cpp b12443", "prompt_set": "prompts_v2.jsonl", "prompt_set_sha256": "0" * 64,
+               "offline": [{"label": "N3", "model": "Qwen3.5-4B", "quant": "Q4_K_M", "qat": False, "kv": "q8_0",
+                            "summary": bk.summarize_condition([item, npc]), "summary_by_role": bk.summarize_by_role([item, npc]),
+                            "agreement_precision": None, "agreement_kv": None,
+                            "vram_mib": 3100, "vram_note": bk.VRAM_DELTA_NOTE, "items": [item, npc]}],
+               "live": [{"label": "F3 Gemma 4 12B Q4_0", "npc_label": "N3", "mode": "LIVE_LOAD", "option": "C", "ok": True,
+                         "decisions": 9, "timeouts": 0, "fallbacks": 0, "p50_ms": 900.0, "p95_ms": 1500, "npc_calls": 30,
+                         "npc_p50_ms": 700.0, "promotion_warm_p50_ms": 650.0, "promotion_warm_n": 2,
+                         "promotion_cold_p50_ms": 1200.0, "promotion_cold_n": 1, "vram_focal_mib": 8700,
+                         "vram_npc_mib": 3600, "journal": "abc"}]}
     j, m = bk.write_report(results, tmp_path)
     text = m.read_text()
-    assert "| F1 Qwen3.5-9B | Q4_K_M | f16 | 1 | 100% |" in text and "6100" in text and "| LIVE | yes |" in text
-    assert json.loads(Path(j).read_text())["offline"][0]["vram_mib"] == 6100
+    assert "## Offline prompt set: Robot R prompts" in text and "## Offline prompt set: NPC prompts" in text
+    assert "| N3 Qwen3.5-4B | Q4_K_M | q8_0 | 1 | 100% |" in text and "3100" in text
+    assert "| F3 Gemma 4 12B Q4_0 | N3 | LIVE_LOAD | C | yes | 9 | 0 | 0 | 900.0 | 1500 | 30 | 700.0 | 650.0 (2) | " \
+           "1200.0 (1) | 8700 / 3600 |" in text
+    assert json.loads(Path(j).read_text())["offline"][0]["vram_mib"] == 3100
 
 
 # ---------- regression tests for the measurement bugs found in the first bake-off (2026-11-17, D-58) ----------

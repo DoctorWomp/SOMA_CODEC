@@ -44,6 +44,7 @@ REPO = contracts.REPO_ROOT
 GODOT_PROJECT = REPO / "godot_app"
 APP_VERSION = "0.3.0"
 STEP_TIMEOUT_DETAIL = "stepped run: no AGENTS_DONE"
+LOAD_TIER = "LOAD"   # synthetic NPC load in the bake-off; ranked after every real tier
 
 
 @dataclass
@@ -247,15 +248,18 @@ async def snapshot_personas(runtimes: dict[str, Any], models: RunModels) -> None
 
 
 async def _npc_load(models: RunModels, stream: int, prompts: list[dict[str, Any]], out: list[dict[str, Any]]) -> None:
-    """Bake-off: keep the NPC server busy with recorded NPC prompts (lowest priority, C1), to
-    measure Robot R's latency while NPCs load the other server."""
+    """Bake-off: keep the NPC server busy with recorded NPC prompts (lowest priority), to measure
+    Robot R's latency while NPCs load the other server."""
     gw = models.npc
     assert gw is not None
+    # Its own tier, below every real agent (the scheduler ranks unknown tiers last), with the C1
+    # deadline: the load never pushes a real NPC's call back, only fills free slots.
+    gw.deadlines_ms.setdefault(LOAD_TIER, gw.deadlines_ms["C1"])
     i = stream
     while True:
         item = prompts[i % len(prompts)]
         i += 1
-        result = await gw.decide(agent_id=f"npc_load_{stream}", tier="C1", prompt=item["prompt"],
+        result = await gw.decide(agent_id=f"npc_load_{stream}", tier=LOAD_TIER, prompt=item["prompt"],
                                  prompt_sha256=item["prompt_sha256"], max_tokens=item["max_tokens"],
                                  allowed_actions=item["allowed_actions"], tick=item["based_on_tick_id"])
         for call in result.model_calls:

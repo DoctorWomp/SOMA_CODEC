@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 in progress · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md)
+**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 built 2026-11-17 (draft PR, D-59 PROPOSED) · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -215,6 +215,28 @@ VRAM was not measured (the tool said "CPU build": wrong, see below). *Promises k
 - **Robot R:** F3 (Gemma 4 12B QAT Q4_0), KV q8_0. Backup F1. The live runs show 0 deadline misses for both, so F3 stands.
 - **NPC server:** N3 (Qwen3.5-4B Q4_K_M), KV q8_0. Alternative N1. S1 for background crowd NPCs later.
 - **F2 dropped from the core set** (catalog `EXTRA`). **KV cache default: q8_0.** Recorded in D-58; `configs/inference.yaml` follows.
+
+## G3c-1 — Two servers and model-driven NPCs (built 2026-11-17, draft PR; D-59 PROPOSED)
+
+**Owner direction (2026-11-17):** Option C with F3 for Robot R and N3 for NPCs, KV q8_0; fix the four bake-off measurement bugs first; NPC prompts in a new prompt set (v1 unchanged); the pulse protocol is G3c-2, but leave room for it. Owner steps: [G3c_OWNER_CHECKLIST.md](G3c_OWNER_CHECKLIST.md).
+
+| Part | What was built | Proof (cloud, no GPU) |
+|---|---|---|
+| Two servers | focal + NPC llama-server, own port and key each, started and stopped together; Robot R only on the focal server; fallback to Option B with the reason recorded; VRAM estimated (GGUF header) and measured (`nvidia-smi`, or the change in total memory on Windows) | `tests/test_two_servers.py`: two stand-in servers through the real process code, the fallback when the NPC server fails or the estimate is over budget, slot affinity, the NPC server refusing FOCAL calls |
+| Model-driven NPCs | C1/C2 visitors decide through the NPC gateway (same schema, repair, action gate, record and replay); C0 stays a routine; the NPC's own goal in its own prompt only (D-51) | `tests/test_npc_models.py`; step 6 of `tools/godot_check.py`: SB-04 with fake-model NPCs, three runs and a replay give one journal |
+| Canary | markers in every private goal and evaluator label; SB-04 and SB-05 scanned: own marker only on the NPC's labelled line, nowhere else; every track in a context came from that agent's own packets | step 6 of `tools/godot_check.py`; scanner unit tests catch planted leaks |
+| Persona snapshots and pre-warming | stable persona prefix per tier; snapshots at scene load (slot save); pre-warm on a likely promotion (slot restore, or the prefix alone); slot state per call; promotion latency per promotion; NPC prefix as a system message | stand-in tests (save, restore, warm vs cold cached tokens); on the pinned llama-server with T1 (CPU): cold 0 cached tokens, warm ~600 (the whole prefix), prefill 3.1 s → 1.6 s |
+| Bake-off | prompts_v2 (96: Robot R, NPC C1/C2, 16 promise situations); Robot R and NPC tables; live runs with Option C in four modes and the new columns; the four measurement bugs fixed | `tests/test_bakeoff.py`; offline and live smoke runs on T1 (plumbing only) |
+
+**Found while building:**
+- llama-server b12443 reuses a hybrid (Qwen3.5) or sliding-window (Gemma) model's cache only up to its context checkpoints, made at message starts and 4 / 4+n_ubatch tokens before the end. A prefix warmed inside one user message was reused for only 88–93 tokens; as a system message, ~600 (all of it). NPC prompts now send the persona prefix as a system message; Robot R's stays one message, as the bake-off measured it.
+- C1 answers were cut off at the 60-token output cap; raised to 100, and a cut-off answer is now reported as such.
+- The owner's v1 set hash (`93e215698db0`) is the file with Windows CRLF line endings. `.jsonl` is now pinned to LF and set hashes ignore line endings (`ee2b7c03be96`).
+- The from-source llama-server build failed on a changed Hugging Face web-UI file; it now skips the web UI (RANGE runs `--no-webui`).
+
+**Needs the owner's PC:** Robot R's p50/p95 with and without NPC load, promotion latency warm vs cold, VRAM per server, NPC candidates scored on NPC prompts, and how the model-driven visitors look.
+
+**Next (G3c-2):** the pulse protocol ([PULSE_PROTOCOL.md](../PULSE_PROTOCOL.md) §11): activities with wake conditions (FN-1), the presence loop's glance (FN-2), the triage pulse. `decision_record.activity` is reserved for it.
 
 ## Out of scope for G3
 
