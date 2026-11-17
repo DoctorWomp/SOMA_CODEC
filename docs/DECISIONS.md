@@ -66,7 +66,7 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-56 | Rig step A as built: skeletons, layers, prosody and their tests | APPROVED (owner, 2026-11-16) |
 | D-57 | G3b-1 as built: llama-server, model catalog and registry, provider | APPROVED (owner, 2026-11-16) |
 | D-58 | G3b-2 as built: priority scheduler (Option B) and the bake-off tool | APPROVED (owner, 2026-11-16) |
-| D-59 | G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming | PROPOSED (2026-11-17) |
+| D-59 | G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming | APPROVED (owner, 2026-11-17) |
 
 ---
 
@@ -779,7 +779,7 @@ Choices made while building step A that D-54 and the plan left open:
 - **Owner verdict (2026-11-17):** Robot R default **F3** (Gemma 4 12B QAT Q4_0), KV q8_0; backup F1 (Qwen3.5-9B Q4_K_M). The live runs show no deadline misses for either, so F3 stands. NPC server default **N3** (Qwen3.5-4B Q4_K_M), KV q8_0; alternative N1; S1 for background crowd NPCs later. **F2 is dropped from the core set** (catalog `set: EXTRA`, kept for diagnosis). **KV cache default q8_0.** `configs/inference.yaml` follows.
 
 ## D-59 — G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming
-**Status:** PROPOSED (2026-11-17), G3c-1. Builds INFERENCE_STRATEGY Option C (T2) and §3.2, T5, T6; D-08, D-49, D-51 (own goal), D-55, D-57, D-58. Owner checklist: [gates/G3c_OWNER_CHECKLIST.md](gates/G3c_OWNER_CHECKLIST.md).
+**Status:** APPROVED (owner, 2026-11-17); proposed 2026-11-17, G3c-1 (merged). Builds INFERENCE_STRATEGY Option C (T2) and §3.2, T5, T6; D-08, D-49, D-51 (own goal), D-55, D-57, D-58. Owner checklist: [gates/G3c_OWNER_CHECKLIST.md](gates/G3c_OWNER_CHECKLIST.md).
 
 - **Two servers (Option C).** `configs/inference.yaml` holds a `focal` server (Robot R; F3, 2 slots × 6144, KV q8_0) and an `npc` server (N3, 4 slots × 2560, KV q8_0). Tiers C2 and C1 route to `npc`; `validate_configs.py` requires C2 and C1 on one server and no pinned slot on the NPC server.
   - Each is a 127.0.0.1-only child on its own free port with its own 32-byte API key (environment only, never logged). `InferenceSet` (`agents/inference.py`) starts the focal server, then the NPC server, and always stops both.
@@ -811,5 +811,10 @@ Choices made while building step A that D-54 and the plan left open:
   - SB-04 stepped with `--model fake` (NPCs model-driven): 10 NPC model calls; three runs (one with random sidecar delays) and a replay of the decision records give one journal (`29998045c3f9`). SB-04 with the Demo policy (no model, the default) still deterministic (`d9401c3edd17`, three runs) and byte-identical to main's journal: the default path is unchanged.
   - SB-04 stepped with `--model llama:T1 --npc-model llama:T1` (pinned b12443 built from source, Qwen3.5-0.8B on both servers): Option C started, four persona snapshots saved, one pre-warm restored a snapshot, run OK; every call missed its deadline on the CPU, as expected. `bakeoff.py offline --models T1 --limit 3` and `live --models T1 --npc-model T1 --modes STEPPED LIVE_LOAD` filled both offline tables and the new live columns (VRAM: `nvidia-smi not found`).
   - **BLOCKED on the owner's GPU:** Robot R's latency under NPC load, real promotion latency cold vs warm, VRAM per server, NPC candidates on NPC prompts.
+- **Owner's results (RTX 4070 Ti SUPER, 2026-11-17; prompts_v2 `476703d7d4a5`):**
+  - **VRAM measured:** F3 7625 MiB, N3 3271 MiB, F1 5461 MiB. F3 + N3 + the 2048 MiB reserve = 12944 of 16376 MiB. The header estimate said 22779: it counted every layer at full context (fixed in G3c-2, D-60).
+  - **Robot R prompts (56):** F3 98% final valid, promises 60% flag / 95% behavior; N3 100% valid, 0% / 70%.
+  - **NPC prompts (40), final valid:** N3 40%, N1 30%, S1 10%, F3 85% (F3 75% valid actions). Diagnosed in G3c-2 (D-60): MOVE_TO and LOOK_AT arguments were never constrained (llama.cpp's converter ignores `properties` beside a `oneOf`), and most answers were cut off at the 100/120-token output caps.
+  - **SB-04 live, Option C, F3 + N3:** Robot R p50 2352 / p95 3495 ms (LIVE); LIVE_LOAD 3502 ms (n=1); no deadline misses. NPC calls p50 about 3005 ms in LIVE, LIVE_COLD and LIVE_LOAD (the C1 deadline is 3000), but 1007–1163 ms in STEPPED. Robot R made only 1–3 decisions per LIVE run (8–22 STEPPED). Warm promotion latency only in STEPPED (10218 and 28121 ms, n=2 each); cold n=0 everywhere. **Diagnosed in G3c-2 (D-60):** headless LIVE runs simulated ~15× faster than real time (`--fixed-fps`), and every answer slower than 1 s was refused as stale, so these LIVE numbers do not measure live behavior; the live bake-off must be run again.
 - **Not in G3c-1:** the pulse protocol (activities, wake conditions, presence loop, triage pulse: G3c-2; FIELD_NOTES FN-1, FN-2), Echo/Focus/Contour (FN-2 to FN-4, G5), Focus/Trail-driven pre-warming (G5), the system-message layout for Robot R, CPU-tier models (T16), response cache (T15), batching measurements (T13).
 
