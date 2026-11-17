@@ -9,6 +9,11 @@ Speaks the part of llama-server's API that RANGE uses, on 127.0.0.1 only: ``GET 
 needs the API key from the environment variable ``RANGE_STANDIN_API_KEY`` (as
 ``Authorization: Bearer ...``); a wrong key gets 401, as llama-server answers.
 
+G3c-1: ``--slot-save`` answers ``POST /slots/{id}?action=save|restore`` as a server started with
+``--slot-save-path`` does (without it: 501, as llama-server); ``--prefix-cache`` reports
+``cache_n`` as the words a slot's previous prompt shares with the new one (a slot remembers its
+last prompt; a restore puts the saved prompt back), so warm and cold calls can be told apart.
+
 Modes: ``normal`` answers at once; ``slow`` waits ``--delay-ms`` first; ``malformed`` answers
 text that is not JSON; ``disconnect`` closes the connection without answering. The answer is
 the next line of ``--answers`` if given, else a WAIT (or NO_OP) chosen from the request's JSON
@@ -37,6 +42,11 @@ class Behaviour:
     api_key: str = ""
     requests: list[dict[str, Any]] = field(default_factory=list)   # chat bodies received (tests read them)
     unauthorized: int = 0
+    slot_save: bool = False                  # like llama-server --slot-save-path
+    prefix_cache: bool = False               # report cache_n from each slot's previous prompt
+    slot_words: dict[int, list[str]] = field(default_factory=dict)
+    saved: dict[str, list[str]] = field(default_factory=dict)
+    slot_actions: list[tuple[str, int, str]] = field(default_factory=list)
     _next: int = 0
 
     def answer_for(self, body: dict[str, Any]) -> str:
@@ -82,6 +92,26 @@ async def _handle(b: Behaviour, reader: asyncio.StreamReader, writer: asyncio.St
             writer.write(_reply(401, {"error": {"code": 401, "message": "Invalid API Key", "type": "authentication_error"}}))
             return
         body = json.loads(raw.decode("utf-8")) if raw else {}
+        if method == "POST" and path.startswith("/slots/"):
+            slot_part, _, query = path[len("/slots/"):].partition("?")
+            action = dict(q.split("=", 1) for q in query.split("&") if "=" in q).get("action", "")
+            if not b.slot_save:
+                writer.write(_reply(501, {"error": {"code": 501, "type": "not_supported_error", "message":
+                                                    "This server does not support slots action. Start it with `--slot-save-path`"}}))
+                return
+            slot, filename = int(slot_part), str(body.get("filename", ""))
+            b.slot_actions.append((action, slot, filename))
+            if action == "save":
+                b.saved[filename] = list(b.slot_words.get(slot, []))
+                writer.write(_reply(200, {"id_slot": slot, "filename": filename, "n_saved": len(b.saved[filename]),
+                                          "n_written": 4 * len(b.saved[filename]), "timings": {"save_ms": 1.0}}))
+            elif action == "restore" and filename in b.saved:
+                b.slot_words[slot] = list(b.saved[filename])
+                writer.write(_reply(200, {"id_slot": slot, "filename": filename, "n_restored": len(b.saved[filename]),
+                                          "n_read": 4 * len(b.saved[filename]), "timings": {"restore_ms": 0.5}}))
+            else:
+                writer.write(_reply(400, {"error": {"code": 400, "message": "Unable to restore slot, no available space in KV cache or invalid slot save file"}}))
+            return
         if method == "GET" and path == "/props":
             writer.write(_reply(200, {"model_path": "standin.gguf", "build_info": "standin"}))
         elif method == "POST" and path == "/tokenize":
@@ -95,12 +125,22 @@ async def _handle(b: Behaviour, reader: asyncio.StreamReader, writer: asyncio.St
                 await asyncio.sleep(b.delay_ms / 1000)
             text = b.answer_for(body)
             prompt = " ".join(m.get("content", "") for m in body.get("messages", []))
-            n_prompt = len(prompt.split())
+            words = prompt.split()
+            n_prompt = len(words)
             n_gen = len(text.split())
+            cache_n = n_prompt // 2
+            slot = body.get("id_slot", -1)
+            if b.prefix_cache:
+                held = b.slot_words.get(slot, []) if isinstance(slot, int) and slot >= 0 else []
+                cache_n = 0
+                while cache_n < min(len(held), n_prompt) and held[cache_n] == words[cache_n]:
+                    cache_n += 1
+                if isinstance(slot, int) and slot >= 0:
+                    b.slot_words[slot] = words
             writer.write(_reply(200, {
                 "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": text}}],
                 "usage": {"prompt_tokens": n_prompt, "completion_tokens": n_gen, "total_tokens": n_prompt + n_gen},
-                "timings": {"cache_n": n_prompt // 2, "prompt_n": n_prompt - n_prompt // 2, "prompt_ms": 12.5,
+                "timings": {"cache_n": cache_n, "prompt_n": n_prompt - cache_n, "prompt_ms": 12.5,
                             "predicted_n": n_gen, "predicted_ms": 40.0 + b.delay_ms},
                 "id_slot": body.get("id_slot", -1),
             }))
@@ -127,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--delay-ms", type=int, default=0)
     parser.add_argument("--answers", default=None, help="a file with one answer per line, served in order")
     parser.add_argument("--port", type=int, default=0)
+    parser.add_argument("--slot-save", action="store_true", help="answer slot save/restore (like --slot-save-path)")
+    parser.add_argument("--prefix-cache", action="store_true", help="report cache_n from each slot's last prompt")
     args = parser.parse_args(argv)
     key = os.environ.get(KEY_ENV, "")
     if len(key) < 16:
@@ -136,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.answers:
         with open(args.answers, encoding="utf-8") as fh:
             answers = [line.rstrip("\n") for line in fh if line.strip()]
-    b = Behaviour(args.mode, args.delay_ms, answers, key)
+    b = Behaviour(args.mode, args.delay_ms, answers, key, slot_save=args.slot_save, prefix_cache=args.prefix_cache)
 
     async def run() -> None:
         server = await serve(b, args.port)

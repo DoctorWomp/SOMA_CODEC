@@ -100,6 +100,43 @@ class _Reader:
 
 def read_header(path: Path) -> GGUFInfo:
     """Parse ``path``'s GGUF header and tensor table. Raises GGUFError if it is not GGUF."""
+    return _parse(path)[0]
+
+
+def read_meta(path: Path) -> dict[str, Any]:
+    """The header's scalar and string keys (arrays are skipped and read as None)."""
+    return _parse(path)[1]
+
+
+# Bytes per KV element by cache type (q8_0: 34 bytes per 32 values; q4_0: 18 per 32).
+KV_BYTES = {"f16": 2.0, "q8_0": 34 / 32, "q4_0": 18 / 32}
+
+
+def kv_bytes_per_token(meta: dict[str, Any], kv_type: str) -> tuple[float | None, str]:
+    """KV cache bytes per token of context, from the header: layers x KV heads x (key + value
+    length) x bytes per element. An **upper bound** for models whose layers do not all keep a
+    full cache (sliding-window or linear-attention layers). (None, why) if the header lacks a key."""
+    arch = meta.get("general.architecture")
+    if not isinstance(arch, str):
+        return None, "no architecture in the header"
+    layers = meta.get(f"{arch}.block_count")
+    heads_kv = meta.get(f"{arch}.attention.head_count_kv")
+    heads = meta.get(f"{arch}.attention.head_count")
+    embed = meta.get(f"{arch}.embedding_length")
+    k_len = meta.get(f"{arch}.attention.key_length")
+    v_len = meta.get(f"{arch}.attention.value_length")
+    if not isinstance(heads_kv, int):
+        heads_kv = heads if isinstance(heads, int) else None
+    if not isinstance(k_len, int) and isinstance(embed, int) and isinstance(heads, int) and heads:
+        k_len = embed // heads
+    if not isinstance(v_len, int):
+        v_len = k_len
+    if not all(isinstance(v, int) and v > 0 for v in (layers, heads_kv, k_len, v_len)):
+        return None, "the header does not give layers, KV heads and head sizes as single numbers"
+    return float(layers * heads_kv * (k_len + v_len) * KV_BYTES[kv_type]), "header (upper bound)"
+
+
+def _parse(path: Path) -> tuple[GGUFInfo, dict[str, Any]]:
     with path.open("rb") as fh:
         r = _Reader(fh)
         if r.take(4) != MAGIC:
@@ -132,7 +169,7 @@ def read_header(path: Path) -> GGUFInfo:
     arch = meta.get("general.architecture")
     file_type = meta.get("general.file_type")
     ctx = meta.get(f"{arch}.context_length") if isinstance(arch, str) else None
-    return GGUFInfo(
+    info = GGUFInfo(
         version=version,
         architecture=arch if isinstance(arch, str) else None,
         name=meta.get("general.name") if isinstance(meta.get("general.name"), str) else None,
@@ -143,6 +180,7 @@ def read_header(path: Path) -> GGUFInfo:
         parameter_count=params,
         tensor_count=tensor_count,
     )
+    return info, meta
 
 
 def is_projector(path: Path) -> bool:

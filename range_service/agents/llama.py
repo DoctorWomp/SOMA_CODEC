@@ -65,6 +65,7 @@ class ServerSettings:
     gpu_layers: Any
     thinking: bool = False
     extra_args: list[str] = field(default_factory=list)
+    slot_save_path: Path | None = None    # persona snapshots (T5): llama-server --slot-save-path
 
     def command(self, binary: Path, port: int) -> list[str]:
         cmd = [str(binary), "--model", str(self.model_path), "--host", LOOPBACK, "--port", str(port),
@@ -72,6 +73,8 @@ class ServerSettings:
                "--cache-type-k", self.kv_cache_type, "--cache-type-v", self.kv_cache_type,
                "--flash-attn", self.flash_attention, "--n-gpu-layers", str(self.gpu_layers),
                "--reasoning", "on" if self.thinking else "off", "--no-webui"]
+        if self.slot_save_path is not None:
+            cmd += ["--slot-save-path", str(self.slot_save_path)]
         return cmd + self.extra_args
 
 
@@ -102,6 +105,8 @@ class LlamaServer:
         if self.log_path:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             self._log = self.log_path.open("wb")
+        if self.settings.slot_save_path is not None:
+            self.settings.slot_save_path.mkdir(parents=True, exist_ok=True)
         flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0   # type: ignore[attr-defined]
         self.process = subprocess.Popen(self.settings.command(self.binary, self.port), env=env,
                                         stdout=self._log or subprocess.DEVNULL, stderr=subprocess.STDOUT,
@@ -158,6 +163,12 @@ class LlamaProvider:
         self.warm_up = warm_up
         self.pins: dict[str, int] = {}
         self.requests = 0
+        # Persona snapshots and pre-warming (T5, T6; G3c-1). What each slot holds, as far as this
+        # provider knows (it is the only client of its server): the persona prefix key last sent.
+        self.slot_holds: dict[int, str | None] = {}
+        self.snapshots: dict[str, str] = {}             # prefix key -> snapshot file name on the server
+        self.snapshot_support: bool | None = None       # None: not tried; False: no --slot-save-path
+        self.persona_log: list[dict[str, Any]] = []
 
     def __repr__(self) -> str:
         return f"LlamaProvider({self.model_id!r})"
@@ -231,10 +242,100 @@ class LlamaProvider:
             raise ProviderError("llama-server: the reply is not a JSON object")
         return data
 
+    # ---------- persona snapshots (T5) and pre-warming (T6) ----------
+
+    async def _slot_action(self, slot: int, action: str, filename: str) -> dict[str, Any] | None:
+        """POST /slots/{slot}?action=save|restore. None when the server does not support slot
+        actions (started without --slot-save-path); ProviderError on other failures."""
+        try:
+            reply = await localhttp.request(self.port, "POST", f"/slots/{slot}?action={action}",
+                                            {"filename": filename}, self.api_key)
+        except localhttp.HttpError as exc:
+            raise ProviderError(f"llama-server slot {action}: {exc}") from exc
+        if reply.status == 501:
+            self.snapshot_support = False
+            return None
+        if reply.status != 200:
+            raise ProviderError(f"llama-server slot {action} answered HTTP {reply.status}: "
+                                f"{reply.body[:200].decode('utf-8', 'replace')}")
+        self.snapshot_support = True
+        try:
+            data = reply.json()
+        except localhttp.HttpError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    async def _warm_prefix(self, prefix: str, slot: int) -> None:
+        """Process the prefix alone in ``slot`` (one token generated), so the engine's prefix cache
+        holds it: the real prompt starts with exactly this text (INFERENCE_STRATEGY T3)."""
+        await self._post(self._body(prefix, 1, None, slot))
+
+    @staticmethod
+    def snapshot_name(key: str) -> str:
+        safe = "".join(c if c.isalnum() or c in "_-" else "_" for c in key)
+        return f"persona_{safe[:100]}.bin"
+
+    async def snapshot(self, key: str, prefix: str, slot: int) -> dict[str, Any]:
+        """T5 at scene load: warm a persona prefix into ``slot`` and save that slot's state to a
+        file, so a later promotion can restore it into whichever slot it gets."""
+        started = time.perf_counter()
+        await self._warm_prefix(prefix, slot)
+        self.slot_holds[slot] = key
+        method = "PREFIX_ONLY"
+        if self.snapshot_support is not False:
+            name = self.snapshot_name(key)
+            if await self._slot_action(slot, "save", name) is not None:
+                self.snapshots[key] = name
+                method = "SLOT_SAVE"
+        entry = {"event": "PERSONA_SNAPSHOT", "key": key, "slot": slot, "method": method,
+                 "ms": round((time.perf_counter() - started) * 1000)}
+        self.persona_log.append(entry)
+        return entry
+
+    async def prewarm(self, key: str, prefix: str, slot: int) -> dict[str, Any]:
+        """T6: before a likely promotion, put the persona prefix into ``slot``: restore its
+        snapshot where the server supports it, else send the prefix alone."""
+        started = time.perf_counter()
+        if self.slot_holds.get(slot) == key:
+            method = "ALREADY_WARM"
+        elif key in self.snapshots and await self._slot_action(slot, "restore", self.snapshots[key]) is not None:
+            method = "SLOT_RESTORE"
+        else:
+            await self._warm_prefix(prefix, slot)
+            method = "PREFIX_REQUEST"
+        self.slot_holds[slot] = key
+        entry = {"event": "PREWARM", "key": key, "slot": slot, "method": method,
+                 "ms": round((time.perf_counter() - started) * 1000)}
+        self.persona_log.append(entry)
+        return entry
+
+    async def _prepare_slot(self, request: ModelRequest, slot: int) -> str | None:
+        """Before a call: is the agent's persona prefix already in this slot (WARM)? If not, restore
+        its snapshot (RESTORED, T5) where there is one; else the call starts COLD."""
+        if slot < 0:
+            return "UNKNOWN" if request.prefix_key else None
+        held = self.slot_holds.get(slot)
+        self.slot_holds[slot] = request.prefix_key
+        if request.prefix_key is None:
+            return None
+        if held == request.prefix_key:
+            return "WARM"
+        name = self.snapshots.get(request.prefix_key)
+        if name is not None:
+            try:
+                if await self._slot_action(slot, "restore", name) is not None:
+                    return "RESTORED"
+            except ProviderError:
+                pass
+        return "COLD"
+
+    # ---------- decisions ----------
+
     async def complete(self, request: ModelRequest) -> ModelResponse:
         self.requests += 1
-        data = await self._post(self._body(request.prompt, request.max_tokens, request.output_schema,
-                                           self.slot_for(request)))
+        slot = self.slot_for(request)
+        prefix_state = await self._prepare_slot(request, slot)
+        data = await self._post(self._body(request.prompt, request.max_tokens, request.output_schema, slot))
         try:
             text = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
@@ -257,6 +358,7 @@ class LlamaProvider:
             prefill_ms=num(timings.get("prompt_ms")), generation_ms=num(timings.get("predicted_ms")),
             prompt_tokens=prompt_tokens, cached_tokens=cached,
             generated_tokens=num(timings.get("predicted_n")) if "predicted_n" in timings else num(usage.get("completion_tokens")),
+            slot=slot if slot >= 0 else None, prefix_state=prefix_state,
         )
 
 

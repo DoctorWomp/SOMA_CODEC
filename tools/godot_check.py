@@ -24,6 +24,12 @@ Steps:
               tools/run_scenario.py's runner, in stepped mode. SB-04 runs three times: the
               second time with random delays in the sidecar, the third with posing off
               (--no-pose, D-54), and all three must write the same journal bytes.
+              G3c-1 (D-59): SB-04 three more times with NPCs model-driven by the fake model
+              (one with random sidecar delays), then replayed from its decision records: all
+              four journals the same. The canary runs SB-04 and SB-05 with a unique marker in
+              every private goal and evaluator label: an NPC's own marker only in its own
+              labelled prompt line, no marker anywhere else; every agent's contexts only mention
+              tracks from its own observation packets.
               Runs with --filter only if the filter is part of "scenario_determinism".
 
 For the link tests, two sidecars run on 127.0.0.1 with a fresh session token for the duration
@@ -154,6 +160,28 @@ def private_strings() -> list[str]:
     return found
 
 
+OWN_GOAL_LABEL = "Your own private goal (known only to you): "
+
+
+def own_goal_owners() -> dict[str, str]:
+    """private goal -> the display name of the persona it belongs to (D-51: it may appear in that
+    persona's own prompt, labelled, and nowhere else)."""
+    from range_service.configs import load_and_check
+
+    config_set, _ = load_and_check()
+    return {str(p["private_goal"]): p["display_name"] for p in config_set.items["personas"].values()
+            if p.get("private_goal")}
+
+
+def is_own_goal(prompt: str, secret: str, owners: dict[str, str]) -> bool:
+    """True when ``secret`` is a private goal that appears in ``prompt`` only on its owner's own
+    labelled line, and the prompt is that owner's (D-51, G3c-1)."""
+    owner = owners.get(secret)
+    if owner is None or f"You are {owner} (" not in prompt.split("## IDENTITY", 1)[-1][:200]:
+        return False
+    return prompt.count(secret) == prompt.count(OWN_GOAL_LABEL + secret) == 1
+
+
 def validate_artifacts(folder: Path, require_all: bool = True) -> tuple[int, list[str]]:
     """Check Godot's journals (*.jsonl) and packet dumps (*.observations.json) against the
     contracts. Returns (number of records checked, problems)."""
@@ -225,6 +253,7 @@ def check_agent_records(folder: Path) -> tuple[int, list[str]]:
 
     checked, problems = 0, []
     secrets_list = private_strings()
+    owners = own_goal_owners()
     for path in sorted(folder.glob("**/decision_records.jsonl")):
         rel = path.relative_to(folder).as_posix()
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -237,7 +266,7 @@ def check_agent_records(folder: Path) -> tuple[int, list[str]]:
             checked += 1
             prompt = json.loads(line)["prompt"]
             for secret in secrets_list:
-                if secret in prompt:
+                if secret in prompt and not is_own_goal(prompt, secret, owners):
                     problems.append(f"{rel} line {number}: private text in an agent's context (T17): {secret[:40]!r}")
     return checked, problems
 
@@ -393,12 +422,59 @@ def _stop_cpu_load(procs: list[multiprocessing.Process]) -> None:
         proc.join(timeout=10)
 
 
-def _scenario_run(godot: str, scenario_id: str, out: Path, jitter_ms: int = 0, posing: bool = True):
+def _scenario_run(godot: str, scenario_id: str, out: Path, jitter_ms: int = 0, posing: bool = True,
+                  model: str = "none", configs=None):
     import asyncio
 
     from range_service.eval.runner import RunOptions, run_scenario
     return asyncio.run(run_scenario(RunOptions(scenario_id, godot, out_dir=out, jitter_ms=jitter_ms, timeout_s=600,
-                                               posing=posing)))
+                                               posing=posing, model=model, configs=configs)))
+
+
+def npc_model_checks(godot: str, root: Path) -> tuple[list[str], str]:
+    """G3c-1: NPCs model-driven (fake model) are deterministic and replayable; the canary finds
+    no private goal or evaluator label outside an NPC's own labelled prompt line."""
+    from range_service import contracts
+    from range_service.configs import load_and_check
+    from range_service.eval import canary
+    from range_service.eval.runner import read_journal
+
+    problems: list[str] = []
+    runs = {}
+    for name, jitter in (("SB04_npc_a", 0), ("SB04_npc_b", 25), ("SB04_npc_c", 0)):
+        runs[name] = _scenario_run(godot, "SB04_POLITE_BID", root / name, jitter, model="fake")
+    records = root / "SB04_npc_a" / "sidecar" / "decision_records.jsonl"
+    runs["SB04_npc_replay"] = _scenario_run(godot, "SB04_POLITE_BID", root / "SB04_npc_replay", model=f"replay:{records}")
+    hashes = {name: r.journal_sha256 for name, r in runs.items()}
+    if len(set(hashes.values())) != 1:
+        problems.append(f"SB-04 with model-driven NPCs is not deterministic or not replayable: "
+                        f"{ {k: (v or '')[:12] for k, v in hashes.items()} }")
+    for name, r in runs.items():
+        s = r.summary
+        if r.exit_code != 0 or r.godot_errors or s["sidecar_problems"] or s["step_timeouts"]:
+            problems.append(f"{name}: exit {r.exit_code}, errors {r.godot_errors[:2]}, sidecar {s['sidecar_problems'][:2]}")
+        if any(st["fallbacks"] for st in s["agents"].values()):
+            problems.append(f"{name}: model fallbacks {[(a, st['fallbacks']) for a, st in s['agents'].items()]}")
+        _, found = check_agent_records(r.run_dir)
+        problems += [f"{name}: {p}" for p in found]
+        for number, entry in enumerate(read_journal(r.run_dir / "journal.jsonl"), start=1):
+            for p in contracts.problems("journal_entry", entry)[:1]:
+                problems.append(f"{name} journal line {number}: {p}")
+    npc_calls = sum(len(json.loads(line)["model_calls"]) for line in records.read_text(encoding="utf-8").splitlines()
+                    if json.loads(line)["agent_id"] != "robot_r")
+    if not npc_calls:
+        problems.append("SB-04 with --model fake: no NPC made a model call (NPCs are not model-driven)")
+    cs, _ = load_and_check()
+    marked, goals, labels = canary.marked_configs(cs)
+    for scenario_id in ("SB04_POLITE_BID", "SB05_RAMP_VS_STAIRS"):
+        out = root / f"canary_{scenario_id}"
+        _scenario_run(godot, scenario_id, out, model="fake", configs=marked)
+        cast = marked.items["scenarios"][scenario_id]["cast"]
+        npcs = {a for a, e in cast.items() if not (e["persona"] == "robot_r" or e["controller"] == "LLM_AGENT")}
+        found = canary.scan_run(out, {a: e["persona"] for a, e in cast.items()}, goals, labels, npcs)
+        found += canary.observer_filter_problems(out, list(cast))
+        problems += [f"canary {scenario_id}: {p}" for p in found]
+    return problems, f"{npc_calls} NPC model calls, journal {(hashes['SB04_npc_a'] or '')[:12]} x3 and replayed"
 
 
 def scenario_checks(godot: str) -> int:
@@ -452,6 +528,11 @@ def scenario_checks(godot: str) -> int:
                 problems.append(f"SB-05: {robot} did not reach the platform ({states.get(robot)})")
         if "platform_stairs" in states.get("robot_wheeled", {}).get("links_used", ["platform_stairs"]):
             problems.append("SB-05: the wheeled humanoid used the stairs")
+        try:
+            npc_problems, npc_note = npc_model_checks(godot, root)
+        except RunError as exc:
+            npc_problems, npc_note = [f"model-driven NPC runs: {exc}"], ""
+        problems += npc_problems
         if problems:
             print(f"  FAIL  {len(problems)} problem(s) in the scenario runs:")
             for line in problems[:20]:
@@ -459,6 +540,8 @@ def scenario_checks(godot: str) -> int:
             return EXIT_FAILED
         print(f"  PASS  scenarios: SB-04 deterministic (journal {a.journal_sha256[:12]}, three runs: one with random "
               f"sidecar delays, one with posing off); SB-05 robots on the platform by the links their bodies allow")
+        print(f"  PASS  model-driven NPCs (fake model): {npc_note}; canary clean in SB-04 and SB-05; "
+              f"NPCs and Robot R perceive only through the observer filter")
         return EXIT_PASSED
     finally:
         shutil.rmtree(root, ignore_errors=True)

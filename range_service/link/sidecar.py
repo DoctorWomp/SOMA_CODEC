@@ -204,6 +204,13 @@ class Sidecar:
 
     async def _runtime_observation(self, ws: ServerConnection, runtime: AgentRuntime, payload: dict[str, Any]) -> None:
         job = runtime.observe(payload)
+        for tier, key, prefix in runtime.take_prewarms():
+            # T6: a promotion looks likely. Warm the persona prefix in the background; it never
+            # holds up an answer, and in stepped runs it cannot change what the world sees.
+            if runtime.gateway is not None:
+                task = asyncio.create_task(runtime.gateway.prewarm(runtime.agent_id, tier, key, prefix))
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
         if job is None:
             return
         if self.run_mode == "STEPPED":

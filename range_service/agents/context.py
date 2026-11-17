@@ -74,6 +74,9 @@ class Identity:
     directive: str
     knows: list[str]
     body_summary: str
+    # D-51 (owner, 2026-11-16): a model-driven NPC's OWN private goal, in its own prompt only,
+    # labelled as its own. Always None for Robot R and for agents that are not model-driven.
+    own_private_goal: str | None = None
 
 
 @dataclass
@@ -108,7 +111,15 @@ class ContextAssembler:
                  f"Public goal: {ident.public_goal}"]
         if ident.knows and self.tier != "C1":
             lines.append("You know: " + " ".join(ident.knows))
+        if ident.own_private_goal:
+            lines.append("Your own private goal (known only to you): " + ident.own_private_goal)
         return "\n".join(lines)
+
+    def persona_prefix(self, guardrails: str, identity: Identity) -> str:
+        """The stable start of every prompt this agent gets at this tier: guardrails and identity
+        (never cut, never changing between calls). Persona snapshots and pre-warming cache
+        exactly this text (INFERENCE_STRATEGY T3, T5, T6); every assembled prompt starts with it."""
+        return f"## GUARDRAILS\n{guardrails}\n\n## IDENTITY\n{self._identity(identity)}"
 
     @staticmethod
     def _commitments(memory: AgentMemory, now_ms: int) -> list[str]:

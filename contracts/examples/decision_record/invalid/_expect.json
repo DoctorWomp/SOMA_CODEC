@@ -2,5 +2,6 @@
   "two_repairs": "maxItems",
   "missing_section": "minItems",
   "unsafe_fallback": "oneOf",
-  "third_attempt": "enum"
+  "third_attempt": "enum",
+  "bad_prefix_state": "enum"
 }

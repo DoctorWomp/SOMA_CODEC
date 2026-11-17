@@ -127,7 +127,7 @@ def test_no_private_goal_or_evaluator_value_in_any_assembled_context():
             for entry in rt.prompts:
                 for secret in secrets:
                     assert secret not in entry["prompt"], f"{agent_id}: {secret[:40]!r} reached a context"
-            assert "style" not in rt.identity.__dict__ and "private" not in str(rt.identity)
+            assert "style" not in rt.identity.__dict__ and rt.identity.own_private_goal is None   # no NPC model here
 
 
 def test_public_persona_drops_private_goal_and_style():

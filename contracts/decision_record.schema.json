@@ -130,6 +130,10 @@
           }
         }
       ]
+    },
+    "activity": {
+      "description": "Reserved for G3c-2 (PULSE_PROTOCOL \u00a73: an optional activity with wake conditions). Not produced yet: absent or null.",
+      "type": "null"
     }
   },
   "$defs": {
@@ -252,7 +256,7 @@
           "$ref": "common.schema.json#/$defs/id"
         },
         "attempt": {
-          "description": "0 = first call, 1 = the one repair attempt (Blueprint §10.3).",
+          "description": "0 = first call, 1 = the one repair attempt (Blueprint \u00a710.3).",
           "enum": [
             0,
             1
@@ -397,6 +401,26 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "server": {
+          "description": "G3c-1: the llama-server that served the call (focal or npc in Option C). Absent for fake and replay.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,31}$"
+        },
+        "slot": {
+          "description": "G3c-1: the engine slot used.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "prefix_state": {
+          "description": "G3c-1 (T5/T6): was the agent's persona prefix already in the slot (WARM), restored from its snapshot (RESTORED), or not (COLD)? UNKNOWN when the slot was not chosen by RANGE.",
+          "enum": [
+            "WARM",
+            "RESTORED",
+            "COLD",
+            "UNKNOWN"
           ]
         }
       }
