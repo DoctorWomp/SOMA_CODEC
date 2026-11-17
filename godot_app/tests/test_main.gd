@@ -48,6 +48,7 @@ const TESTS := [
 	"test_link_wrong_token",
 	"test_link_slow_sidecar",
 	"test_link_no_sidecar",
+	"test_link_silent_port",
 	"test_hold_is_invisible_deterministic",
 	"test_expression_capabilities",
 	"test_expression_sight_rules",
@@ -1584,6 +1585,40 @@ func test_link_no_sidecar() -> String:
 	link.queue_free()
 	if status != "REFUSED" or w.clock.tick == before or longest > 50.0:
 		return "with no sidecar the link should report REFUSED and the world keep ticking (%s, %.1f ms)" % [status, longest]
+	return ""
+
+
+## A port that accepts the connection but never answers the handshake. On Windows a closed
+## local port looks the same: Godot's connection stays CONNECTING and never reports a refusal
+## (owner's PC, 2026-11-17). The link must give up after its connect timeout, report REFUSED,
+## retry later, and the world must keep ticking.
+func test_link_silent_port() -> String:
+	var server := TCPServer.new()
+	var silent_port := 0
+	for candidate in range(47900, 47950):
+		if server.listen(candidate, "127.0.0.1") == OK:
+			silent_port = candidate
+			break
+	if silent_port == 0:
+		return "could not open a local test port"
+	var w := await _world(["legged_humanoid"])
+	await _place(w, [["robot_legged", "legged_humanoid", 15.0, 15.5, 0.0]])
+	var link := LinkClient.new()
+	add_child(link)
+	link.setup(w, silent_port, ["robot_legged"], "a-token-for-a-port-that-never-answers")
+	var before := w.clock.tick
+	var longest := 0.0
+	var started := Time.get_ticks_msec()
+	while link.stats["refused"] < 1 and Time.get_ticks_msec() - started < 8000:
+		longest = maxf(longest, await _run_linked(60, func() -> bool: return link.stats["refused"] >= 1))
+	var waited := Time.get_ticks_msec() - started
+	var status := link.status
+	link.queue_free()
+	server.stop()
+	if status != "REFUSED" or w.clock.tick == before or longest > 50.0:
+		return "a port that never answers should end in REFUSED after the connect timeout (%s after %d ms, %.1f ms)" % [status, waited, longest]
+	if waited < LinkClient.CONNECT_TIMEOUT_MS - 100:
+		return "gave up after %d ms, before the %d ms connect timeout" % [waited, LinkClient.CONNECT_TIMEOUT_MS]
 	return ""
 
 
