@@ -11,10 +11,10 @@ engine:
   warm_up: true              # one short request after loading, so the first decision is not slow
 servers:
   focal:                     # Option A/B (INFERENCE_STRATEGY §4): one server for every agent
-    model: qwen35_9b_q4km    # a catalog id or label (configs/models/catalog.yaml) or a registry local id
+    model: gemma4_12b_qat    # F3 (owner verdict 2026-11-17, D-58); backup F1 qwen35_9b_q4km
     parallel_slots: 2        # one pinned slot for Robot R, one for everyone else
     context_per_slot: 6144   # tokens per slot; the focal budget is 3750 (D-51) plus room to answer
-    kv_cache_type: f16       # f16 or q8_0 (D-55 bake-off condition); q4_0 only if measured harmless
+    kv_cache_type: q8_0      # default since the bake-off (95-98% agreement with f16 at the same speed, D-58)
     flash_attention: auto
     gpu_layers: all          # all, or a number of layers to keep on the GPU
 sampling:

@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a COMPLETE (merged 2026-11-15) · G3b and G3c planned · owner checks: [G3a_OWNER_CHECKLIST.md](G3a_OWNER_CHECKLIST.md)
+**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 in progress · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -167,6 +167,54 @@ What G3b will download, all on the owner's go-ahead and never automatically (D-2
 **Proposed extension (D-55, [QUANTIZATION_OPTIONS.md](../QUANTIZATION_OPTIONS.md)):** add QAT and higher-precision variants, MoE models with experts partly in system RAM, KV cache q8_0 as a condition, and an offline prompt-set comparison. Core set (owner direction 2026-11-16: 4B–12B first, QAT preferred, smaller models for C1 NPCs): ~35–40 GB.
 
 Sizes are estimates from published 4-bit file sizes for these model sizes; exact sizes are taken from the download pages before anything is fetched. Steps: a setup script that downloads only what the owner confirms and checks every file's hash; `configs/inference.yaml`; the bake-off on SB-04 and S001-style prompts (action-JSON validity, valid-action rate, p50/p95 latency, VRAM); then Option B (focal priority, slot pinning, deadline scheduler). `llama-server` listens on 127.0.0.1 only, so it needs no firewall rule.
+
+## G3b result (owner's PC, 2026-11-17)
+
+**Machine:** RTX 4070 Ti SUPER (16376 MiB), driver 621.24, llama.cpp b12443 (Windows CUDA 12.4 build, checksums pinned in D-57). **Prompt set:** `prompts_v1.jsonl` (sha `93e215698db0`), 40 of Robot R's SB-04 decisions, temperature 0.
+
+### Offline prompt set
+
+| Model | Quant | KV | Valid before repair | Repair | Final valid | Valid actions | Promises kept* | Agree vs higher precision | Agree q8_0 vs f16 | Prompt tok/s | Gen tok/s | p50 ms |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| F1 Qwen3.5-9B | Q4_K_M | f16 | 98% | 2% | 100% | 100% | 0% | 90% vs F2 | – | 4062 | 91.6 | 1975 |
+| F1 Qwen3.5-9B | Q4_K_M | q8_0 | 98% | 2% | 100% | 100% | 0% | 89% vs F2 | 98% | 4220 | 94.7 | 1965 |
+| F2 Qwen3.5-9B | Q6_K | f16 | 28% | 20% | 48% | 48% | 0% | – | – | 3921 | 77.2 | 2744 |
+| F2 Qwen3.5-9B | Q6_K | q8_0 | 22% | 22% | 45% | 45% | 0% | – | 100% | 3855 | 76.8 | 2761 |
+| F3 Gemma 4 12B | Q4_0 QAT | f16 | 100% | 0% | 100% | 100% | 0% | – | – | 2074 | 67.0 | 1960 |
+| F3 Gemma 4 12B | Q4_0 QAT | q8_0 | 100% | 0% | 100% | 100% | 0% | – | 98% | 2480 | 66.3 | 2122 |
+| N1 Gemma 4 E4B | Q4_0 QAT | f16 | 92% | 8% | 100% | 100% | 0% | – | – | 4208 | 134.1 | 1296 |
+| N1 Gemma 4 E4B | Q4_0 QAT | q8_0 | 92% | 8% | 100% | 100% | 0% | – | 95% | 4238 | 127.7 | 1290 |
+| N2 Qwen3.5-4B | Q6_K | f16 | 20% | 78% | 98% | 98% | 0% | – | – | 5330 | 119.0 | 1792 |
+| N2 Qwen3.5-4B | Q6_K | q8_0 | 28% | 70% | 98% | 98% | 0% | – | 95% | 5395 | 118.8 | 1775 |
+| N3 Qwen3.5-4B | Q4_K_M | f16 | 98% | 2% | 100% | 100% | 0% | 74% vs N2 | – | 5869 | 143.3 | 1132 |
+| N3 Qwen3.5-4B | Q4_K_M | q8_0 | 95% | 5% | 100% | 100% | 0% | 72% vs N2 | 98% | 5857 | 139.6 | 1119 |
+| S1 Gemma 4 E2B | Q4_0 QAT | f16 | 92% | 5% | 98% | 98% | 0% | – | – | 9000 | 216.1 | 780 |
+| S1 Gemma 4 E2B | Q4_0 QAT | q8_0 | 88% | 10% | 98% | 98% | 0% | – | 90% | 9165 | 208.8 | 799 |
+| S2 Qwen3.5-2B | Q6_K | f16 | 80% | 15% | 95% | 95% | 0% | – | – | 11609 | 247.1 | 830 |
+| S2 Qwen3.5-2B | Q6_K | q8_0 | 85% | 10% | 95% | 95% | 0% | – | 84% | 11337 | 247.1 | 829 |
+
+VRAM was not measured (the tool said "CPU build": wrong, see below). *Promises kept was a measurement bug, see below.
+
+### SB-04 in Godot, live and stepped
+
+| Model | Mode | Run OK | Decisions | Deadline misses | Fallbacks | p50 ms | p95 ms |
+|---|---|---|---|---|---|---|---|
+| F1 Qwen3.5-9B Q4_K_M | LIVE | yes | 2 | 0 | 0 | 1875 | 2170 |
+| F1 Qwen3.5-9B Q4_K_M | STEPPED | yes | 11 | 0 | 1 | 1849 | 2233 |
+| F3 Gemma 4 12B Q4_0 | LIVE | yes | 2 | 0 | 0 | 2157 | 2352 |
+| F3 Gemma 4 12B Q4_0 | STEPPED | yes | 8 | 0 | 0 | 1826 | 2170 |
+
+### What it showed, and what was wrong with the measurement
+
+- F3 never needed a repair; F1, N3 and N1 rarely did. **F2 failed half its prompts** although its file hash matches the catalog. The raw answers were not saved, so the cause cannot be read from this run.
+- KV q8_0 agrees with f16 on 95–98% of first actions (84–90% for the 2B models) at the same speed: q8_0 becomes the default.
+- **Bugs in the tool**, fixed in G3c-1 with regression tests (D-59): (1) VRAM: on Windows `nvidia-smi` reports per-process memory as N/A, and the tool printed "CPU build"; 90+ tok/s on a 9B model proves GPU offload. (2) Promises kept read 0% for every model, yet F3 spoke to the promised visitor and F1 approached and acknowledged them: the prompt never said when to set `fulfills_commitment`, and only the flag was scored. (3) Invalid answers were not saved. (4) The progress line left old text on the console.
+
+### Owner verdict (2026-11-17)
+
+- **Robot R:** F3 (Gemma 4 12B QAT Q4_0), KV q8_0. Backup F1. The live runs show 0 deadline misses for both, so F3 stands.
+- **NPC server:** N3 (Qwen3.5-4B Q4_K_M), KV q8_0. Alternative N1. S1 for background crowd NPCs later.
+- **F2 dropped from the core set** (catalog `EXTRA`). **KV cache default: q8_0.** Recorded in D-58; `configs/inference.yaml` follows.
 
 ## Out of scope for G3
 
