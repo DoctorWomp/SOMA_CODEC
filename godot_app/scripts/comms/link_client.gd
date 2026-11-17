@@ -28,6 +28,7 @@ const CLOSE_UNAUTHORIZED := 4401   # wrong or missing session token
 const CLOSE_BUSY := 4409           # another client is connected
 const RETRY_MIN_MS := 500
 const RETRY_MAX_MS := 8000
+const CONNECT_TIMEOUT_MS := 3000   # give up on a connection that never opens (Windows never reports a refused local port)
 const ENVELOPE_TYPES := ["world.observation", "horizon.delta_feature", "horizon.hypothesis", "agent.action_request",
 	"world.action_result", "comms.event", "director.intervention", "link.hello", "link.heartbeat", "link.step"]
 const STEP_TIMEOUT_MS := 15000
@@ -48,6 +49,7 @@ var _queue: Array[String] = []
 var _was_open := false
 var _retry_ms := RETRY_MIN_MS
 var _next_attempt_ms := 0
+var _connect_started_ms := 0
 var _last_heartbeat_ms := 0
 var _seq := 0
 
@@ -83,6 +85,16 @@ func _process(_delta: float) -> void:
 		return
 	_ws.poll()
 	match _ws.get_ready_state():
+		WebSocketPeer.STATE_CONNECTING:
+			if now - _connect_started_ms >= CONNECT_TIMEOUT_MS:
+				_ws.close()
+				_ws = null
+				stats["refused"] += 1
+				_set_status("REFUSED", "no answer from the sidecar within %d ms" % CONNECT_TIMEOUT_MS)
+				_set_ready(false)
+				_check_step_timeout(now)
+				_next_attempt_ms = now + _retry_ms
+				_retry_ms = mini(_retry_ms * 2, RETRY_MAX_MS)
 		WebSocketPeer.STATE_OPEN:
 			if not _was_open:
 				_was_open = true
@@ -126,6 +138,7 @@ func _connect() -> void:
 	_ws.handshake_headers = PackedStringArray([TOKEN_HEADER + ": " + _token])
 	_ws.inbound_buffer_size = MAX_MESSAGE_BYTES
 	_ws.outbound_buffer_size = MAX_MESSAGE_BYTES * 4
+	_connect_started_ms = Time.get_ticks_msec()
 	if _ws.connect_to_url("ws://127.0.0.1:%d" % port) != OK:
 		_ws = null
 		stats["refused"] += 1
