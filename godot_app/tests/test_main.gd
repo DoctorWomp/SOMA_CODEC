@@ -1573,7 +1573,13 @@ func test_link_no_sidecar() -> String:
 	add_child(link)
 	link.setup(w, 9, ["robot_legged"], "a-token-for-a-port-nobody-listens-on")
 	var before := w.clock.tick
-	var longest := await _run_linked(300, func() -> bool: return link.stats["refused"] >= 1)
+	# Wait by wall clock, not frames: Linux refuses a closed local port at once, but Windows
+	# retries the connection and reports the refusal only after about 2 s, while 300 frames
+	# take about 1.2 s (failed on the owner's PC, 2026-11-17, still CONNECTING).
+	var longest := 0.0
+	var started := Time.get_ticks_msec()
+	while link.stats["refused"] < 1 and Time.get_ticks_msec() - started < 8000:
+		longest = maxf(longest, await _run_linked(60, func() -> bool: return link.stats["refused"] >= 1))
 	var status := link.status
 	link.queue_free()
 	if status != "REFUSED" or w.clock.tick == before or longest > 50.0:

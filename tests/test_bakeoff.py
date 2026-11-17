@@ -35,8 +35,13 @@ def test_committed_prompt_set_is_robot_r_in_every_body_with_nothing_private():
 
 def test_prompt_set_hash_ignores_windows_line_endings(tmp_path):
     crlf = tmp_path / "set.jsonl"
-    crlf.write_bytes(PROMPT_SET_V1.read_bytes().replace(b"\n", b"\r\n"))
+    # Start from LF whatever the checkout has: a Windows working copy made before *.jsonl was
+    # pinned to LF is already CRLF, and doubling it to CR CR LF tested the wrong thing
+    # (failed on the owner's PC, 2026-11-17).
+    lf = PROMPT_SET_V1.read_bytes().replace(b"\r\n", b"\n")
+    crlf.write_bytes(lf.replace(b"\n", b"\r\n"))
     assert load_set(crlf)[1] == load_set(PROMPT_SET_V1)[1]
+    assert load_set(crlf)[1].startswith("ee2b7c03be96")
 
 
 def test_prompt_set_v2_has_npc_prompts_and_enough_promise_situations():

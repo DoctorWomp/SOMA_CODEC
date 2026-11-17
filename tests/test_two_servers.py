@@ -151,11 +151,37 @@ def test_over_budget_estimate_falls_back_before_starting_the_npc_server(setup_en
     asyncio.run(run())
     assert iset.option == "B"
     reason = next(e["reason"] for e in iset.events if e["event"] == "OPTION_C_FALLBACK")
-    assert "over the 1024 MiB budget" in reason
+    assert "over the 1024 MiB budget" in reason and "focal" in reason
     est = iset.vram["estimate"]
     assert est["npc"]["kv_source"] == "header (upper bound)" and est["npc"]["kv_mib"] >= 0
     # Measured VRAM is null with a reason without a GPU, never 0.
     assert iset.vram["measured"]["focal"]["mib"] is None and iset.vram["measured"]["focal"]["note"]
+
+
+def test_measured_focal_vram_replaces_its_estimate_in_the_fit_check(setup_env, monkeypatch):
+    """Owner's PC, 2026-11-17: Gemma 4 12B's header estimate (16957 MiB, an upper bound that
+    ignores sliding-window layers) sent every run to Option B, although Robot R's server was
+    already running and measured. Once the focal server runs, its measured use counts instead."""
+    from range_service.eval import bakeoff as bakeoff_mod
+
+    tmp, binary, inf = setup_env
+    iset = build_inference(run_dir=tmp / "run", inference=inf, binary=binary)
+    est_focal = infmod.estimate_server_mib(iset.focal.model, iset.focal.settings, infmod.DEFAULT_VRAM)["total_mib"]
+    est_npc = infmod.estimate_server_mib(iset.npc.model, iset.npc.settings, infmod.DEFAULT_VRAM)["total_mib"]
+    reserve, measured_focal = 100, 50
+    assert measured_focal < est_focal                         # the estimate alone would not fit the budget below
+    iset.inference["vram"] = {"budget_mib": est_npc + reserve + measured_focal + 10, "reserve_mib": reserve,
+                              "compute_buffer_mib": 512, "over_budget": "FALLBACK"}
+    monkeypatch.setattr(bakeoff_mod, "vram_mib", lambda pid, before=None: (measured_focal, None))
+
+    async def run():
+        await iset.start()
+        await iset.stop()
+
+    asyncio.run(run())
+    assert iset.option == "C", iset.events
+    assert iset.vram["fit_check_basis"] == "focal measured + NPC estimate"
+    assert iset.vram["fit_check_mib"] == measured_focal + est_npc + reserve
 
 
 def test_kv_estimate_from_the_header():
