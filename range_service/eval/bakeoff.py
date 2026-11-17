@@ -304,21 +304,31 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
     live = results.get("live", [])
     if live:
         lines += ["## SB-04 in Godot: Robot R and the NPC server (Option C)", "",
-                  "| Robot R model | NPC model | Mode | Option | Run OK | Robot R decisions | Deadline misses | Fallbacks | "
-                  "Robot R p50 ms | Robot R p95 ms | NPC calls | NPC p50 ms | Promotion warm p50 ms (n) | "
-                  "Promotion cold p50 ms (n) | VRAM focal / NPC MiB | Journal |",
+                  "| Robot R model | NPC model | Mode | Runs | Option | OK | Robot R calls | Robot R p50 / p95 ms | "
+                  "Robot R actions accepted / stale | NPC calls (timeouts) | NPC p50 ms: total / queue / prefill / gen | "
+                  "NPC time with Robot R busy | Loop lag p95 ms | Promotion warm: to call / call / to action ms (n) | "
+                  "Promotion cold: to call / call / to action ms (n) | VRAM focal / NPC MiB |",
                   "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for r in live:
-            pw, pc = r.get("promotion_warm_p50_ms"), r.get("promotion_cold_p50_ms")
-            lines.append(f"| {r['label']} | {r.get('npc_label', '–')} | {r['mode']} | {r.get('option') or '–'} | "
-                         f"{'yes' if r['ok'] else 'NO'} | {r['decisions']} | {r['timeouts']} | {r['fallbacks']} | "
-                         f"{f(r['p50_ms'])} | {f(r['p95_ms'])} | {f(r.get('npc_calls'))} | {f(r.get('npc_p50_ms'))} | "
-                         f"{f(pw)} ({r.get('promotion_warm_n', 0)}) | {f(pc)} ({r.get('promotion_cold_n', 0)}) | "
-                         f"{f(r.get('vram_focal_mib'))} / {f(r.get('vram_npc_mib'))} | {r['journal'][:12]} |")
-        lines += ["", "Modes: LIVE (pre-warm on), LIVE_COLD (pre-warm off), LIVE_LOAD (pre-warm on, plus "
-                  "synthetic NPC calls kept running on the NPC server, to measure Robot R under NPC load), STEPPED. "
-                  "Robot R columns count Robot R's calls only. Promotion latency: promotion event to the NPC's first "
-                  "action the world accepted; warm = the first call found the persona prefix in its slot.", ""]
+            lines.append(
+                f"| {r['label']} | {r.get('npc_label', '–')} | {r['mode']} | {r.get('repeats', 1)} | {r.get('option') or '–'} | "
+                f"{'yes' if r['ok'] else 'NO'} | {r['decisions']} | {f(r['p50_ms'])} / {f(r['p95_ms'])} | "
+                f"{f(r.get('robot_actions_accepted'))} / {f(r.get('robot_actions_stale'))} | "
+                f"{f(r.get('npc_calls'))} ({f(r.get('npc_timeouts'))}) | {f(r.get('npc_p50_ms'))} / {f(r.get('npc_queue_p50_ms'))} / "
+                f"{f(r.get('npc_prefill_p50_ms'))} / {f(r.get('npc_generation_p50_ms'))} | "
+                f"{f(r.get('npc_robot_busy_share'))} | {f(r.get('loop_lag_p95_ms'))} | "
+                f"{f(r.get('promotion_warm_to_call_p50_ms'))} / {f(r.get('promotion_warm_call_p50_ms'))} / "
+                f"{f(r.get('promotion_warm_p50_ms'))} ({r.get('promotion_warm_n', 0)}) | "
+                f"{f(r.get('promotion_cold_to_call_p50_ms'))} / {f(r.get('promotion_cold_call_p50_ms'))} / "
+                f"{f(r.get('promotion_cold_p50_ms'))} ({r.get('promotion_cold_n', 0)}) | "
+                f"{f(r.get('vram_focal_mib'))} / {f(r.get('vram_npc_mib'))} |")
+        lines += ["", "Modes: LIVE (pre-warm and snapshots on), LIVE_COLD (both off), LIVE_LOAD (pre-warm on, plus "
+                  "synthetic NPC calls on all NPC slots but one, to measure Robot R under NPC load), STEPPED. Since "
+                  "G3c-2 LIVE runs in real time (90 s per SB-04) and rows pool all repeats. Robot R columns count "
+                  "Robot R's calls only. \"NPC time with Robot R busy\": share of NPC call time during which Robot R's "
+                  "server also had a call in flight (both share one GPU). Promotion: promotion event to the first "
+                  "model call (includes waiting for a trigger), the call itself, and to the first action the world "
+                  "accepted; warm = the first call found the persona prefix in its slot.", ""]
     lines += ["Agreement = share of prompts where both conditions chose the same first action (and its key argument). "
               "Valid actions = the offline action-gate check. Promises kept: *flag* = the answer set "
               "`fulfills_commitment`; *behavior* = it addressed, faced, approached or gestured at the person it had "

@@ -53,3 +53,13 @@ def test_godot_command_never_carries_the_token_or_evaluator_data():
     assert "--scenario=SB04_POLITE_BID" in cmd and "--run-mode=STEPPED" in cmd and "--bodies=robot_r:quadruped" in cmd
     assert "--link-agents=robot_r,visitor_x,visitor_y" in cmd and "--headless" in cmd
     assert "token" not in cmd.lower() and "evaluator" not in cmd and "y_wants_help" not in cmd
+
+
+def test_live_runs_in_real_time_stepped_as_fast_as_it_can():
+    """G3c-2 (D-60): with --fixed-fps a headless LIVE world ran ~15x faster than the clock, so every
+    answer from a 2 s model was refused as stale and Robot R made 1-3 decisions per run."""
+    scenario = CONFIGS.items["scenarios"]["SB04_POLITE_BID"]
+    live = godot_command(opts(mode="LIVE"), scenario, Path("/tmp/run"), 4242, 4204)
+    stepped = godot_command(opts(mode="STEPPED"), scenario, Path("/tmp/run"), 4242, 4204)
+    assert "--headless" in live and "--fixed-fps" not in live
+    assert "--headless" in stepped and stepped[stepped.index("--fixed-fps") + 1] == "60"

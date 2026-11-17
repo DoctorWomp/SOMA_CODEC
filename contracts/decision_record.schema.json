@@ -422,6 +422,11 @@
             "COLD",
             "UNKNOWN"
           ]
+        },
+        "other_server_busy_ms": {
+          "description": "G3c-2 (D-60): in Option C, how long the other model server had a call in flight during this call (both share one GPU).",
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

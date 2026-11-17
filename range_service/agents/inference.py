@@ -144,26 +144,65 @@ def npc_server_name(inf: dict[str, Any]) -> str | None:
     return next(iter(names), None)
 
 
-def estimate_server_mib(model: ResolvedModel, server: dict[str, Any], vram: dict[str, Any]) -> dict[str, Any]:
-    """VRAM estimate for one server: model file + KV cache for all its slots + a compute buffer.
-    The KV size comes from the GGUF header where it can (an upper bound for sliding-window and
-    hybrid models), else a stated rule of thumb. An estimate, never a measurement."""
+VRAM_STORE = Path(__file__).resolve().parents[2] / "models" / "vram.local.yaml"   # git-ignored (*.local.yaml)
+
+
+def _measure_key(model: ResolvedModel, server: dict[str, Any]) -> str:
+    return f"{model.sha256[:16]}:{server['kv_cache_type']}:{server['parallel_slots']}x{server['context_per_slot']}"
+
+
+def load_measured(path: Path = VRAM_STORE) -> dict[str, Any]:
+    try:
+        data = load_yaml(path) if path.is_file() else {}
+    except Exception:   # noqa: BLE001 - a damaged local file is just ignored (and rewritten)
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def record_measured(model: ResolvedModel, server: dict[str, Any], mib: int, note: str | None,
+                    path: Path = VRAM_STORE) -> None:
+    """Keep a server's measured VRAM per model file and settings, so the next run's fit check uses
+    it instead of the header estimate (G3c-2, D-60). Local to this machine, never committed."""
+    import yaml   # noqa: PLC0415
+
+    data = load_measured(path)
+    data[_measure_key(model, server)] = {"model": model.path.name[:120], "mib": int(mib), "note": (note or "")[:200],
+                                         "measured": time.strftime("%Y-%m-%d")}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump(data, sort_keys=True), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def estimate_server_mib(model: ResolvedModel, server: dict[str, Any], vram: dict[str, Any],
+                        measured: dict[str, Any] | None = None) -> dict[str, Any]:
+    """VRAM for one server. A measurement of the same model file with the same settings on this
+    machine wins (``models/vram.local.yaml``); otherwise model file + KV cache from the GGUF header
+    layer by layer (sliding-window, shared and linear-attention layers counted as llama.cpp sizes
+    them) + a compute buffer; otherwise a stated rule of thumb for the KV cache."""
     from range_service.models import gguf   # noqa: PLC0415
 
+    seen = (measured or {}).get(_measure_key(model, server))
+    if isinstance(seen, dict) and isinstance(seen.get("mib"), int):
+        return {"model_mib": None, "kv_mib": None, "kv_source": f"measured on this machine {seen.get('measured', '')}".strip(),
+                "compute_buffer_mib": None, "total_mib": seen["mib"], "basis": "measured"}
     file_mib = model.path.stat().st_size / 2**20 if model.path.is_file() else None
-    tokens = server["parallel_slots"] * server["context_per_slot"]
-    per_token, source = None, "rule of thumb (128 KiB per token at f16)"
+    kv_bytes, source = None, "rule of thumb (128 KiB per token at f16)"
     try:
-        per_token, source = gguf.kv_bytes_per_token(gguf.read_meta(model.path), server["kv_cache_type"])
+        kv_bytes, source = gguf.kv_cache_bytes(gguf.read_meta(model.path), server["kv_cache_type"],
+                                               server["parallel_slots"], server["context_per_slot"])
     except (OSError, gguf.GGUFError):
         source = "model header unreadable; rule of thumb (128 KiB per token at f16)"
-    if per_token is None:
-        per_token = KV_RULE_OF_THUMB_BYTES_F16 * gguf.KV_BYTES[server["kv_cache_type"]] / 2
+    if kv_bytes is None:
+        tokens = server["parallel_slots"] * server["context_per_slot"]
+        kv_bytes = KV_RULE_OF_THUMB_BYTES_F16 * gguf.KV_BYTES[server["kv_cache_type"]] / 2 * tokens
         source = f"rule of thumb (128 KiB per token at f16); {source}"
-    kv_mib = per_token * tokens / 2**20
+    kv_mib = kv_bytes / 2**20
     total = (file_mib or 0) + kv_mib + vram["compute_buffer_mib"]
     return {"model_mib": round(file_mib) if file_mib is not None else None, "kv_mib": round(kv_mib),
-            "kv_source": source, "compute_buffer_mib": vram["compute_buffer_mib"], "total_mib": round(total)}
+            "kv_source": source, "compute_buffer_mib": vram["compute_buffer_mib"], "total_mib": round(total),
+            "basis": "estimate"}
 
 
 @dataclass
@@ -181,6 +220,7 @@ class InferenceSet:
     events: list[dict[str, Any]] = field(default_factory=list)
     vram: dict[str, Any] = field(default_factory=dict)
     npc_off_reason: str = "no NPC server configured (C1/C2 tiers use the focal server)"
+    vram_store: Path | None = None            # measured VRAM per model file; build_inference sets it
 
     @property
     def npc_gateway(self) -> ModelGateway:
@@ -197,9 +237,10 @@ class InferenceSet:
         from range_service.eval.bakeoff import gpu_memory_used_mib, vram_mib   # noqa: PLC0415
 
         vram_cfg = dict(DEFAULT_VRAM, **self.inference.get("vram", {}))
-        est = {"focal": estimate_server_mib(self.focal.model, self.focal.settings, vram_cfg)}
+        measured = load_measured(self.vram_store) if self.vram_store is not None else {}
+        est = {"focal": estimate_server_mib(self.focal.model, self.focal.settings, vram_cfg, measured)}
         if self.npc is not None:
-            est["npc"] = estimate_server_mib(self.npc.model, self.npc.settings, vram_cfg)
+            est["npc"] = estimate_server_mib(self.npc.model, self.npc.settings, vram_cfg, measured)
         est_total = sum(e["total_mib"] for e in est.values()) + vram_cfg["reserve_mib"]
         self.vram = {"budget_mib": vram_cfg["budget_mib"], "reserve_mib": vram_cfg["reserve_mib"],
                      "estimate": est, "estimate_total_mib": est_total, "measured": {}}
@@ -208,6 +249,8 @@ class InferenceSet:
         proc = self.focal.provider.server.process if self.focal.provider.server else None
         focal_mib, focal_note = vram_mib(proc.pid if proc else None, before)
         self.vram["measured"]["focal"] = {"mib": focal_mib, "note": focal_note}
+        if focal_mib is not None and self.vram_store is not None:
+            record_measured(self.focal.model, self.focal.settings, focal_mib, focal_note, self.vram_store)
         if self.npc is None:
             self._fallback(self.npc_off_reason)
             return
@@ -219,7 +262,8 @@ class InferenceSet:
             focal_basis, focal_label = focal_mib, "focal measured"
         need = focal_basis + est["npc"]["total_mib"] + vram_cfg["reserve_mib"]
         self.vram["fit_check_mib"] = need
-        self.vram["fit_check_basis"] = "focal measured + NPC estimate" if focal_mib is not None else "estimates"
+        npc_basis = "NPC measured earlier" if est["npc"].get("basis") == "measured" else "NPC estimate"
+        self.vram["fit_check_basis"] = ("focal measured + " if focal_mib is not None else "focal estimate + ") + npc_basis
         if need > vram_cfg["budget_mib"]:
             msg = (f"VRAM {need} MiB ({focal_label} {focal_basis} + NPC estimate {est['npc']['total_mib']} "
                    f"+ reserve {vram_cfg['reserve_mib']}) is over the {vram_cfg['budget_mib']} MiB budget")
@@ -239,6 +283,8 @@ class InferenceSet:
         proc = self.npc.provider.server.process if self.npc.provider.server else None
         npc_mib, npc_note = vram_mib(proc.pid if proc else None, mid)
         self.vram["measured"]["npc"] = {"mib": npc_mib, "note": npc_note}
+        if npc_mib is not None and self.vram_store is not None:
+            record_measured(self.npc.model, self.npc.settings, npc_mib, npc_note, self.vram_store)
         if focal_mib is not None and npc_mib is not None:
             used = focal_mib + npc_mib + vram_cfg["reserve_mib"]
             self.vram["measured_total_mib"] = used
@@ -299,7 +345,7 @@ def build_inference(focal_model: str | None = None, npc_model: str | None = None
         # Option B: one server. Its scheduler already serves C1/C2 from the shared slots.
         tiers = {t: dict(s, server=focal_name) for t, s in inf["tiers"].items()}
         inf = dict(inf, tiers=tiers)
-    iset = InferenceSet(focal, npc, inf)
+    iset = InferenceSet(focal, npc, inf, vram_store=VRAM_STORE)
     if npc_name is not None and npc_model == "none":
         iset.npc_off_reason = "the NPC server was switched off for this run (--npc-model none)"
     return iset

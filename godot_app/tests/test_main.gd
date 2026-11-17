@@ -1367,7 +1367,7 @@ func test_action_gate_reason_codes() -> String:
 		["friend", "human_walker", 15.0, 14.0, PI],
 		["bystander", "human_walker", 16.5, 15.0, PI],
 	])
-	await _ticks(130)
+	await _ticks(130 + ActionGate.STALE_AFTER_TICKS)   # so a request can be older than the stale window
 	w.senses.sample()
 	var friend_track := w.senses.track_id_for("agent", "friend")
 	var mine := ["agent", "quad"]
@@ -1378,7 +1378,7 @@ func test_action_gate_reason_codes() -> String:
 		["INVALID_SCHEMA", {"schema_version": "1.0", "action_request_id": "act_t_0003", "agent_id": "agent"}],
 		["INVALID_SCHEMA", _req("agent", now + 30, "NO_OP", {}, 4)],
 		["CAPABILITY_DENIED", _req("bystander", now, "NO_OP", {}, 5)],
-		["STALE_OBSERVATION", _req("agent", now - 120, "NO_OP", {}, 6)],
+		["STALE_OBSERVATION", _req("agent", now - ActionGate.STALE_AFTER_TICKS - 30, "NO_OP", {}, 6)],
 		["CAPABILITY_DENIED", _req("quad", now, "GESTURE", {"gesture": "WAVE"}, 7)],
 		["PA_UNAUTHORIZED", _req("agent", now, "SPEAK", {"channel": "PA", "text": "Attention."}, 8)],
 		["GROUP_NOT_MEMBER", _req("agent", now, "SPEAK", {"channel": "GROUP", "text": "Hi.", "group_id": "grp_999999"}, 9)],
@@ -1390,6 +1390,7 @@ func test_action_gate_reason_codes() -> String:
 		["OK", _req("agent", now, "GESTURE", {"gesture": "NOD", "target_id": friend_track}, 14)],
 		["OK", _req("agent", now, "CREATE_GROUP", {"group_name": "Tour"}, 15)],
 		["GROUP_NOT_MEMBER", _req("quad", now, "ACCEPT_GROUP", {"group_id": "grp_000001"}, 16)],
+		["OK", _req("agent", now - 240, "NO_OP", {}, 17)],   # 4 s old: inside the stale window (D-60)
 	]
 	var results: Array = []
 	var failures: Array[String] = []
@@ -1536,7 +1537,8 @@ func test_link_wrong_token() -> String:
 	return ""
 
 
-## A slow Python side: its answers arrive too late and are refused as stale; the world never waits.
+## A slow Python side: its answers arrive 7 s late, past the 6.5 s stale window, and are refused as
+## stale; the world never waits.
 func test_link_slow_sidecar() -> String:
 	if _link_port("RANGE_LINK_PORT_SLOW") == 0:
 		return "no slow test sidecar: run the Godot tests through tools/godot_check.py"
@@ -1561,7 +1563,7 @@ func test_link_slow_sidecar() -> String:
 	if w.actions.resolved.is_empty():
 		return "the slow sidecar's answer never arrived"
 	if w.actions.resolved[0]["result"]["reason_code"] != "STALE_OBSERVATION":
-		return "an answer 1.5 s late should be refused as stale, got %s" % w.actions.resolved[0]["result"]["reason_code"]
+		return "an answer 7 s late should be refused as stale, got %s" % w.actions.resolved[0]["result"]["reason_code"]
 	if w.clock.tick - before != frames["n"] or longest > 50.0:
 		return "the world must keep its tick while Python is slow (longest frame %.1f ms)" % longest
 	return ""
@@ -1827,7 +1829,8 @@ func test_scenario_tape_and_world_view() -> String:
 ## T25 and T27 in a live run. Robot R's model takes 1.5 s per call: since G3b the sidecar
 ## (RANGE_LINK_PORT_MODEL) reaches it through the real llama-server provider, and godot_check plays
 ## the server with a slow stand-in. The world must keep its tick every frame with no frame over
-## 50 ms, avatars keep moving, and Robot R's late actions are rejected as STALE_OBSERVATION.
+## 50 ms and avatars keep moving. Robot R's late answers are judged by the stale window (D-60):
+## accepted up to STALE_AFTER_TICKS old, refused as STALE_OBSERVATION beyond it (T27).
 func test_live_slow_model_t25_t27() -> String:
 	var port := int(OS.get_environment("RANGE_LINK_PORT_MODEL"))
 	if port <= 0:
@@ -1861,8 +1864,16 @@ func test_live_slow_model_t25_t27() -> String:
 			moved_from = w.avatars["visitor_y"].global_position
 		stale = 0
 		for entry in w.actions.resolved:
-			if entry["result"]["agent_id"] == "robot_r" and entry["result"]["reason_code"] == "STALE_OBSERVATION":
-				stale += 1
+			var res: Dictionary = entry["result"]
+			if res["agent_id"] != "robot_r":
+				continue
+			var age := int(res["resolved_at_tick_id"]) - int(entry["request"]["based_on_tick_id"])
+			if age > 60:
+				stale += 1   # a late answer (this harness runs faster than real time, so ages vary)
+				var expected := "STALE_OBSERVATION" if age > ActionGate.STALE_AFTER_TICKS else "OK"
+				if res["reason_code"] != expected and res["reason_code"] in ["OK", "STALE_OBSERVATION"]:
+					return "an answer %d ticks old got %s; the %d-tick stale window says %s (D-60)" % [
+						age, res["reason_code"], ActionGate.STALE_AFTER_TICKS, expected]
 		if stale > 0 and w.avatars["visitor_y"].global_position.distance_to(moved_from) > 2.0:
 			break
 	var world: RangeWorld = main.world
@@ -1875,7 +1886,7 @@ func test_live_slow_model_t25_t27() -> String:
 	if world.avatars["visitor_y"].global_position.distance_to(moved_from) <= 2.0:
 		return "visitor_y should keep walking (the tape) while Robot R's model is slow"
 	if stale == 0:
-		return "Robot R's 1.5 s-late actions should be rejected as STALE_OBSERVATION (T27)"
+		return "Robot R's late answers should reach the gate, judged by the stale window (T27, D-60)"
 	world.end_run()
 	return ""
 

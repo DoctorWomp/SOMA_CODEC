@@ -37,8 +37,9 @@ SECTIONS = ("GUARDRAILS", "IDENTITY", "COMMITMENTS", "SETTING", "FACTS", "EPISOD
 NEVER_CUT = frozenset({"GUARDRAILS", "IDENTITY", "COMMITMENTS", "DECISION"})
 CUT_ORDER = ("EPISODES", "FACTS", "SETTING", "OBSERVATIONS", "CONVERSATION")
 
-# Per-section input budgets in tokens (CONTEXT_MEMORY_STRATEGY §4.1). C1 uses only guardrails,
-# identity, the last turn and the decision (about 0.5K tokens).
+# Per-section input budgets in tokens (CONTEXT_MEMORY_STRATEGY §4.1). C1 uses only guardrails
+# (with argument formats), identity, commitments, the last turn, a minimal OBSERVATIONS line and
+# the decision (about 0.78K tokens since G3c-2, D-60; 0.5K before).
 BUDGETS: dict[str, dict[str, int]] = {
     # Totals as in §4.1 (focal 3750, C2 1900, C1 500). The guardrails and action list measured
     # ~600 estimated tokens, so guardrails got more and observations less than §4.1's starting split.
@@ -47,11 +48,16 @@ BUDGETS: dict[str, dict[str, int]] = {
     # G3c-1 (D-59): C2 guardrails +50 for the promise-keeping rule, taken from observations.
     "C2": {"GUARDRAILS": 650, "IDENTITY": 200, "COMMITMENTS": 100, "SETTING": 100, "FACTS": 100,
            "EPISODES": 100, "CONVERSATION": 300, "OBSERVATIONS": 250, "DECISION": 100},
-    "C1": {"GUARDRAILS": 150, "IDENTITY": 120, "COMMITMENTS": 60, "SETTING": 0, "FACTS": 0,
-           "EPISODES": 0, "CONVERSATION": 80, "OBSERVATIONS": 0, "DECISION": 90},
+    # G3c-2 (D-60): C1 grew from 500 to 780 tokens. The argument formats (+210) and a minimal
+    # OBSERVATIONS line from its own senses (+70: who is near, so it can name a real track).
+    "C1": {"GUARDRAILS": 360, "IDENTITY": 120, "COMMITMENTS": 60, "SETTING": 0, "FACTS": 0,
+           "EPISODES": 0, "CONVERSATION": 80, "OBSERVATIONS": 70, "DECISION": 90},
 }
-# C1 raised from 60 to 100 at G3c-1 (D-59): model-driven C1 NPCs were cut off mid-answer at 60.
-OUTPUT_CAPS = {"FOCAL": 200, "C2": 120, "C1": 100}
+# C1 raised from 60 to 100 at G3c-1 (D-59), and both NPC caps again at G3c-2 (D-60): most NPC
+# answers in the owner's bake-off were cut off. With the tier text limits in output_schema
+# (C1: 2 actions, 160-character speech, 80-character reason; C2: 120-character reason, 200-character
+# speech) a full answer fits; the caps leave room for the whitespace some models add.
+OUTPUT_CAPS = {"FOCAL": 200, "C2": 220, "C1": 170}
 MAX_EPISODE_CARDS_IN_CONTEXT = 3
 RECENCY_HALF_LIFE_MS = 120_000
 

@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .gateway import ModelGateway, gateway_from_spec
+from .gateway import ModelGateway, ServerActivity, gateway_from_spec
 
 FAKE_KINDS = ("fake", "fake-slow:", "fake-malformed")
 
@@ -62,6 +62,10 @@ class RunModels:
         if self.inference is not None:
             await self.inference.start()
             self.events += self.inference.events
+            if self.inference.option == "C" and self.inference.npc is not None:
+                shared = ServerActivity()          # both servers share one GPU (G3c-2, D-60)
+                self.inference.focal.gateway.activity = shared
+                self.inference.npc.gateway.activity = shared
             return
         if self.focal is not None:
             await self.focal.start()
@@ -107,7 +111,7 @@ def resolve_npc_spec(model: str, npc_model: str) -> str:
 
 
 def models_from_specs(model: str, npc_model: str = "auto", *, run_dir: Path | None = None, seed: int | None = None,
-                      prewarm: bool | None = None) -> RunModels:
+                      prewarm: bool | None = None, snapshots: bool | None = None) -> RunModels:
     """Build (not start) the gateways of a run. Raises ValueError for an unknown spec and
     ProviderError when a llama model is not on this machine."""
     npc_spec = resolve_npc_spec(model, npc_model)
@@ -124,8 +128,10 @@ def models_from_specs(model: str, npc_model: str = "auto", *, run_dir: Path | No
             npc_override = "none"
         else:
             npc_override = npc_spec.split(":", 1)[1]     # llama:MODEL, even when it is Robot R's model
+        if snapshots is not None:
+            inf = dict(inf, personas=dict(cfg, snapshots=snapshots))
         iset = build_inference(model.split(":", 1)[1] if ":" in model else None, npc_override, run_dir=run_dir, seed=seed,
-                               inference=inf)
+                               inference=inf, snapshots=snapshots)
         iset.focal.gateway.setup = iset.focal   # type: ignore[attr-defined]
         return RunModels(iset.focal.gateway, None, iset, npc_spec,
                          cfg.get("prewarm", True) if prewarm is None else prewarm)

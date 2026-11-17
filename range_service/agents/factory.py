@@ -91,5 +91,5 @@ def build_runtimes(scenario: dict[str, Any], cs: ConfigSet, *, gateway: ModelGat
             task_goal=task_goal_point(entry, game_map), focal=focal, pin=bool(entry.get("pin_cognition")),
             controller=entry["controller"], gateway=agent_gateway, tokenizer=agent_tokenizer,
             expression_gestures={eid: e["gesture"] for eid, e in catalog.items() if "gesture" in e},
-            own_private_goal=own_goal, prewarm=prewarm)
+            own_private_goal=own_goal, prewarm=prewarm, pa_operator=avatar_id in scenario.get("pa_operators", []))
     return out

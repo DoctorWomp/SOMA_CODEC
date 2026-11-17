@@ -134,7 +134,7 @@ EXPECTED_ARTIFACTS = ("sampling.jsonl", "sampling.observations.json", "demo_a.js
 # The two sidecars started for the Godot link tests: name, extra arguments.
 SIDECARS = {
     "RANGE_LINK_PORT": ["--agent", "robot_legged=probe", "--agent", "robot_quadruped=greeter", "--drop-after", "25"],
-    "RANGE_LINK_PORT_SLOW": ["--agent", "robot_legged=greeter", "--delay-ms", "1500"],
+    "RANGE_LINK_PORT_SLOW": ["--agent", "robot_legged=greeter", "--delay-ms", "7000"],   # past the 6.5 s stale window
     # G3a/G3b: agent runtimes for SB-04 whose model takes 1.5 s per call (T25, T27), through the real
     # llama-server provider code path: the stand-in server (range_service/agents/standin.py) plays a
     # slow llama-server; {standin} is replaced with its port.

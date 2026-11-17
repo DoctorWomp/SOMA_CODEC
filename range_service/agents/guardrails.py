@@ -58,12 +58,14 @@ ACTION_SHAPES: dict[str, str] = {
 
 
 def action_schema_text(allowed_actions: list[str], gestures: list[str], expressions: list[str], short: bool = False) -> str:
+    # G3c-2 (D-60): C1 lists the argument formats too. Without them, small models invented
+    # arguments ("destination": "platform") in most C1 answers of the owner's bake-off.
     lines = [OUTPUT_FORMAT_SHORT if short else OUTPUT_FORMAT, "Actions:"]
     for action in allowed_actions:
         if action in ACTION_SHAPES:
-            lines.append(f"{action} {ACTION_SHAPES[action]}" if not short else action)
-    if not short:
-        lines.append(f"Your gestures: {', '.join(gestures) if gestures else 'none'}.")
+            lines.append(f"{action} {ACTION_SHAPES[action]}")
+    lines.append(f"Your gestures: {', '.join(gestures) if gestures else 'none'}.")
+    if not short or expressions:
         lines.append(f"Your expressions: {', '.join(expressions) if expressions else 'none'}.")
     return "\n".join(lines)
 

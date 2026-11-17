@@ -60,6 +60,7 @@ class Sidecar:
         self.run_mode = "LIVE"
         self._step_jobs: list[tuple[AgentRuntime, DecisionJob]] = []
         self._tasks: set[asyncio.Task] = set()
+        self.loop_lags: list[float] = []
         self._records_written = 0
         self.record_dir = record_dir
         self.delay_ms = delay_ms
@@ -79,7 +80,29 @@ class Sidecar:
     async def start(self, port: int = 0) -> int:
         self._server = await serve(self._handler, HOST, port, max_size=MAX_MESSAGE_BYTES, ping_interval=None)
         self.port = self._server.sockets[0].getsockname()[1]
+        lag = asyncio.create_task(self._watch_loop_lag())
+        self._tasks.add(lag)
+        lag.add_done_callback(self._tasks.discard)
         return self.port
+
+    async def _watch_loop_lag(self, every_s: float = 0.05) -> None:
+        """How late the event loop wakes up (G3c-2, D-60): a busy loop delays every model answer,
+        heartbeat and link message, so live runs report it (``summary.json`` event_loop_lag_ms)."""
+        loop = asyncio.get_running_loop()
+        while True:
+            planned = loop.time() + every_s
+            await asyncio.sleep(every_s)
+            lag = max(0.0, (loop.time() - planned) * 1000)
+            self.loop_lags.append(lag)
+            if len(self.loop_lags) > 20000:
+                del self.loop_lags[:10000]
+
+    def loop_lag_summary(self) -> dict[str, float | None]:
+        lags = sorted(self.loop_lags)
+        if not lags:
+            return {"p50": None, "p95": None, "max": None}
+        return {"p50": round(lags[len(lags) // 2], 1), "p95": round(lags[int(0.95 * (len(lags) - 1))], 1),
+                "max": round(lags[-1], 1)}
 
     async def stop(self) -> None:
         for task in list(self._tasks):

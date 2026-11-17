@@ -114,13 +114,15 @@ class SlotScheduler:
                 self.release(waiter.future.result())   # granted just as we were cancelled: give it back
             raise
 
-    def try_acquire(self, agent_id: str) -> int | None:
-        """A free shared slot right now, or None; never waits, never a pinned slot, and only when
-        nobody is queued (pre-warming must not delay a real call). Prefers the agent's own slot."""
+    def try_acquire(self, agent_id: str, keep_free: int = 1) -> int | None:
+        """A free shared slot right now, or None; never waits, never a pinned slot, only when
+        nobody is queued, and only if ``keep_free`` other shared slots stay free for a real call
+        that may arrive meanwhile (G3c-2: pre-warming must never delay a real call). Prefers the
+        agent's own slot."""
         if self.waiting:
             return None
         free = self._shared_free()
-        if not free:
+        if len(free) <= keep_free:
             return None
         slot = self._pick(agent_id, free)
         self.busy.add(slot)

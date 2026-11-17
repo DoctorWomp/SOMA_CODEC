@@ -67,6 +67,7 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-57 | G3b-1 as built: llama-server, model catalog and registry, provider | APPROVED (owner, 2026-11-16) |
 | D-58 | G3b-2 as built: priority scheduler (Option B) and the bake-off tool | APPROVED (owner, 2026-11-16) |
 | D-59 | G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming | APPROVED (owner, 2026-11-17) |
+| D-60 | Usable model-driven NPCs and real-time LIVE runs (G3c-2 part A) | PROPOSED (2026-11-17) |
 
 ---
 
@@ -817,4 +818,48 @@ Choices made while building step A that D-54 and the plan left open:
   - **NPC prompts (40), final valid:** N3 40%, N1 30%, S1 10%, F3 85% (F3 75% valid actions). Diagnosed in G3c-2 (D-60): MOVE_TO and LOOK_AT arguments were never constrained (llama.cpp's converter ignores `properties` beside a `oneOf`), and most answers were cut off at the 100/120-token output caps.
   - **SB-04 live, Option C, F3 + N3:** Robot R p50 2352 / p95 3495 ms (LIVE); LIVE_LOAD 3502 ms (n=1); no deadline misses. NPC calls p50 about 3005 ms in LIVE, LIVE_COLD and LIVE_LOAD (the C1 deadline is 3000), but 1007–1163 ms in STEPPED. Robot R made only 1–3 decisions per LIVE run (8–22 STEPPED). Warm promotion latency only in STEPPED (10218 and 28121 ms, n=2 each); cold n=0 everywhere. **Diagnosed in G3c-2 (D-60):** headless LIVE runs simulated ~15× faster than real time (`--fixed-fps`), and every answer slower than 1 s was refused as stale, so these LIVE numbers do not measure live behavior; the live bake-off must be run again.
 - **Not in G3c-1:** the pulse protocol (activities, wake conditions, presence loop, triage pulse: G3c-2; FIELD_NOTES FN-1, FN-2), Echo/Focus/Contour (FN-2 to FN-4, G5), Focus/Trail-driven pre-warming (G5), the system-message layout for Robot R, CPU-tier models (T16), response cache (T15), batching measurements (T13).
+
+## D-60 — Usable model-driven NPCs and real-time LIVE runs (G3c-2 part A)
+**Status:** PROPOSED (2026-11-17), G3c-2 part A. Fixes what the owner's G3c-1 results showed (recorded in D-59). Owner checklist: [gates/G3c2_OWNER_CHECKLIST.md](gates/G3c2_OWNER_CHECKLIST.md).
+
+**1. Why NPC answers failed (diagnosed from the owner's `invalid_answers`, prompts_v2, NPC prompts, q8_0):**
+
+| Model | C1 (20): first try / repair | C1 final invalid | C2 (20): first try / repair | C2 final invalid |
+|---|---|---|---|---|
+| N3 | 20 cut off / 20 cut off | 20 | 13 cut off / 4 cut off | 4 |
+| N1 | 16 bad args / 16 bad args | 16 | 16 cut off / 12 cut off | 12 |
+| S1 | 16 cut off / 13 cut off + 3 bad args | 16 | 20 cut off / 20 cut off | 20 |
+| F3 | 3 bad args + 3 cut off / 6 bad args | 6 | none | 0 (+4 GROUP messages the gate would refuse) |
+
+No answer failed for an unknown target or a disallowed action. The causes:
+
+- **Arguments were never constrained for MOVE_TO and LOOK_AT** (and TURN_TO's target alternative). llama.cpp b12443's converter (`common/json-schema.cpp`) reads `oneOf`/`anyOf` before anything else and ignores `properties` and `additionalProperties` next to them; our args schemas had exactly that shape, so the grammar allowed any object. Hence `"destination": "platform"`, `"target": "person_near"`, `"point": [0.5, 1.2, 2.0]`. Reproduced on the pinned llama-server with T1: asked for those arguments it produced them; with the fix it cannot. **Fix:** `output_schema._flatten_alternatives` rewrites such nodes as full alternatives; a test checks that no node mixes them again.
+- **Cut off at the output cap.** Answers ran into the 100 (C1) / 120 (C2) token caps, mostly in a long `reason_summary` or a long line of speech. **Fix:** NPC tiers get shorter text in the constrained answer (`TIER_LIMITS`: C1 at most 2 actions, speech ≤160 characters, reason ≤80; C2 speech ≤200, reason ≤120; Robot R unchanged) and caps that fit a full answer with indentation (C1 170, C2 220 tokens; tested on the longest answer the C1 schema allows).
+- **C1 prompts named actions without argument formats, and 12 of 20 C1 prompts showed no perceived track**, so a model had to invent ids. **Fix:** C1's section 1 now lists the argument formats, and C1 gets a minimal OBSERVATIONS section (its own position and who it perceives nearby, from its own packets). **C1 budget 500 → 780 tokens** (guardrails 150 → 360, observations 0 → 70); CONTEXT_MEMORY_STRATEGY §4.1 amended.
+- **Context-aware choices in the constrained answer (all tiers):** person ids (`target_id`, `addressee_id`, `to_id`) can only be the tracks the agent perceives when the decision is made; speech channels only those it may use (LOCAL; PA for a PA operator; GROUP only in a group, which no scenario has yet); gestures and expressions only its body's. An action that needs a person is not offered when nobody is perceived. The choices are fixed when the decision job is made and kept with the prompt (`prompts.jsonl`, prompt-set items), so the bake-off sends exactly what the run would.
+- **prompts_v3.jsonl** (96 prompts, same composition as v2; every item carries its answer choices; v1 and v2 unchanged). **Measured on T1 in the cloud (CPU; plumbing, a much weaker model than N3):** NPC prompts 40/40 valid before repair, 40/40 final valid, 40/40 valid actions; Robot R prompts 40/40. The owner's N3 had 40% final valid on v2. N3, N1 and S1 on v3: owner's PC.
+
+**2. Why NPC calls hit the 3 s deadline in LIVE, and why Robot R made 1–3 decisions:**
+
+- **Headless LIVE runs were not real time.** `tools/run_scenario.py` and the live bake-off passed `--fixed-fps 60` to every headless run. With it Godot simulates each frame as 1/60 s however long it takes, so SB-04's 90 s ran in about 6 s of wall clock in the cloud (~15× faster than real time). A 2.3 s model call then spanned ~35 s of the scenario: Robot R missed most of what happened while its call was pending, made few decisions, and every NPC call competed with a world flooding the sidecar with ~15× more packets. **Fix:** `--fixed-fps 60` only for STEPPED runs; LIVE runs in real time (SB-04 now takes 90.8 s for 90 s; regression test on the Godot command line). **Every LIVE number in the owner's G3b and G3c-1 tables was measured this way and has to be measured again.**
+- **Every answer slower than 1 s was refused as stale.** The world's action gate refused an action based on an observation older than 60 ticks (1 s), while the gateway gives Robot R 4 s and C2 NPCs 6 s. Reproduced in the cloud with a 2.3 s fake model in a real-time LIVE run: 16 decisions, all 22 actions `STALE_OBSERVATION`. **Decision (host rule, needs the owner's approval): `STALE_AFTER_TICKS` 60 → 390 (6.5 s = the longest tier deadline, 6 s, + 0.5 s for the link).** The gateway already discards anything later than its deadline (T25); the gate still refuses anything older (T27) and still checks targets (`TARGET_UNKNOWN`). The Godot tests that relied on 1 s now use ages beyond 390 ticks (the gate test, the probe agent, a slow sidecar 7 s late); the T25 live test now checks that each late answer is judged by the window. STEPPED runs are unaffected (answers land on the tick they were asked), so the Demo journal stays `d9401c3edd17`.
+- **What could not be settled without the owner's GPU:** how much of the NPC time is GPU contention with Robot R's server. Measured from now on, per call: queue, prefill, generation, and `other_server_busy_ms` (how long the other server had a call in flight during it; both servers share one GPU). Also the sidecar's event-loop lag (`summary.json`). The `/tokenize` calls during context assembly were checked: ~3.5 per decision, ~2 ms on loopback; not a cause.
+- **Pre-warming never delays a real call:** a pre-warm only takes a slot if another shared slot stays free (snapshots at scene load may use the last one; Option B therefore never pre-warms during a run). **LIVE_LOAD** keeps all NPC slots but one busy, so a real NPC call always finds a slot, and the synthetic load runs in its own tier, ranked after every real agent.
+- **The C1 deadline stays 3000 ms** until real-time LIVE runs measure NPC calls: STEPPED NPC calls took 1007–1163 ms on the owner's GPU, so it holds about 2.6× margin.
+
+**3. LIVE runs that measure something:**
+- `bakeoff.py live --repeat N` (default 3) pools N runs per mode; one SB-04 is now 90 s of real time.
+- New columns: Robot R's actions accepted vs stale; NPC calls and timeouts; NPC p50 of total, queue, prefill and generation; share of NPC call time with Robot R's server busy; event-loop lag p95.
+- Promotion latency is split into: promotion → first model call (decisions are event-driven, so this includes waiting for a trigger); the call itself; and promotion → first accepted action, warm and cold.
+- `LIVE_COLD` switches off snapshots as well as pre-warming: with snapshots on, a promotion's first call restored its prefix and was never cold, which is why cold n was 0 everywhere.
+
+**4. VRAM:**
+- The fit check (already fixed after the owner's first run) uses Robot R's measured server.
+- **The estimate now follows llama.cpp b12443's cache layout layer by layer:**
+  - sliding-window layers (`attention.sliding_window_pattern`) hold `min(context, window × slots + 512)` cells, rounded to 256;
+  - shared-KV layers hold none;
+  - hybrid models (`full_attention_interval`) have a KV cache only in every k-th layer;
+  - per-layer KV heads and separate SWA head sizes are used where the header has them.
+  - Example: T1's NPC server, 255 → 64 MiB of KV.
+- **Measured values are kept per model file and settings** in `models/vram.local.yaml` (git-ignored) and replace the estimate next time, so an estimate can no longer send a run to Option B when the measured use fits.
 

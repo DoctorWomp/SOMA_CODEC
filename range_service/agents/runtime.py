@@ -76,6 +76,7 @@ class DecisionJob:
     proposals: list[Proposal] | None      # set for ROUTINE/TEMPLATE/DEMO; None when the model decides
     demo_hint: str | None
     prefix_key: str | None = None         # the persona prefix of this tier (T5/T6), for the provider
+    choices: dict[str, Any] | None = None  # what the answer may name, fixed when the job is made (D-60)
 
 
 class AgentRuntime:
@@ -84,7 +85,7 @@ class AgentRuntime:
                  task_goal: dict[str, float] | None = None, focal: bool = False, pin: bool = False,
                  controller: str = "SCRIPTED", gateway: ModelGateway | None = None,
                  tokenizer: Tokenizer | None = None, expression_gestures: dict[str, str] | None = None,
-                 own_private_goal: str | None = None, prewarm: bool = True) -> None:
+                 own_private_goal: str | None = None, prewarm: bool = True, pa_operator: bool = False) -> None:
         self.agent_id = agent_id
         self.body = body
         self.focal = focal
@@ -95,6 +96,7 @@ class AgentRuntime:
         if own_private_goal and not self.npc_model:
             raise ValueError("only a model-driven NPC gets its own private goal in its prompt (D-51)")
         self.prewarm_enabled = prewarm and self.npc_model
+        self.pa_operator = pa_operator or bool(body["capabilities"].get("can_use_pa"))
         self.expressions = sorted(expressions)
         # Each available expression's gesture, if it has one (from the catalog).
         self.expression_gestures = {k: v for k, v in (expression_gestures or {}).items() if k in self.expressions}
@@ -246,6 +248,14 @@ class AgentRuntime:
             self._prefixes[tier] = (f"{self.agent_id}:{tier}:{digest}", text)
         return self._prefixes[tier]
 
+    def answer_choices(self) -> dict[str, Any]:
+        """What this agent may name in its next answer (G3c-2, D-60): the people it perceives now
+        (never an invented id), the channels it may use, its body's gestures and expressions."""
+        targets = sorted(t for t in self.ws.tracks if self.ws.visible(t))
+        channels = ["LOCAL"] + (["PA"] if self.pa_operator else [])
+        gestures = list(self.body["gestures"]) if self.body["capabilities"]["can_gesture"] else []
+        return {"targets": targets, "channels": channels, "gestures": gestures, "expressions": list(self.expressions)}
+
     def model_tiers(self) -> list[str]:
         """The tiers at which this NPC calls the model (for persona snapshots at scene load)."""
         if not self.npc_model:
@@ -368,8 +378,9 @@ class AgentRuntime:
         else:
             proposals = [p for p in proposals if p.action in self.allowed_actions]
         prefix_key = self.persona_prefix(tier)[0] if policy == "MODEL" else None
+        choices = self.answer_choices() if policy == "MODEL" else None
         return DecisionJob(decision_id, self.ws.tick, triggers, policy, tier, self.cognition.level, assembled,
-                           proposals, demo_hint, prefix_key)
+                           proposals, demo_hint, prefix_key, choices)
 
     async def decide(self, job: DecisionJob) -> list[dict[str, Any]]:
         """Answer a job: returns the action requests to send. Model calls happen here."""
@@ -381,6 +392,11 @@ class AgentRuntime:
                 proposals = job.proposals
             else:
                 assert self.gateway is not None and job.assembled is not None
+                call_started = time.perf_counter()
+                for rec in self._open_promotions:
+                    if "to_first_model_call_ms" not in rec:
+                        # G3c-2 (D-60): promotion -> the first model call starts, apart from the call itself
+                        rec["to_first_model_call_ms"] = round((call_started - rec["_t0"]) * 1000)
                 result = await self.gateway.decide(
                     agent_id=self.agent_id, tier=job.tier, prompt=job.assembled.prompt,
                     prompt_sha256=job.assembled.record["prompt_sha256"], max_tokens=OUTPUT_CAPS.get(job.tier, 120),
@@ -388,7 +404,8 @@ class AgentRuntime:
                     prefix_key=job.prefix_key,
                     # NPCs: the persona prefix may go as its own (system) message; Robot R's prompt
                     # shape stays one message, as the G3b bake-off measured it.
-                    prefix=self.persona_prefix(job.tier)[1] if self.npc_model else None)
+                    prefix=self.persona_prefix(job.tier)[1] if self.npc_model else None,
+                    choices=job.choices)
                 model_calls, fallback = result.model_calls, result.fallback
                 proposals = [_proposal_from_model(a, self.memory, self.conversation) for a in result.actions]
             requests = self._emit(job, proposals, model_calls, fallback)
@@ -471,7 +488,10 @@ class AgentRuntime:
         }
         self.records.append(record)
         if job.assembled is not None:
-            self.prompts.append({"decision_id": job.decision_id, "prompt": job.assembled.prompt})
+            entry = {"decision_id": job.decision_id, "prompt": job.assembled.prompt}
+            if job.choices is not None:
+                entry["choices"] = job.choices
+            self.prompts.append(entry)
         return requests
 
     # ---------- results from the host ----------

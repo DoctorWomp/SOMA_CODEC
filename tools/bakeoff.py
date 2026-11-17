@@ -6,7 +6,7 @@
     uv run python tools/bakeoff.py live --models F3 F1 --npc-model N3       # Option C runs of SB-04
     uv run python tools/bakeoff.py report                        # print results.md again
 
-    uv run python tools/bakeoff.py build-set                     # maintainers: rebuild bakeoff/prompts_v2.jsonl
+    uv run python tools/bakeoff.py build-set                     # maintainers: rebuild bakeoff/prompts_v3.jsonl
 
 **offline** sends every prompt of the prompt set to each model under each KV cache type, at
 temperature 0, with no Godot running, one llama-server at a time. prompts_v2 (G3c-1, the
@@ -47,7 +47,8 @@ from range_service.models import registry as reg  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 PROMPT_SET_V1 = REPO / "bakeoff" / "prompts_v1.jsonl"
-PROMPT_SET = REPO / "bakeoff" / "prompts_v2.jsonl"     # G3c-1: Robot R, NPCs and promise situations
+PROMPT_SET_V2 = REPO / "bakeoff" / "prompts_v2.jsonl"  # G3c-1: Robot R, NPCs and promise situations
+PROMPT_SET = REPO / "bakeoff" / "prompts_v3.jsonl"     # G3c-2: C1 formats and observations, answer choices
 RESULTS = REPO / "results" / "bakeoff"
 BODIES = ("wheeled_humanoid", "legged_humanoid", "quadruped", "quadruped_arm")
 
@@ -98,7 +99,7 @@ def cmd_build_set(args: argparse.Namespace) -> int:
             prompts = {}
             for line in (out / "sidecar" / "prompts.jsonl").read_text(encoding="utf-8").splitlines():
                 p = json.loads(line)
-                prompts[p["decision_id"]] = p["prompt"]
+                prompts[p["decision_id"]] = p
             for line in (out / "sidecar" / "decision_records.jsonl").read_text(encoding="utf-8").splitlines():
                 rec = json.loads(line)
                 if not rec["model_calls"] or rec["decision_id"] not in prompts:
@@ -112,13 +113,15 @@ def cmd_build_set(args: argparse.Namespace) -> int:
                 available = sorted(expression_rules.available(body, cs.items["expressions"]))
                 demo = rec["model_calls"][0]["response_text"] or ""
                 actions, _, _ = parse_output(demo, persona["allowed_actions"], agent, rec["based_on_tick_id"])
-                prompt = prompts[rec["decision_id"]]
+                prompt = prompts[rec["decision_id"]]["prompt"]
+                choices = prompts[rec["decision_id"]].get("choices")
                 items.append({
                     "item_id": f"sb04_{body_id}_{rec['decision_id']}", "scenario": "SB04_POLITE_BID", "role": role,
                     "agent_id": agent, "tier": rec["tier"], "triggers": rec["triggers"], "body_id": agent_body_id,
                     "allowed_actions": persona["allowed_actions"], "gestures": body["gestures"], "expressions": available,
                     "max_tokens": OUTPUT_CAPS.get(rec["tier"], 120), "based_on_tick_id": rec["based_on_tick_id"],
                     "prompt": prompt, "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                    "choices": choices,
                     "reference": {"demo_answer": demo,
                                   "demo_fulfilled": any(a.get("fulfills_commitment") for a in actions or [])},
                 })
@@ -170,7 +173,7 @@ async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, lim
             result = await setup.gateway.decide(agent_id=item["agent_id"], tier=item["tier"], prompt=item["prompt"],
                                                 prompt_sha256=item["prompt_sha256"], max_tokens=item["max_tokens"],
                                                 allowed_actions=item["allowed_actions"], tick=item["based_on_tick_id"],
-                                                prefix=npc_prefix(item))
+                                                prefix=npc_prefix(item), choices=item.get("choices"))
             s = bk.score_item(item, result)
             scored.append(s)
             progress.update(f"  {entry['label']} {kv}: {n}/{len(todo)} ({'ok' if s['final_valid'] else s['fallback']})")
@@ -233,35 +236,69 @@ def cmd_offline(args: argparse.Namespace) -> int:
 
 # ---------- live ----------
 
-LIVE_MODES = {"LIVE": ("LIVE", True, 0), "LIVE_COLD": ("LIVE", False, 0), "LIVE_LOAD": ("LIVE", True, 4),
-              "STEPPED": ("STEPPED", True, 0)}
+# mode -> (run mode, pre-warm, persona snapshots, synthetic NPC load). LIVE_COLD switches off both
+# pre-warming and snapshots: with snapshots on, a promotion's first call restores its prefix and is
+# never cold (G3c-2, D-60). LIVE_LOAD keeps all NPC slots but one busy ("slots - 1" streams), so a
+# real NPC call always finds a slot.
+LIVE_MODES = {"LIVE": ("LIVE", True, True, 0), "LIVE_COLD": ("LIVE", False, False, 0),
+              "LIVE_LOAD": ("LIVE", True, True, -1), "STEPPED": ("STEPPED", True, True, 0)}
 
 
-def live_row(entry: dict, npc_label: str, mode: str, out: Path, r) -> dict:
-    """One live row: Robot R's calls only for its latency; NPC calls, promotions and VRAM apart."""
-    records = [json.loads(line) for line in (out / "sidecar" / "decision_records.jsonl").read_text(encoding="utf-8").splitlines()]
-    robot = [c for rec in records if rec["agent_id"] == "robot_r" for c in rec["model_calls"]]
-    npc = [c for rec in records if rec["agent_id"] != "robot_r" for c in rec["model_calls"]]
-    totals = sorted(c["timings"]["total_ms"] for c in robot if c["timings"]["total_ms"] is not None)
-    p95 = totals[min(len(totals) - 1, int(round(0.95 * (len(totals) - 1))))] if totals else None
-    manifest = json.loads((out / "run_manifest.json").read_text(encoding="utf-8"))["resolved_settings"]
-    s = r.summary
-    pr = s["promotions"]
+def _p(values: list[float], q: float) -> float | None:
+    vals = sorted(v for v in values if v is not None)
+    return float(vals[min(len(vals) - 1, int(round(q * (len(vals) - 1))))]) if vals else None
+
+
+def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, object]]) -> dict:
+    """One live row over all repeats: Robot R's calls only for its latency; NPC calls (queue,
+    prefill, generation, and how long Robot R's server was busy meanwhile), Robot R's action
+    outcomes (accepted or stale), promotions, event-loop lag and VRAM apart."""
+    robot, npc, promos, lags, accepted, stale, journals = [], [], [], [], 0, 0, []
+    ok = True
+    s = None
+    for out, r in runs:
+        for line in (out / "sidecar" / "decision_records.jsonl").read_text(encoding="utf-8").splitlines():
+            rec = json.loads(line)
+            (robot if rec["agent_id"] == "robot_r" else npc).extend(rec["model_calls"])
+        promos += [json.loads(line) for line in (out / "promotions.jsonl").read_text(encoding="utf-8").splitlines() if line]
+        s = r.summary
+        ok = ok and r.exit_code == 0 and not r.godot_errors and not s["sidecar_problems"]
+        outcomes = s["actions_by_agent"].get("robot_r", {})
+        accepted += outcomes.get("OK", 0)
+        stale += outcomes.get("STALE_OBSERVATION", 0)
+        lags.append((s.get("event_loop_lag_ms") or {}).get("p95"))
+        journals.append(r.journal_sha256 or "")
+    from range_service.eval.runner import promotion_summary   # noqa: PLC0415
+
+    pr = promotion_summary(promos)
+    manifest = json.loads((runs[-1][0] / "run_manifest.json").read_text(encoding="utf-8"))["resolved_settings"]
+    tot = [c["timings"]["total_ms"] for c in robot]
+    npc_t = lambda k: [c["timings"].get(k) for c in npc]   # noqa: E731
+    busy = [c.get("other_server_busy_ms") for c in npc if c.get("other_server_busy_ms") is not None]
+    npc_total = [c["timings"]["total_ms"] or 0 for c in npc if c.get("other_server_busy_ms") is not None]
     return {"label": f"{entry['label']} {entry['model']} {entry['quant']}", "npc_label": npc_label, "mode": mode,
-            "option": s["inference"]["option"], "fallback": s["inference"]["fallback"],
-            "ok": r.exit_code == 0 and not r.godot_errors and not s["sidecar_problems"],
+            "repeats": len(runs), "option": s["inference"]["option"], "fallback": s["inference"]["fallback"], "ok": ok,
             "decisions": len(robot), "timeouts": sum(c["outcome"] == "TIMEOUT" for c in robot),
-            "fallbacks": s["agents"]["robot_r"]["fallbacks"], "p50_ms": bk._median([float(t) for t in totals]),
-            "p95_ms": p95, "npc_calls": len(npc),
-            "npc_p50_ms": bk._median([float(c["timings"]["total_ms"]) for c in npc if c["timings"]["total_ms"] is not None]),
-            "npc_load_calls": s.get("npc_load_calls", 0),
+            "fallbacks": sum(c["outcome"] != "VALID" for c in robot), "p50_ms": _p(tot, 0.5), "p95_ms": _p(tot, 0.95),
+            "robot_actions_accepted": accepted, "robot_actions_stale": stale,
+            "npc_calls": len(npc), "npc_timeouts": sum(c["outcome"] == "TIMEOUT" for c in npc),
+            "npc_p50_ms": _p(npc_t("total_ms"), 0.5), "npc_queue_p50_ms": _p(npc_t("queue_ms"), 0.5),
+            "npc_prefill_p50_ms": _p(npc_t("prefill_ms"), 0.5), "npc_generation_p50_ms": _p(npc_t("generation_ms"), 0.5),
+            "npc_robot_busy_share": round(sum(busy) / sum(npc_total), 2) if busy and sum(npc_total) else None,
+            "loop_lag_p95_ms": max((x for x in lags if x is not None), default=None),
             "promotion_warm_p50_ms": pr["warm_p50_ms"], "promotion_warm_n": pr["warm_n"],
             "promotion_cold_p50_ms": pr["cold_p50_ms"], "promotion_cold_n": pr["cold_n"],
+            "promotion_warm_to_call_p50_ms": pr["warm_to_first_call_p50_ms"],
+            "promotion_cold_to_call_p50_ms": pr["cold_to_first_call_p50_ms"],
+            "promotion_warm_call_p50_ms": pr["warm_first_call_p50_ms"],
+            "promotion_cold_call_p50_ms": pr["cold_first_call_p50_ms"],
             "vram_focal_mib": manifest.get("vram.focal_mib"), "vram_npc_mib": manifest.get("vram.npc_mib"),
-            "vram_note": manifest.get("vram.note"), "journal": r.journal_sha256 or "", "run_dir": str(out)}
+            "vram_note": manifest.get("vram.note"), "journal": journals[0], "journals": journals,
+            "run_dir": str(runs[0][0])}
 
 
 def cmd_live(args: argparse.Namespace) -> int:
+    from range_service.agents.inference import load_inference as _inf
     from range_service.eval.runner import RunError, RunOptions, run_scenario
     from tools.godot_check import find_godot
 
@@ -273,21 +310,30 @@ def cmd_live(args: argparse.Namespace) -> int:
     results = _load_results()
     npc_items = [i for i in load_set(PROMPT_SET)[0] if i.get("role") == "NPC"]
     npc_label = reg.catalog_entry(catalog, args.npc_model)["label"] if args.npc_model not in ("config", "none") else args.npc_model
+    npc_slots = _inf()["servers"].get("npc", {}).get("parallel_slots", 1)
     for name in args.models:
         entry = reg.catalog_entry(catalog, name)
         for mode in args.modes:
-            run_mode, prewarm, load = LIVE_MODES[mode]
-            out = RESULTS / f"run_{entry['label']}_{mode.lower()}"
-            print(f"SB-04 {mode} with {entry['label']} {entry['model']} {entry['quant']} (NPC model: {npc_label})...")
+            run_mode, prewarm, snapshots, load = LIVE_MODES[mode]
+            load = max(1, npc_slots - 1) if load < 0 else load
             npc_spec = {"config": "auto", "none": "none"}.get(args.npc_model, f"llama:{args.npc_model}")
-            try:
-                r = asyncio.run(run_scenario(RunOptions("SB04_POLITE_BID", godot, mode=run_mode, model=f"llama:{entry['id']}",
-                                                        npc_model=npc_spec, prewarm=prewarm, out_dir=out, timeout_s=1800,
-                                                        npc_load_streams=load, npc_load_prompts=npc_items)))
-            except RunError as exc:
-                print(f"  FAILED: {exc}")
+            runs = []
+            for k in range(args.repeat):
+                out = RESULTS / f"run_{entry['label']}_{mode.lower()}_{k + 1}"
+                print(f"SB-04 {mode} {k + 1}/{args.repeat} with {entry['label']} {entry['model']} {entry['quant']} "
+                      f"(NPC model: {npc_label})...")
+                try:
+                    r = asyncio.run(run_scenario(RunOptions(
+                        "SB04_POLITE_BID", godot, mode=run_mode, model=f"llama:{entry['id']}", npc_model=npc_spec,
+                        prewarm=prewarm, snapshots=snapshots, out_dir=out, timeout_s=1800,
+                        npc_load_streams=load, npc_load_prompts=npc_items)))
+                except RunError as exc:
+                    print(f"  FAILED: {exc}")
+                    continue
+                runs.append((out, r))
+            if not runs:
                 continue
-            row = live_row(entry, npc_label, mode, out, r)
+            row = live_row(entry, npc_label, mode, runs)
             if row["fallback"]:
                 print(f"  NOTE: Option B (one server): {row['fallback']}")
             results["live"] = [x for x in results["live"] if (x["label"], x["mode"], x.get("npc_label")) !=
@@ -321,6 +367,8 @@ def main(argv: list[str] | None = None) -> int:
     p_live = sub.add_parser("live")
     p_live.add_argument("--models", nargs="+", required=True)
     p_live.add_argument("--modes", nargs="+", default=list(LIVE_MODES), choices=list(LIVE_MODES))
+    p_live.add_argument("--repeat", type=int, default=3,
+                        help="runs per mode, pooled (one SB-04 is 90 s real time; G3c-2)")
     p_live.add_argument("--npc-model", default="config",
                         help="NPC server model: config (configs/inference.yaml), a catalog label such as N3, or none")
     sub.add_parser("report")
