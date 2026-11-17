@@ -44,12 +44,14 @@ BUDGETS: dict[str, dict[str, int]] = {
     # ~600 estimated tokens, so guardrails got more and observations less than §4.1's starting split.
     "FOCAL": {"GUARDRAILS": 650, "IDENTITY": 300, "COMMITMENTS": 200, "SETTING": 200, "FACTS": 350,
               "EPISODES": 350, "CONVERSATION": 750, "OBSERVATIONS": 800, "DECISION": 150},
-    "C2": {"GUARDRAILS": 600, "IDENTITY": 200, "COMMITMENTS": 100, "SETTING": 100, "FACTS": 100,
-           "EPISODES": 100, "CONVERSATION": 300, "OBSERVATIONS": 300, "DECISION": 100},
+    # G3c-1 (D-59): C2 guardrails +50 for the promise-keeping rule, taken from observations.
+    "C2": {"GUARDRAILS": 650, "IDENTITY": 200, "COMMITMENTS": 100, "SETTING": 100, "FACTS": 100,
+           "EPISODES": 100, "CONVERSATION": 300, "OBSERVATIONS": 250, "DECISION": 100},
     "C1": {"GUARDRAILS": 150, "IDENTITY": 120, "COMMITMENTS": 60, "SETTING": 0, "FACTS": 0,
            "EPISODES": 0, "CONVERSATION": 80, "OBSERVATIONS": 0, "DECISION": 90},
 }
-OUTPUT_CAPS = {"FOCAL": 200, "C2": 120, "C1": 60}
+# C1 raised from 60 to 100 at G3c-1 (D-59): model-driven C1 NPCs were cut off mid-answer at 60.
+OUTPUT_CAPS = {"FOCAL": 200, "C2": 120, "C1": 100}
 MAX_EPISODE_CARDS_IN_CONTEXT = 3
 RECENCY_HALF_LIFE_MS = 120_000
 
@@ -73,6 +75,9 @@ class Identity:
     directive: str
     knows: list[str]
     body_summary: str
+    # D-51 (owner, 2026-11-16): a model-driven NPC's OWN private goal, in its own prompt only,
+    # labelled as its own. Always None for Robot R and for agents that are not model-driven.
+    own_private_goal: str | None = None
 
 
 @dataclass
@@ -107,14 +112,23 @@ class ContextAssembler:
                  f"Public goal: {ident.public_goal}"]
         if ident.knows and self.tier != "C1":
             lines.append("You know: " + " ".join(ident.knows))
+        if ident.own_private_goal:
+            lines.append("Your own private goal (known only to you): " + ident.own_private_goal)
         return "\n".join(lines)
+
+    def persona_prefix(self, guardrails: str, identity: Identity) -> str:
+        """The stable start of every prompt this agent gets at this tier: guardrails and identity
+        (never cut, never changing between calls). Persona snapshots and pre-warming cache
+        exactly this text (INFERENCE_STRATEGY T3, T5, T6); every assembled prompt starts with it."""
+        return f"## GUARDRAILS\n{guardrails}\n\n## IDENTITY\n{self._identity(identity)}"
 
     @staticmethod
     def _commitments(memory: AgentMemory, now_ms: int) -> list[str]:
         lines = []
         for item in memory.open_commitments():
             to = ", ".join(item["audience_present"]) or "nobody in particular"
-            lines.append(f"- OPEN {ago(now_ms, item['observed_at_ms'])} to {to}: {item['content']['text'][:120]}")
+            lines.append(f"- OPEN {item['memory_id']} {ago(now_ms, item['observed_at_ms'])} to {to}: "
+                         f"{item['content']['text'][:120]}")
         for item in memory.items:
             if item["store"] == "COMMITMENTS_AND_REFUSALS" and item["content"].get("commitment_state") == "DECLINED" \
                     and now_ms - item["observed_at_ms"] <= 300_000:

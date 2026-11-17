@@ -117,6 +117,14 @@ def test_malformed_answer_gets_one_repair_then_waits_t26(stand_in):
     assert "## REPAIR" in s.b.requests[1]["messages"][0]["content"]
 
 
+def test_an_answer_cut_off_at_the_token_limit_says_so(stand_in):
+    s = stand_in(mode="truncate")
+    result = decide(ModelGateway(LlamaProvider.attach(s.port, s.key, warm_up=False)))
+    assert result.fallback == {"action": "WAIT", "reason": "INVALID_OUTPUT"}
+    assert result.model_calls[0]["error"].startswith("the answer was cut off at the 128-token limit")
+    assert result.model_calls[0]["response_text"].endswith("waiting bec")
+
+
 def test_hostile_answer_is_data_not_an_action(stand_in):
     s = stand_in(answers=['{"actions": [{"action": "RUN_SHELL", "args": {"command": "rm -rf /"}}]}'])
     result = decide(ModelGateway(LlamaProvider.attach(s.port, s.key, warm_up=False)))

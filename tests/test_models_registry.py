@@ -71,7 +71,8 @@ def test_committed_catalog_is_valid_and_pins_every_file():
     assert not problems
     catalog = cs.items["models"]["catalog"]
     core = [e for e in catalog["models"] if e["set"] == "CORE"]
-    assert sorted(e["label"] for e in core) == ["F1", "F2", "F3", "N1", "N2", "N3", "S1", "S2"]   # D-55 core set
+    # D-55 core set; F2 dropped by the owner after the bake-off (2026-11-17, D-58)
+    assert sorted(e["label"] for e in core) == ["F1", "F3", "N1", "N2", "N3", "S1", "S2"]
     for e in catalog["models"]:
         assert e["license"] == "apache-2.0", e["id"]
         for s in e["sources"]:
@@ -81,7 +82,7 @@ def test_committed_catalog_is_valid_and_pins_every_file():
         if e["model"].startswith("Gemma"):
             assert e["qat"] and e["sources"][0]["repo"].startswith("google/"), e["id"]
     total = sum(e["sources"][0]["size_bytes"] for e in core)
-    assert 30e9 < total < 40e9                                                 # D-55: ~35-40 GB
+    assert 25e9 < total < 32e9         # D-55 ~35-40 GB; 28.84 GB since F2 left the core set (2026-11-17)
 
 
 def test_catalog_duplicates_are_reported(tmp_path):
@@ -207,14 +208,30 @@ def test_installer_pins_one_release_and_its_assets():
     win = install_llama.BUILDS["windows-cuda12"]["assets"]
     assert [a["file"] for a in win] == ["llama-b12443-bin-win-cuda-12.4-x64.zip", "cudart-llama-bin-win-cuda-12.4-x64.zip"]
     assert install_llama.MIN_DRIVER == {"required": "551.61", "minor_compat": "528.33", "cuda": "12.4"}
+    # Pinned from the owner's install (2026-11-17, D-57).
+    assert [a["sha256"] for a in win] == ["a0cfc4695a254da9b26cec6d861494443668fa99a2badbaf71be717281dde62c",
+                                          "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"]
 
 
 def test_installer_refuses_unpinned_files_without_confirmation(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(install_llama, "INSTALL_DIR", tmp_path)
     monkeypatch.setattr(install_llama, "RECORDED", tmp_path / "recorded_hashes.json")
     monkeypatch.setattr(install_llama, "_download", lambda *a: pytest.fail("downloaded an unpinned file"))
-    assert install_llama.install_release("windows-cuda12", record=False, assume_yes=False) == 1
+    assert install_llama.install_release("linux-cpu", record=False, assume_yes=False) == 1
     assert "not pinned yet" in capsys.readouterr().out
+
+
+def test_installer_deletes_a_windows_download_that_does_not_match_its_pin(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(install_llama, "INSTALL_DIR", tmp_path)
+    monkeypatch.setattr(install_llama, "RECORDED", tmp_path / "recorded_hashes.json")
+
+    def fake_download(url, dest):
+        dest.write_bytes(b"tampered")
+        return hashlib.sha256(b"tampered").hexdigest(), 8
+    monkeypatch.setattr(install_llama, "_download", fake_download)
+    monkeypatch.setattr("builtins.input", lambda _p: pytest.fail("asked to confirm a pinned file"))
+    assert install_llama.install_release("windows-cuda12", record=False, assume_yes=False) == 1
+    assert "does not match" in capsys.readouterr().out and not list(tmp_path.glob("*.zip"))
 
 
 def test_installer_checks_recorded_hashes(tmp_path, monkeypatch, capsys):

@@ -2,8 +2,12 @@
 
 This is where evaluator-only data is left behind: a runtime gets the public part of its
 persona, its body, its directive, the expressions its body can show, public map facts and its
-task. Never the scenario's ``evaluator_only`` labels, its ``measure`` list, any persona's private
-goal or style, or another agent's anything.
+task. Never the scenario's ``evaluator_only`` labels, its ``measure`` list, any persona's style,
+or another agent's anything.
+
+G3c-1 (D-51, D-59): when a run has an NPC model, every non-focal cast member is model-driven at
+C1/C2 and gets the NPC gateway; its **own** private goal goes into its own identity, labelled,
+and nowhere else. Robot R (focal) only ever gets the focal gateway and never a private goal.
 """
 
 from __future__ import annotations
@@ -60,7 +64,9 @@ def task_goal_point(entry: dict[str, Any], game_map: dict[str, Any]) -> dict[str
 
 
 def build_runtimes(scenario: dict[str, Any], cs: ConfigSet, *, gateway: ModelGateway | None = None,
-                   body_overrides: dict[str, str] | None = None, tokenizer: Tokenizer | None = None) -> dict[str, AgentRuntime]:
+                   body_overrides: dict[str, str] | None = None, tokenizer: Tokenizer | None = None,
+                   npc_gateway: ModelGateway | None = None, npc_tokenizer: Tokenizer | None = None,
+                   prewarm: bool = True) -> dict[str, AgentRuntime]:
     overrides = body_overrides or {}
     game_map = cs.items["maps"][scenario["map"]]
     catalog = cs.items["expressions"]
@@ -68,14 +74,22 @@ def build_runtimes(scenario: dict[str, Any], cs: ConfigSet, *, gateway: ModelGat
     out: dict[str, AgentRuntime] = {}
     for avatar_id in sorted(scenario["cast"]):
         entry = scenario["cast"][avatar_id]
-        persona = public_persona(cs.items["personas"][entry["persona"]])
+        full_persona = cs.items["personas"][entry["persona"]]
+        persona = public_persona(full_persona)
         body = cs.items["bodies"][overrides.get(avatar_id, entry["body"])]
         focal = entry["persona"] == "robot_r" or entry["controller"] == "LLM_AGENT"
+        if focal:
+            agent_gateway = gateway if entry["controller"] == "LLM_AGENT" else None
+            agent_tokenizer = tokenizer if agent_gateway is not None else None
+            own_goal = None
+        else:
+            agent_gateway, agent_tokenizer = npc_gateway, npc_tokenizer if npc_gateway is not None else None
+            own_goal = full_persona.get("private_goal") if npc_gateway is not None else None
         out[avatar_id] = AgentRuntime(
             avatar_id, persona=persona, body=body, directive=directive_for(entry, persona, cs.items["directives"]),
             expressions=expression_rules.available(body, catalog), setting=setting, task=entry.get("task"),
             task_goal=task_goal_point(entry, game_map), focal=focal, pin=bool(entry.get("pin_cognition")),
-            controller=entry["controller"], gateway=gateway if entry["controller"] == "LLM_AGENT" else None,
-            tokenizer=tokenizer if entry["controller"] == "LLM_AGENT" else None,
-            expression_gestures={eid: e["gesture"] for eid, e in catalog.items() if "gesture" in e})
+            controller=entry["controller"], gateway=agent_gateway, tokenizer=agent_tokenizer,
+            expression_gestures={eid: e["gesture"] for eid, e in catalog.items() if "gesture" in e},
+            own_private_goal=own_goal, prewarm=prewarm)
     return out

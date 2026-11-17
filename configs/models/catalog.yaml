@@ -34,14 +34,14 @@ models:
         sha256: 03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8
   - id: qwen35_9b_q6k
     label: F2
-    set: CORE
+    set: EXTRA   # dropped from the core set by the owner, 2026-11-17: 52% invalid output in the bake-off, cause unknown (D-58)
     role: FOCAL
     model: "Qwen3.5-9B"
     quant: Q6_K
     qat: false
     license: apache-2.0
     license_url: https://huggingface.co/Qwen/Qwen3.5-9B
-    note: "Same model, more bits: the reference F1 is compared with (what 4-bit costs)."
+    note: "Same model, more bits. Out of the core set since 2026-11-17 (52% invalid output, file hash matched the catalog; cause unknown, D-58). Kept for diagnosis."
     sources:
       - repo: lmstudio-community/Qwen3.5-9B-GGUF
         revision: 1379f25c6b505a3fc737bd7818cb09389cf807c1

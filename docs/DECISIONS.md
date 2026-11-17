@@ -63,6 +63,10 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-53 | Directive templates and guardrails | APPROVED (owner, 2026-11-16) |
 | D-54 | Rigging and animation: pose is presentation | APPROVED (owner, 2026-11-16) |
 | D-55 | Quantized and QAT models in the bake-off | APPROVED (owner, 2026-11-16) |
+| D-56 | Rig step A as built: skeletons, layers, prosody and their tests | APPROVED (owner, 2026-11-16) |
+| D-57 | G3b-1 as built: llama-server, model catalog and registry, provider | APPROVED (owner, 2026-11-16) |
+| D-58 | G3b-2 as built: priority scheduler (Option B) and the bake-off tool | APPROVED (owner, 2026-11-16) |
+| D-59 | G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming | PROPOSED (2026-11-17) |
 
 ---
 
@@ -638,7 +642,7 @@ CONTEXT_MEMORY_STRATEGY §3–§5 as built:
 - Director edits of directives (T07) arrive at G4 and will be versioned and journaled; they cannot change the guardrails.
 
 ## D-54 — Rigging and animation: pose is presentation
-**Status:** APPROVED (owner, 2026-11-16). Plan: [gates/RIG_PLAN.md](gates/RIG_PLAN.md). Step A built 2026-11-16; the choices made while building it are D-56 (PROPOSED).
+**Status:** APPROVED (owner, 2026-11-16). Plan: [gates/RIG_PLAN.md](gates/RIG_PLAN.md). Step A built 2026-11-16; the choices made while building it are D-56 (APPROVED 2026-11-16).
 
 - **Two layers.** The *body* (collider, movement, navigation, gesture events and their duration, sense points, the 60 Hz tick) stays world-owned and deterministic. The *pose* (skeleton, joints, feet, wheels) is presentation driven by the body. Animation never moves a collider, never writes to the journal, never decides what anyone perceives (D-04, D-39). Poses are evaluated on the physics tick from world state; headless runs may switch posing off, and a journal is byte-identical with posing on or off (test).
 - **Code-driven animation with IK, not situation clips.** Skeletons are built from the body config at spawn; gaits are procedural with foot IK, so stairs and ramps from any map YAML work without new clips. Gestures are one-shot tracks on masked upper-body bones; gaze uses look-at. Godot 4.7.2's built-in modifiers (`TwoBoneIK3D`, `CCDIK3D`, `FABRIK3D`, `LookAtModifier3D`, `SpringBoneSimulator3D`, `PhysicalBoneSimulator3D`, `AnimationTree`, …) were checked present in the pinned build (2026-11-16).
@@ -664,7 +668,7 @@ CONTEXT_MEMORY_STRATEGY §3–§5 as built:
 - Not for now: FP8/NVFP4 formats (NVFP4 needs a Blackwell GPU; the 4070 Ti Super is Ada).
 
 ## D-56 — Rig step A as built: skeletons, layers, prosody and their tests
-**Status:** PROPOSED (2026-11-16), rig step A. Builds D-54 ([RIG_PLAN.md](gates/RIG_PLAN.md) step A). Owner checklist: [gates/RIG_A_OWNER_CHECKLIST.md](gates/RIG_A_OWNER_CHECKLIST.md).
+**Status:** APPROVED (owner, 2026-11-16); proposed 2026-11-16, rig step A. Builds D-54 ([RIG_PLAN.md](gates/RIG_PLAN.md) step A). Owner checklist: [gates/RIG_A_OWNER_CHECKLIST.md](gates/RIG_A_OWNER_CHECKLIST.md).
 
 Choices made while building step A that D-54 and the plan left open:
 
@@ -685,19 +689,20 @@ Choices made while building step A that D-54 and the plan left open:
 - **Not in step A:** gaits and foot IK (step B), articulated visitors (step C), levels of detail (cost is small at four robots; measure with the render-tax test before G6), skinned-mesh merge, telling models about prosody.
 
 ## D-57 — G3b-1 as built: llama-server, model catalog and registry, provider
-**Status:** PROPOSED (2026-11-16), G3b-1. Builds D-20, D-21 (with its owner note), D-50 and D-55. Owner checklist: [gates/G3b_OWNER_CHECKLIST.md](gates/G3b_OWNER_CHECKLIST.md).
+**Status:** APPROVED (owner, 2026-11-16); proposed 2026-11-16, G3b-1. Builds D-20, D-21 (with its owner note), D-50 and D-55. Owner checklist: [gates/G3b_OWNER_CHECKLIST.md](gates/G3b_OWNER_CHECKLIST.md).
 
 - **Pinned engine: llama.cpp `b12443`** (commit `301db633702f1d2c107d4feaa4268f07c0b508c5`, 2026-11-16). `tools/install_llama.py` installs it into `.tools/llama/` like `install_godot.py`.
   - **Windows:** `llama-b12443-bin-win-cuda-12.4-x64.zip` plus `cudart-llama-bin-win-cuda-12.4-x64.zip` (CUDA 12.4 runtime). The asset names were read from that commit's release workflows.
   - **Minimum NVIDIA driver:** 551.61 for CUDA 12.4. Through CUDA minor-version compatibility, 528.33 or newer usually works too. `--check` reads the driver from `nvidia-smi` and compares.
   - **Checksums: not pinned yet (BLOCKED on the owner).** The cloud session could read llama.cpp's source but not download its release files (GitHub release downloads are blocked there). Until the hashes are pinned, the installer refuses to unpack anything unless run with `--record-hashes`: it prints each file's SHA-256 and size, the owner compares them with the `sha256:` shown on the release page, types yes, and the values are saved in `.tools/llama/recorded_hashes.json` for later checks. The owner pastes them back to be pinned in the script.
+  - **Pinned 2026-11-17** (owner, recorded on install and checked against the release page): `llama-b12443-bin-win-cuda-12.4-x64.zip` `a0cfc4695a254da9b26cec6d861494443668fa99a2badbaf71be717281dde62c`; `cudart-llama-bin-win-cuda-12.4-x64.zip` `8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6`. A download that does not match is deleted and nothing is installed (tested). The Linux release tarball stays unpinned (`--record-hashes`); cloud sessions build from source. Owner PC: RTX 4070 Ti SUPER 16376 MiB, driver 621.24, llama-server b12443 installed and working.
   - **Linux and cloud:** `--from-source` clones the tag, refuses anything but the pinned commit, and builds a static CPU `llama-server` (no shared libraries, source removed afterwards). This build ran the cloud smoke tests.
 - **Model catalog** (`configs/models/catalog.yaml`, contract `model_catalog`, checked by `validate_configs.py`): D-55's eight core models (F1–F3, N1–N3, S1–S2).
   - **Each entry lists the exact files that count as that model:** repository, commit, file name, size and SHA-256, read from the Hugging Face model pages on 2026-11-16. Every license on the cards reads Apache-2.0.
   - **The first source is the download.**
     - Gemma 4: Google's official QAT Q4_0 GGUF first (D-55), with LM Studio's QAT conversion (same tensors, slightly different metadata) also accepted.
     - Qwen3.5: the `lmstudio-community` files first, because the owner's LM Studio folder most likely holds exactly those, with the `unsloth` files of the same quantization also accepted.
-  - **Download size:** the core set from first sources is **36.19 GB**.
+  - **Download size:** the core set from first sources is **36.19 GB** (28.84 GB since F2 left the core set, 2026-11-17).
   - **Two non-core entries:**
     - `X1`, Gemma 4 E4B Q4_K_M non-QAT (`EXTRA`, a comparison the owner already has).
     - `T1`, Qwen3.5-0.8B Q4_K_M, 0.53 GB (`SMOKE`: plumbing checks only, never a candidate).
@@ -740,7 +745,7 @@ Choices made while building step A that D-54 and the plan left open:
 - **Not in G3b-1:** the priority scheduler (Option B) and the bake-off tool (G3b-2), the Ollama provider (D-21 alternative; not needed while llama-server is bundled), two servers (Option C, G3c), and context-aware schemas (for example offering GROUP only to an agent in a group).
 
 ## D-58 — G3b-2 as built: priority scheduler (Option B) and the bake-off tool
-**Status:** PROPOSED (2026-11-16), G3b-2. Builds INFERENCE_STRATEGY step 3 (T4, T12), D-20 and D-55. Owner steps: [gates/G3b_OWNER_CHECKLIST.md](gates/G3b_OWNER_CHECKLIST.md) §6–§8.
+**Status:** APPROVED (owner, 2026-11-16); proposed 2026-11-16, G3b-2. Builds INFERENCE_STRATEGY step 3 (T4, T12), D-20 and D-55. Owner steps: [gates/G3b_OWNER_CHECKLIST.md](gates/G3b_OWNER_CHECKLIST.md) §6–§8.
 
 - **Scheduler** (`range_service/agents/scheduler.py`, `configs/inference.yaml` `scheduler`; default `mode: PRIORITY`).
   - **Reserved slots:** `reserved_slots` engine slots (default 1) belong to pinned agents (Robot R). A pinned agent always gets its own slot and never queues.
@@ -764,3 +769,46 @@ Choices made while building step A that D-54 and the plan left open:
   - **Output:** `results/bakeoff/results.md` (a table to paste back) and `results.json`. `results/` is git-ignored.
 - **Smoke-tested in the cloud** (CPU, model T1 only, so plumbing and not results): the offline run on 4 prompts × f16/q8_0 gave valid answers with the agreement and speed columns filled and VRAM "not measured: no NVIDIA GPU"; the `live` run on T1 finished OK in both modes, with every call missing the 4 s deadline on the CPU (LIVE 1 decision, STEPPED 9), as expected. **BLOCKED on the owner's GPU:** every real number in the bake-off.
 - **Not in G3b-2:** two servers (Option C, G3c), persona snapshots and pre-warming (T5, T6), speculative decoding (T17), and NPC prompts in the set (G3c).
+- **First results (owner's PC, 2026-11-17;** RTX 4070 Ti SUPER, llama.cpp b12443, `prompts_v1` sha `93e215698db0`, 40 prompts per condition; full table in [gates/G3_PLAN.md](gates/G3_PLAN.md) "G3b result"):
+  - Final valid output 95–100% for every model except **F2 (Qwen3.5-9B Q6_K): 28%/22% valid before repair, 48%/45% after** (f16/q8_0). Its file hash matched the catalog; the cause is unknown (the raw answers were not saved, a bug fixed in G3c-1).
+  - Gen tok/s (f16): F1 91.6, F3 67.0, N1 134.1, N3 143.3, S1 216.1, S2 247.1. p50 per decision: F1 1975 ms, F3 1960 ms, N3 1132 ms, S1 780 ms.
+  - KV q8_0 vs f16 on the same model: 95–98% first-action agreement (S2 84%, S1 90%) at the same speed.
+  - Agreement with higher precision: F1 vs F2 90%, N3 vs N2 74% (but F2 and N2 had many invalid first answers).
+  - SB-04 live and stepped, F1 and F3: every run OK, **0 deadline misses**; Robot R p50/p95 F1 1875/2170 ms, F3 2157/2352 ms (live); one fallback in F1's stepped run.
+  - **Measurement bugs found** (fixed in G3c-1, each with a regression test, D-59): VRAM showed "CPU build" on Windows, where `nvidia-smi` reports per-process memory as N/A; "promises kept" was 0% for every model although F3 spoke to the promised visitor and F1 approached and acknowledged them (the prompt never said when to set `fulfills_commitment`); invalid answers were not saved; the progress line left old text on the console.
+- **Owner verdict (2026-11-17):** Robot R default **F3** (Gemma 4 12B QAT Q4_0), KV q8_0; backup F1 (Qwen3.5-9B Q4_K_M). The live runs show no deadline misses for either, so F3 stands. NPC server default **N3** (Qwen3.5-4B Q4_K_M), KV q8_0; alternative N1; S1 for background crowd NPCs later. **F2 is dropped from the core set** (catalog `set: EXTRA`, kept for diagnosis). **KV cache default q8_0.** `configs/inference.yaml` follows.
+
+## D-59 — G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming
+**Status:** PROPOSED (2026-11-17), G3c-1. Builds INFERENCE_STRATEGY Option C (T2) and §3.2, T5, T6; D-08, D-49, D-51 (own goal), D-55, D-57, D-58. Owner checklist: [gates/G3c_OWNER_CHECKLIST.md](gates/G3c_OWNER_CHECKLIST.md).
+
+- **Two servers (Option C).** `configs/inference.yaml` holds a `focal` server (Robot R; F3, 2 slots × 6144, KV q8_0) and an `npc` server (N3, 4 slots × 2560, KV q8_0). Tiers C2 and C1 route to `npc`; `validate_configs.py` requires C2 and C1 on one server and no pinned slot on the NPC server.
+  - Each is a 127.0.0.1-only child on its own free port with its own 32-byte API key (environment only, never logged). `InferenceSet` (`agents/inference.py`) starts the focal server, then the NPC server, and always stops both.
+  - **Robot R only ever uses the focal server** and its reserved slot: the factory gives it the focal gateway only, and the NPC gateway refuses FOCAL calls. NPCs share the NPC server's 4 slots with priority, aging, stale-drop and supersede (D-58), plus **slot affinity**: an agent gets its own slot back when it is free, else the least recently used one.
+  - **Fallback to Option B, never silent.** No `npc` server configured, `--npc-model none`, an estimate over the VRAM budget, or an NPC server that fails to start → NPCs use the focal server's shared slot (today's Option B). The reason goes to `inference_events.jsonl`, the run manifest (`inference.option`, `inference.fallback_reason`) and the console. Tested with stand-in servers.
+  - **VRAM.** `vram` in `configs/inference.yaml`: budget 16376 MiB (the owner's GPU), reserve 2048 MiB for Godot and headroom, 512 MiB compute buffer per server. *Estimated* before the NPC server starts: model file + KV cache for every slot from the GGUF header (`layers × KV heads × (key + value length) × bytes per element`: an upper bound for sliding-window and hybrid models; a stated rule of thumb if the header lacks a key) + buffer. Over budget → Option B (`over_budget: FALLBACK`; `WARN` starts anyway and records it). *Measured* after each start with `nvidia-smi`: per process, else the change in total GPU memory (Windows), else null with the reason. Manifest: `vram.focal_mib`, `vram.npc_mib`, `vram.estimate_total_mib`, `vram.note`.
+- **Model-driven NPCs.** With an NPC model, every non-focal cast member decides through the NPC gateway at **C1 and C2** (policy `MODEL`; tiers C1/C2 with their own budgets and deadlines); **C0 stays a routine**. Same output schema, one repair, action gate, decision records, record and replay (a replay file now holds NPC calls too). The fake model stands in deterministically by repeating the NPC templates' choice.
+  - `--npc-model` (`tools/run_scenario.py`): `auto` (default) follows `--model`: `none` keeps G3a's templates; `fake*` → fake; `replay:FILE` → the same file; `llama`/`llama:MODEL` → the NPC server from the config; `llama-attach:PORT` → Option B on that server. Explicit `none`, `fake`, `replay:…` or `llama:MODEL` override it. `--no-prewarm` measures cold promotions.
+  - Scenario tapes still play: in SB-04 the visitors' scripted lines stay the scenario's spine, and the model decides their reactions between them.
+  - **Own private goal (D-51):** a model-driven NPC's identity gets one line, `Your own private goal (known only to you): …`. Never for Robot R or an NPC without a model (the runtime refuses it). `tools/godot_check.py`'s private-text scan allows a private goal only on its owner's labelled line in its owner's prompt.
+  - **C1 output cap 60 → 100 tokens.** The first CPU smoke showed C1 answers cut off mid-JSON at 60. Answers cut off at the limit are now reported as such (`finish_reason: length`), not as "not valid JSON".
+- **Canary and observer filter** (`range_service/eval/canary.py`, run by `tools/godot_check.py` step 6): every persona's private goal and every scenario's evaluator labels get a unique marker; SB-04 and SB-05 run with NPCs model-driven (fake model). An NPC's own marker must appear in its own prompts, on the labelled line only (positive control); no marker may appear in any other agent's or Robot R's context, in anything sent to the world (every COMMS message), in the journal, in memories or records. Every track id in an agent's contexts must come from its own observation packets, and no context names another avatar by its real id. Unit tests check that the scanner catches planted leaks.
+- **Persona snapshots and pre-warming (T5, T6).**
+  - The **persona prefix** is the start of every prompt: guardrails and identity (with the own goal), identical from call to call at a tier (tested). Key `agent:tier:sha12`.
+  - **Snapshots at scene load (T5):** before Godot starts, each model-driven NPC's prefix for each level it can think at is warmed into a free NPC slot and saved with llama-server's slot save (`--slot-save-path` = the run folder's `slot_snapshots/`; checked present in b12443's source). Where slot actions are not supported (HTTP 501), the prefix-only request stays and nothing is saved.
+  - **Pre-warming (T6):** a C0 NPC with someone within 6 m (but not yet 3 m), or a C1 NPC addressed once or in a conversation, will likely be promoted (`CognitionLevel.likely_next`, scene salience only). The runtime asks once per prefix; the sidecar restores the snapshot into a free NPC slot in the background, or sends the prefix alone. It never waits, never takes a pinned slot, and skips when anyone is queued. In stepped runs it cannot change what the world sees.
+  - **On each call** the provider knows what each slot holds: `WARM` (prefix already there), `RESTORED` (snapshot restored first), `COLD`; recorded per model call (`server`, `slot`, `prefix_state`, optional fields in `decision_record`).
+  - **Prompt layout for NPCs: the persona prefix goes as a system message, the rest as the user message** (`personas.system_prefix`). llama-server b12443 makes context checkpoints for hybrid (Qwen3.5) and sliding-window (Gemma) models only at message starts and 4 / 4+n_ubatch tokens before the end, so a prefix inside one user message is reused only partly. Measured in the cloud on T1 (CPU, plumbing): a pre-warmed prefix gave 88–93 cached tokens in one message, ~600 (the whole prefix) as a system message. **Robot R's prompt stays one user message**, as the G3b bake-off measured it; trying the same for Robot R is a later, measured change.
+  - **Promotion latency** (`promotions.jsonl`, one line per promotion; summary in `summary.json`): from the promotion event to the NPC's first action the world accepted, wall-clock, with the first model call's queue/prefill/generation times, cached tokens and slot state, whether the promotion was predicted, and the first decision's tick (decisions stay event-driven, D-49, so the first may wait for a trigger). Warm = the first call found the prefix in its slot (WARM or RESTORED). Wall-clock values never enter the journal, so stepped runs stay byte-exact.
+- **Room for G3c-2:** `decision_record.activity` is reserved (null only) for the pulse protocol's optional activity; nothing produces it yet.
+- **Bake-off (D-58) updates.**
+  - **`prompts_v2.jsonl`** (96 prompts): Robot R's SB-04 decisions in each robot body (40, rebuilt with the promise ids), the visitors' own C1/C2 decisions from the same runs (40; 20 C1, 20 C2), and 16 promise situations built through the real runtime (4 per body: the waiting visitor waves, asks, waits, or waits while someone else passes). 20 promise prompts in all. SB-05 adds no NPC contexts: its cast is Robot R in three bodies. `prompts_v1.jsonl` is unchanged; `offline --set bakeoff/prompts_v1.jsonl` still runs it.
+  - Set hashes are taken over LF line endings (`.gitattributes` now pins `*.jsonl` to LF): the owner's `93e215698db0` is prompts_v1 with Windows CRLF endings, the same content as `ee2b7c03be96`.
+  - Offline: Robot R and NPC prompts in separate tables (NPC prompts sent with the system-message layout); `--limit N` takes N of each role.
+  - Live: SB-04 with Option C in four modes (LIVE, LIVE_COLD without pre-warming, LIVE_LOAD with 4 synthetic NPC streams on the NPC server, STEPPED). New columns: Robot R p50/p95 from Robot R's calls only, NPC calls and p50, promotion latency warm and cold (p50, n), VRAM per server.
+  - Fixed measurement bugs (each with a regression test): VRAM on Windows; promises scored as *flag* and *behavior*, with open promises shown by id and a rule for when to set the flag; raw unusable answers saved; the progress line. Also: the from-source build skips the web-UI download (it broke on a changed Hugging Face file).
+- **Measured in the cloud** (4 CPU cores; plumbing, not results):
+  - SB-04 stepped with `--model fake` (NPCs model-driven): 10 NPC model calls; three runs (one with random sidecar delays) and a replay of the decision records give one journal (`29998045c3f9`). SB-04 with the Demo policy (no model, the default) still deterministic (`d9401c3edd17`, three runs) and byte-identical to main's journal: the default path is unchanged.
+  - SB-04 stepped with `--model llama:T1 --npc-model llama:T1` (pinned b12443 built from source, Qwen3.5-0.8B on both servers): Option C started, four persona snapshots saved, one pre-warm restored a snapshot, run OK; every call missed its deadline on the CPU, as expected. `bakeoff.py offline --models T1 --limit 3` and `live --models T1 --npc-model T1 --modes STEPPED LIVE_LOAD` filled both offline tables and the new live columns (VRAM: `nvidia-smi not found`).
+  - **BLOCKED on the owner's GPU:** Robot R's latency under NPC load, real promotion latency cold vs warm, VRAM per server, NPC candidates on NPC prompts.
+- **Not in G3c-1:** the pulse protocol (activities, wake conditions, presence loop, triage pulse: G3c-2; FIELD_NOTES FN-1, FN-2), Echo/Focus/Contour (FN-2 to FN-4, G5), Focus/Trail-driven pre-warming (G5), the system-message layout for Robot R, CPU-tier models (T16), response cache (T15), batching measurements (T13).
+

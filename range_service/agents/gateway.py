@@ -71,6 +71,13 @@ class ModelRequest:
     output_schema: dict[str, Any] | None = None
     # The engine slot the scheduler granted (-1 = none: the provider chooses).
     slot: int = -1
+    # The agent's stable persona prefix (guardrails + identity) and its key (G3c-1, T5/T6): the
+    # provider uses them to tell whether the slot already holds the prefix, or to restore it.
+    prefix_key: str | None = None
+    # The prefix text itself, for NPC calls (G3c-1): a provider may send it as a separate system
+    # message, so a hybrid or sliding-window model can reuse it (llama-server makes its context
+    # checkpoints at message starts). The prompt hash is the whole prompt's either way.
+    prefix: str | None = None
 
 
 @dataclass
@@ -82,6 +89,9 @@ class ModelResponse:
     prompt_tokens: int | None = None
     cached_tokens: int | None = None
     generated_tokens: int | None = None
+    slot: int | None = None
+    prefix_state: str | None = None   # WARM, RESTORED, COLD or UNKNOWN (G3c-1); None if no persona prefix
+    truncated: bool = False           # the engine stopped at the token limit (finish_reason "length")
 
 
 class Provider(Protocol):
@@ -205,11 +215,14 @@ def parse_output(text: str, allowed_actions: list[str], agent_id: str, tick: int
 
 class ModelGateway:
     def __init__(self, provider: Provider, deadlines_ms: dict[str, int] | None = None, max_concurrent: int = 1,
-                 scheduler: Any = None) -> None:
+                 scheduler: Any = None, server: str | None = None) -> None:
         self.provider = provider
         self.deadlines_ms = dict(DEADLINES_MS, **(deadlines_ms or {}))
         self._slots = asyncio.Semaphore(max_concurrent)
         self.scheduler = scheduler
+        self.server = server              # which server this gateway talks to (focal / npc), for records
+        self.refuse_tiers: frozenset[str] = frozenset()   # Option C: the NPC server never serves FOCAL
+        self.persona_events: list[dict[str, Any]] = []
         self._calls = 0
 
     async def start(self) -> None:
@@ -223,6 +236,45 @@ class ModelGateway:
     def _call_id(self, agent_id: str) -> str:
         self._calls += 1
         return f"call_{agent_id}_{self._calls:06d}"[:64]
+
+    # ---------- persona snapshots (T5) and pre-warming (T6), G3c-1 ----------
+
+    def supports_personas(self) -> bool:
+        return hasattr(self.provider, "prewarm") and hasattr(self.provider, "snapshot")
+
+    async def prepare_personas(self, personas: list[tuple[str, str, str, str]]) -> list[dict[str, Any]]:
+        """T5 at scene load: (agent_id, tier, key, prefix) for every model-driven NPC level. Each is
+        warmed into a free shared slot and saved where the server supports it. Never waits for a slot."""
+        out = []
+        for agent_id, tier, key, prefix in personas:
+            out.append(await self._persona_op("snapshot", agent_id, tier, key, prefix))
+        return out
+
+    async def prewarm(self, agent_id: str, tier: str, key: str, prefix: str) -> dict[str, Any]:
+        """T6: a promotion looks likely; put the persona prefix in a free slot before the first call."""
+        return await self._persona_op("prewarm", agent_id, tier, key, prefix)
+
+    async def _persona_op(self, op: str, agent_id: str, tier: str, key: str, prefix: str) -> dict[str, Any]:
+        base = {"event": "PERSONA_SNAPSHOT" if op == "snapshot" else "PREWARM", "agent_id": agent_id, "tier": tier,
+                "key": key, "server": self.server}
+        if not self.supports_personas():
+            entry = dict(base, method="NONE", note=f"provider {self.provider.name} has no slots")
+        elif self.scheduler is None:
+            entry = dict(base, method="SKIPPED", note="no slot scheduler (FIFO): the slot cannot be chosen")
+        else:
+            slot = self.scheduler.try_acquire(agent_id)
+            if slot is None:
+                entry = dict(base, method="SKIPPED", note="no free slot")
+            else:
+                try:
+                    result = await getattr(self.provider, op)(key, prefix, slot)
+                    entry = dict(base, **{k: v for k, v in result.items() if k not in ("event", "key")})
+                except ProviderError as exc:
+                    entry = dict(base, method="FAILED", slot=slot, note=str(exc)[:200])
+                finally:
+                    self.scheduler.release(slot)
+        self.persona_events.append(entry)
+        return entry
 
     async def _one(self, request: ModelRequest, deadline_ms: int) -> tuple[ModelResponse | None, dict[str, Any]]:
         started = time.perf_counter()
@@ -267,17 +319,28 @@ class ModelGateway:
             "cached_tokens": response.cached_tokens if response else None,
             "generated_tokens": response.generated_tokens if response else None,
         }
+        # G3c-1 instrumentation (INFERENCE_STRATEGY §7): which server and slot, and whether the
+        # persona prefix was already in the slot. Optional fields: absent for fake and replay.
+        if self.server is not None:
+            call["server"] = self.server
+        if response is not None and response.slot is not None:
+            call["slot"] = response.slot
+        if response is not None and response.prefix_state is not None:
+            call["prefix_state"] = response.prefix_state
         return response, call
 
     async def decide(self, *, agent_id: str, tier: str, prompt: str, prompt_sha256: str, max_tokens: int,
-                     allowed_actions: list[str], tick: int, demo_hint: str | None = None) -> GatewayResult:
+                     allowed_actions: list[str], tick: int, demo_hint: str | None = None,
+                     prefix_key: str | None = None, prefix: str | None = None) -> GatewayResult:
         from .output_schema import answer_schema   # noqa: PLC0415 (it imports this module)
 
+        if tier in self.refuse_tiers:
+            raise ValueError(f"the {self.server} server does not serve {tier} calls (Option C routing)")
         deadline_ms = self.deadlines_ms[tier]
         calls: list[dict[str, Any]] = []
         schema = answer_schema(tuple(allowed_actions))
         request = ModelRequest(agent_id, self._call_id(agent_id), tier, prompt, prompt_sha256, max_tokens, 0, demo_hint,
-                               schema)
+                               schema, prefix_key=prefix_key, prefix=prefix)
         for attempt in (0, 1):
             response, call = await self._one(request, deadline_ms)
             calls.append(call)
@@ -287,12 +350,14 @@ class ModelGateway:
             actions, reason_summary, error = parse_output(response.text, allowed_actions, agent_id, tick)
             if error is None:
                 return GatewayResult(actions or [], reason_summary, calls)
+            if response.truncated:
+                error = f"the answer was cut off at the {max_tokens}-token limit ({error})"
             call["outcome"], call["error"] = "INVALID_OUTPUT", error[:300]
             if attempt == 0:
                 repaired = prompt + "\n\n## REPAIR\n" + REPAIR_NOTE.format(error=error)
                 request = ModelRequest(agent_id, self._call_id(agent_id), tier, repaired,
                                        hashlib.sha256(repaired.encode("utf-8")).hexdigest(), max_tokens, 1, demo_hint,
-                                       schema)
+                                       schema, prefix_key=prefix_key, prefix=prefix)
         return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": "INVALID_OUTPUT"})
 
 

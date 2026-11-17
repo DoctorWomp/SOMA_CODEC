@@ -6,11 +6,15 @@
     uv run python tools/run_scenario.py SB04_POLITE_BID --body robot_r=quadruped
     uv run python tools/run_scenario.py SB04_POLITE_BID --model fake    # the model path, with a fake model
     uv run python tools/run_scenario.py SB04_POLITE_BID --model replay:runs/<run>/sidecar/decision_records.jsonl
+    uv run python tools/run_scenario.py SB04_POLITE_BID --model llama   # Option C: Robot R + NPC server (G3c-1)
+    uv run python tools/run_scenario.py SB04_POLITE_BID --model llama --npc-model none   # NPCs on templates
 
 Modes: STEPPED (default) holds the world at each sample until every agent has answered, so a
 run is exactly repeatable; LIVE never waits (use it to watch responsiveness). No model is ever
-downloaded or called: --model takes none (Demo policy), fake, fake-slow:MS, fake-malformed or
-replay:FILE. Real models arrive at G3b.
+downloaded: --model takes none (Demo policy), fake, fake-slow:MS, fake-malformed, replay:FILE,
+llama, llama:MODEL or llama-attach:PORT (G3b). --npc-model (G3c-1) chooses what drives visitors
+promoted to C1/C2: auto (default) follows --model (none keeps the templates; fake and replay
+drive NPCs too; llama starts the NPC server from configs/inference.yaml, Option C).
 
 Writes a run folder under runs/ (git-ignored) and prints a short summary.
 """
@@ -35,6 +39,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("scenario", help="scenario id, e.g. SB04_POLITE_BID")
     parser.add_argument("--mode", default="stepped", choices=["stepped", "live"])
     parser.add_argument("--model", default="none")
+    parser.add_argument("--npc-model", default="auto",
+                        help="what drives C1/C2 NPCs: auto (follow --model), none, fake, replay:FILE, llama:MODEL")
+    parser.add_argument("--no-prewarm", action="store_true",
+                        help="never pre-warm NPC persona prefixes (measures cold promotion latency)")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--body", action="append", default=[], metavar="AVATAR=BODY")
     parser.add_argument("--out", type=Path, default=None, help="run folder (default: runs/<scenario>_<seed>_<time>)")
@@ -56,7 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         overrides[avatar_id] = body_id
     opts = RunOptions(args.scenario, godot, mode=args.mode.upper(), model=args.model, seed=args.seed,
                       body_overrides=overrides, out_dir=args.out, headless=not args.watch, jitter_ms=args.jitter_ms,
-                      godot_args=args.godot_arg, posing=not args.no_pose)
+                      godot_args=args.godot_arg, posing=not args.no_pose, npc_model=args.npc_model,
+                      prewarm=False if args.no_prewarm else None)
     try:
         result = asyncio.run(run_scenario(opts))
     except RunError as exc:
@@ -67,6 +76,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  Godot exit code {result.exit_code}; {s['ticks_run']} ticks; held at {s['held_samples']} samples")
     print(f"  journal SHA-256 {result.journal_sha256}")
     print(f"  event tape: {s['tape']['played']} played, {len(s['tape']['refused'])} refused")
+    inf = s["inference"]
+    if inf["option"] is not None:
+        print(f"  NPC model: {inf['npc_model']} (option {inf['option']}"
+              + (f"; fallback: {inf['fallback']}" if inf["fallback"] else "") + ")")
+    pr = s["promotions"]
+    if pr["count"]:
+        print(f"  NPC promotions: {pr['count']} ({pr['validated']} reached a validated action); latency p50 "
+              f"warm {pr['warm_p50_ms']} ms (n={pr['warm_n']}), cold {pr['cold_p50_ms']} ms (n={pr['cold_n']})")
     for agent_id, stats in s["agents"].items():
         print(f"  {agent_id}: {stats['decisions']} decisions, {stats['requests']} requests, "
               f"{stats['fallbacks']} fallbacks, level {stats['cognition']}, {stats['open_commitments']} open promises; "

@@ -171,6 +171,13 @@ def _cross_checks(cs: ConfigSet) -> list[ConfigProblem]:
                 found.append(ConfigProblem(cs.files[("inference", inference_id)],
                                            f"tiers.{tier}.server {setting['server']!r} is not one of servers "
                                            f"({', '.join(inf['servers'])})"))
+        if inf["tiers"]["C2"]["server"] != inf["tiers"]["C1"]["server"]:
+            found.append(ConfigProblem(cs.files[("inference", inference_id)],
+                                       "tiers C2 and C1 must use the same server (the NPC server, Option C)"))
+        npc = inf["tiers"]["C2"]["server"]
+        if npc != inf["tiers"]["FOCAL"]["server"] and any(inf["tiers"][t]["pin_slot"] for t in ("C2", "C1")):
+            found.append(ConfigProblem(cs.files[("inference", inference_id)],
+                                       "the NPC server has no pinned slots: C2 and C1 cannot pin_slot in Option C"))
 
     for body_id, b in cs.items["bodies"].items():
         for problem in body_rules.body_problems(b):

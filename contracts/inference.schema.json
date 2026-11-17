@@ -289,6 +289,63 @@
           }
         }
       }
+    },
+    "vram": {
+      "description": "G3c-1 (D-59): the VRAM budget both servers must fit. Estimated from the model files before the NPC server starts, measured with nvidia-smi after. FALLBACK: run Option B (one server) when the estimate is over budget; WARN: start anyway and record it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "budget_mib",
+        "reserve_mib",
+        "compute_buffer_mib",
+        "over_budget"
+      ],
+      "properties": {
+        "budget_mib": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 262144
+        },
+        "reserve_mib": {
+          "description": "Kept free for Godot and headroom (INFERENCE_STRATEGY \u00a75).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "compute_buffer_mib": {
+          "description": "Allowance per server for llama.cpp's compute buffers.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16384
+        },
+        "over_budget": {
+          "enum": [
+            "FALLBACK",
+            "WARN"
+          ]
+        }
+      }
+    },
+    "personas": {
+      "description": "G3c-1 (D-59; INFERENCE_STRATEGY T5, T6): persona snapshots of model-driven NPCs at scene load (llama-server slot save/restore; a prefix-only request where unsupported), and pre-warming when a promotion becomes likely.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshots",
+        "prewarm"
+      ],
+      "properties": {
+        "snapshots": {
+          "type": "boolean"
+        },
+        "prewarm": {
+          "type": "boolean"
+        },
+        "system_prefix": {
+          "description": "Send a model-driven NPC's persona prefix as a system message and the rest as the user message, so llama-server's context checkpoints (made at message starts for hybrid and sliding-window models) let the whole prefix be reused. Robot R's prompt stays one user message. Default true.",
+          "type": "boolean"
+        }
+      }
     }
   }
 }

@@ -11,13 +11,14 @@ GitHub release, checked against a SHA-256 before anything is unpacked, installed
 Pinned release: llama.cpp b12443 (commit 301db633702f1d2c107d4feaa4268f07c0b508c5, 2026-11-16).
 Asset names were read from that commit's .github/workflows/release.yml and release-publish.yml.
 
-**Checksums.** The cloud session that wrote this could read llama.cpp's source but could not
-download the release files, so the Windows checksums are not pinned in this file yet. Until they
-are, the installer refuses to unpack anything unless you pass --record-hashes: it then prints
-each file's SHA-256 and size, asks you to compare them with the "sha256:" shown next to the file
-on https://github.com/ggml-org/llama.cpp/releases/tag/b12443, and only installs if you type yes.
-The values are saved in .tools/llama/recorded_hashes.json, so later installs are checked against
-them. Paste them back so they can be pinned here (G3b owner checklist).
+**Checksums.** The two Windows files are pinned below (the owner recorded them on install and
+checked them against the release page, 2026-11-17): a download that does not match is deleted
+and nothing is installed. Files without a pinned checksum (the Linux release tarball) are refused
+unless you pass --record-hashes: the installer then prints each file's SHA-256 and size, asks you
+to compare them with the "sha256:" shown next to the file on
+https://github.com/ggml-org/llama.cpp/releases/tag/b12443, and only installs if you type yes.
+Those values are saved in .tools/llama/recorded_hashes.json, so later installs are checked
+against them.
 
 **NVIDIA driver.** The CUDA 12 build ships the CUDA 12.4 runtime. CUDA 12.4 asks for driver
 551.61 or newer on Windows; through CUDA's minor-version compatibility, 12.x builds usually also
@@ -58,8 +59,11 @@ BUILDS = {
         "folder": f"win-cuda12-{VERSION}",
         "binary": "llama-server.exe",
         "assets": [
-            {"file": f"llama-{VERSION}-bin-win-cuda-12.4-x64.zip", "sha256": None},
-            {"file": "cudart-llama-bin-win-cuda-12.4-x64.zip", "sha256": None},   # CUDA 12.4 runtime DLLs
+            # Pinned 2026-11-17 from the owner's install, checked against the release page (D-57).
+            {"file": f"llama-{VERSION}-bin-win-cuda-12.4-x64.zip",
+             "sha256": "a0cfc4695a254da9b26cec6d861494443668fa99a2badbaf71be717281dde62c"},
+            {"file": "cudart-llama-bin-win-cuda-12.4-x64.zip",                     # CUDA 12.4 runtime DLLs
+             "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"},
         ],
     },
     "linux-cpu": {
@@ -209,7 +213,10 @@ def install_from_source(jobs: int) -> int:
     try:
         subprocess.run(["cmake", "-S", str(src), "-B", str(build), *generator, "-DCMAKE_BUILD_TYPE=Release",
                         "-DLLAMA_CURL=OFF", "-DLLAMA_BUILD_TESTS=OFF", "-DLLAMA_BUILD_EXAMPLES=OFF",
-                        "-DBUILD_SHARED_LIBS=OFF"], check=True)
+                        "-DBUILD_SHARED_LIBS=OFF",
+                        # No web UI: RANGE runs the server with --no-webui, and the prebuilt UI is a
+                        # separate download from Hugging Face that can change under the pinned tag.
+                        "-DLLAMA_BUILD_UI=OFF", "-DLLAMA_USE_PREBUILT_UI=OFF"], check=True)
         subprocess.run(["cmake", "--build", str(build), "--target", "llama-server", "-j", str(jobs)], check=True)
     except subprocess.CalledProcessError as exc:
         print(f"error: the build failed ({exc.cmd[0]} exited with {exc.returncode}); see the output above.\n"

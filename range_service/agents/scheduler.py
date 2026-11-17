@@ -16,7 +16,13 @@ on a semaphore, so Robot R can wait behind a queue of NPC chatter. With this sch
 - **One pending call per agent**: if an agent asks again while its earlier call is still queued,
   the earlier one is dropped (superseded); only the newest situation matters.
 
+- **Slot affinity** (G3c-1, INFERENCE_STRATEGY §3.2 "LRU affinity"): a shared slot remembers the
+  agent it last served. An agent gets its own slot back when it is free (its prompt prefix may
+  still be cached there); otherwise the least recently used free slot. Pre-warming (T6) uses
+  ``try_acquire`` and never waits or takes a pinned slot.
+
 Slot ids are real llama-server slot ids: the provider sends the granted id as ``id_slot``.
+In Option C (G3c-1) each server has its own scheduler; the NPC server's has no pinned slots.
 """
 
 from __future__ import annotations
@@ -62,6 +68,9 @@ class SlotScheduler:
         self.clock = clock
         self.pins: dict[str, int] = {}
         self.busy: set[int] = set()
+        self.affinity: dict[str, int] = {}          # agent -> the shared slot it last used
+        self._last_used: dict[int, int] = {}        # slot -> order of last grant (LRU)
+        self._uses = 0
         self.waiting: list[_Waiter] = []
         self._seq = 0
         self.stats = {"granted": 0, "dropped_stale": 0, "dropped_superseded": 0}
@@ -105,6 +114,19 @@ class SlotScheduler:
                 self.release(waiter.future.result())   # granted just as we were cancelled: give it back
             raise
 
+    def try_acquire(self, agent_id: str) -> int | None:
+        """A free shared slot right now, or None; never waits, never a pinned slot, and only when
+        nobody is queued (pre-warming must not delay a real call). Prefers the agent's own slot."""
+        if self.waiting:
+            return None
+        free = self._shared_free()
+        if not free:
+            return None
+        slot = self._pick(agent_id, free)
+        self.busy.add(slot)
+        self._granted(agent_id, slot)
+        return slot
+
     def release(self, slot: int) -> None:
         self.busy.discard(slot)
         self._dispatch()
@@ -114,6 +136,18 @@ class SlotScheduler:
     def _shared_free(self) -> list[int]:
         pinned = set(range(self.reserved))
         return [s for s in range(self.slots) if s not in pinned and s not in self.busy]
+
+    def _pick(self, agent_id: str, free: list[int]) -> int:
+        own = self.affinity.get(agent_id)
+        if own in free:
+            return own
+        return min(free, key=lambda s: (self._last_used.get(s, -1), s))
+
+    def _granted(self, agent_id: str, slot: int) -> None:
+        self._uses += 1
+        self._last_used[slot] = self._uses
+        if slot >= self.reserved:
+            self.affinity[agent_id] = slot
 
     def _check_deadline(self, deadline_at: float) -> None:
         if (deadline_at - self.clock()) * 1000 < self.min_service_ms:
@@ -138,7 +172,9 @@ class SlotScheduler:
             self.waiting.remove(best)
             if best.future.done():
                 continue
-            slot = free.pop(0)
+            slot = self._pick(best.agent_id, free)
+            free.remove(slot)
             self.busy.add(slot)
+            self._granted(best.agent_id, slot)
             self.stats["granted"] += 1
             best.future.set_result(slot)

@@ -71,6 +71,21 @@ class CognitionLevel:
         if demoting:
             self.last_demoted_ms = now_ms
 
+    def likely_next(self, s: Signals) -> str | None:
+        """The level a promotion would probably go to soon, for pre-warming (INFERENCE_STRATEGY T6,
+        G3c-1): C0 with someone within 6 m but not yet 3 m; C1 addressed once (twice promotes) or
+        in a conversation. Scene salience only, never a judgment about a person. None otherwise."""
+        if self.pinned:
+            return None
+        nxt = None
+        if self.level == "C0" and s.focal_within_far and not s.near_focal:
+            nxt = "C1"
+        elif self.level == "C1" and (len(self.addressed_times) == 1 or s.conversation_turns >= 1):
+            nxt = "C2"
+        if nxt is None or LEVELS.index(nxt) > LEVELS.index(self.ceiling):
+            return None
+        return nxt
+
     def update(self, s: Signals) -> str | None:
         """Apply one sample's signals. Returns the change reason if the level changed."""
         if self.pinned:

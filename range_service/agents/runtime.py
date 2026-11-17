@@ -19,15 +19,17 @@ The runtime sees only its own packets, its own memory and the public part of its
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from range_service.comms import disclosure
 
 from . import guardrails
-from .cognition import FAR_FROM_FOCAL_M, NEAR_FOCAL_M, CognitionLevel, Signals
+from .cognition import FAR_FROM_FOCAL_M, LEVELS, NEAR_FOCAL_M, CognitionLevel, Signals
 from .context import OUTPUT_CAPS, Assembled, ContextAssembler, Identity
 from .gateway import ModelGateway
 from .memory import AgentMemory
@@ -73,6 +75,7 @@ class DecisionJob:
     assembled: Assembled | None
     proposals: list[Proposal] | None      # set for ROUTINE/TEMPLATE/DEMO; None when the model decides
     demo_hint: str | None
+    prefix_key: str | None = None         # the persona prefix of this tier (T5/T6), for the provider
 
 
 class AgentRuntime:
@@ -80,12 +83,18 @@ class AgentRuntime:
                  expressions: list[str], setting: list[str], task: str | None = None,
                  task_goal: dict[str, float] | None = None, focal: bool = False, pin: bool = False,
                  controller: str = "SCRIPTED", gateway: ModelGateway | None = None,
-                 tokenizer: Tokenizer | None = None, expression_gestures: dict[str, str] | None = None) -> None:
+                 tokenizer: Tokenizer | None = None, expression_gestures: dict[str, str] | None = None,
+                 own_private_goal: str | None = None, prewarm: bool = True) -> None:
         self.agent_id = agent_id
         self.body = body
         self.focal = focal
         self.controller = controller
         self.gateway = gateway
+        # G3c-1: an NPC with a gateway decides through the model at C1 and C2 (C0 stays a routine).
+        self.npc_model = gateway is not None and not focal
+        if own_private_goal and not self.npc_model:
+            raise ValueError("only a model-driven NPC gets its own private goal in its prompt (D-51)")
+        self.prewarm_enabled = prewarm and self.npc_model
         self.expressions = sorted(expressions)
         # Each available expression's gesture, if it has one (from the catalog).
         self.expression_gestures = {k: v for k, v in (expression_gestures or {}).items() if k in self.expressions}
@@ -96,7 +105,8 @@ class AgentRuntime:
         self.robot = persona["role"] == "expo_assistant"
         # Only the public part of the persona (D-13): never its private goal or style.
         self.identity = Identity(agent_id, persona["display_name"], persona["role"], persona["public_goal"], directive,
-                                 list(persona.get("knows", [])), _body_summary(body, expressions))
+                                 list(persona.get("knows", [])), _body_summary(body, expressions),
+                                 own_private_goal=own_private_goal or None)
         self.cognition = CognitionLevel(persona["cognition_level"], pinned=pin or focal)
         self.memory = AgentMemory(agent_id)
         self.ws = WorkingSet(agent_id)
@@ -117,6 +127,13 @@ class AgentRuntime:
         self._replanned_decisions: set[str] = set()
         self._last_express_tick = -10_000
         self.waved_back: set[str] = set()     # NPC templates wave back once per person
+        # Persona prefixes (T5/T6) and promotion latency (G3c-1). Wall-clock values live only in
+        # these evaluator records, never in anything sent to the world (stepped runs stay exact).
+        self._prefixes: dict[str, tuple[str, str]] = {}      # tier -> (key, prefix)
+        self.prewarm_wanted: list[tuple[str, str, str]] = []  # (tier, key, prefix) for the sidecar to warm
+        self._prewarm_asked: set[str] = set()
+        self.promotions: list[dict[str, Any]] = []
+        self._open_promotions: list[dict[str, Any]] = []
         for fact in persona.get("knows", []):
             self.memory.add("WORLD_KNOWLEDGE", fact, now_ms=0, status="OBSERVED", source_class="OBSERVED",
                             importance="NORMAL", tags=topics_of(fact))
@@ -180,7 +197,16 @@ class AgentRuntime:
             self._replan_due = False
             triggers.append("ACTION_REJECTED")
 
-        self._update_cognition(p, bool(p.addressed), packet)
+        before = self.cognition.level
+        signals = self._update_cognition(p, bool(p.addressed), packet)
+        if self.npc_model:
+            self._track_promotion(before, packet)
+            likely = self.cognition.likely_next(signals)
+            if self.prewarm_enabled and likely is not None:
+                key, prefix = self.persona_prefix(likely)
+                if key not in self._prewarm_asked:
+                    self._prewarm_asked.add(key)
+                    self.prewarm_wanted.append((likely, key, prefix))
         if self.pending:
             if triggers:
                 self._queued += [t for t in triggers if t not in self._queued]
@@ -197,13 +223,72 @@ class AgentRuntime:
         # stands in for "near a focal agent" for NPCs (scene salience, never person judgments).
         ranges = [s.range_m for s in self.ws.tracks.values() if s.range_m is not None and s.left_ms is None]
         closest = min(ranges) if ranges else None
-        reason = self.cognition.update(Signals(
+        signals = Signals(
             now_ms=self.ws.now_ms, addressed=addressed,
             near_focal=closest is not None and closest <= NEAR_FOCAL_M,
             focal_within_far=closest is not None and closest <= FAR_FROM_FOCAL_M,
-            invited_to_group=bool(p.invites), conversation_turns=self.conversation.turns))
+            invited_to_group=bool(p.invites), conversation_turns=self.conversation.turns)
+        reason = self.cognition.update(signals)
         if reason == "IDLE" and self.conversation.partner is not None:
             self._end_conversation("DEMOTED")
+        return signals
+
+    # ---------- persona prefixes, pre-warming and promotion latency (G3c-1; T5, T6) ----------
+
+    def persona_prefix(self, tier: str) -> tuple[str, str]:
+        """(key, text) of this agent's stable prompt prefix at ``tier``: guardrails and identity,
+        identical from call to call. The key changes if the text does (model + prompt version)."""
+        if tier not in self._prefixes:
+            assembler = ContextAssembler(self.tokenizer, tier)
+            text = assembler.persona_prefix(
+                guardrails.guardrails_section(tier, self.allowed_actions, self.body, self.expressions), self.identity)
+            digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+            self._prefixes[tier] = (f"{self.agent_id}:{tier}:{digest}", text)
+        return self._prefixes[tier]
+
+    def model_tiers(self) -> list[str]:
+        """The tiers at which this NPC calls the model (for persona snapshots at scene load)."""
+        if not self.npc_model:
+            return []
+        return [lv for lv in ("C1", "C2") if LEVELS.index(lv) <= LEVELS.index(self.cognition.ceiling)]
+
+    def take_prewarms(self) -> list[tuple[str, str, str]]:
+        wanted, self.prewarm_wanted = self.prewarm_wanted, []
+        return wanted
+
+    def _track_promotion(self, before: str, packet: dict[str, Any]) -> None:
+        after = self.cognition.level
+        if after == before:
+            return
+        if LEVELS.index(after) < LEVELS.index(before):
+            for rec in self._open_promotions:
+                self._close_promotion(rec, "DEMOTED_BEFORE_ACTION")
+            return
+        key = self.persona_prefix(after)[0] if after != "C0" else None
+        rec = {"agent_id": self.agent_id, "from": before, "to": after,
+               "reason": self.cognition.changes[-1]["reason"], "tick": packet["based_on_tick_id"],
+               "sim_time_ms": packet["sim_time_ms"], "predicted": key in self._prewarm_asked,
+               "prewarm": "OFF" if not self.prewarm_enabled else (
+                   "PREDICTED" if key in self._prewarm_asked else "NOT_PREDICTED"),
+               "status": "OPEN", "first_validated_action_ms": None, "decisions_until_action": 0,
+               "first_model_call": None, "_t0": time.perf_counter(), "_requests": set()}
+        self.promotions.append(rec)
+        self._open_promotions.append(rec)
+
+    def _close_promotion(self, rec: dict[str, Any], status: str) -> None:
+        rec["status"] = status
+        if rec in self._open_promotions:
+            self._open_promotions.remove(rec)
+
+    def promotion_records(self, run_ended: bool = False) -> list[dict[str, Any]]:
+        """Evaluator records of every promotion so far (open ones say so)."""
+        out = []
+        for rec in self.promotions:
+            r = {k: v for k, v in rec.items() if not k.startswith("_")}
+            if run_ended and r["status"] == "OPEN":
+                r["status"] = "NO_ACTION_BEFORE_END"
+            out.append(r)
+        return out
 
     # ---------- conversations and episode cards ----------
 
@@ -235,6 +320,8 @@ class AgentRuntime:
         level = self.cognition.level
         if level == "C0":
             return "ROUTINE"
+        if self.npc_model:
+            return "MODEL"          # G3c-1: C1 and C2 NPCs decide through the NPC model
         if level == "C1":
             return "TEMPLATE"
         if self.controller == "LLM_AGENT" and self.gateway is not None:
@@ -280,8 +367,9 @@ class AgentRuntime:
             proposals = None
         else:
             proposals = [p for p in proposals if p.action in self.allowed_actions]
+        prefix_key = self.persona_prefix(tier)[0] if policy == "MODEL" else None
         return DecisionJob(decision_id, self.ws.tick, triggers, policy, tier, self.cognition.level, assembled,
-                           proposals, demo_hint)
+                           proposals, demo_hint, prefix_key)
 
     async def decide(self, job: DecisionJob) -> list[dict[str, Any]]:
         """Answer a job: returns the action requests to send. Model calls happen here."""
@@ -296,10 +384,27 @@ class AgentRuntime:
                 result = await self.gateway.decide(
                     agent_id=self.agent_id, tier=job.tier, prompt=job.assembled.prompt,
                     prompt_sha256=job.assembled.record["prompt_sha256"], max_tokens=OUTPUT_CAPS.get(job.tier, 120),
-                    allowed_actions=self.allowed_actions, tick=job.tick, demo_hint=job.demo_hint)
+                    allowed_actions=self.allowed_actions, tick=job.tick, demo_hint=job.demo_hint,
+                    prefix_key=job.prefix_key,
+                    # NPCs: the persona prefix may go as its own (system) message; Robot R's prompt
+                    # shape stays one message, as the G3b bake-off measured it.
+                    prefix=self.persona_prefix(job.tier)[1] if self.npc_model else None)
                 model_calls, fallback = result.model_calls, result.fallback
                 proposals = [_proposal_from_model(a, self.memory, self.conversation) for a in result.actions]
-            return self._emit(job, proposals, model_calls, fallback)
+            requests = self._emit(job, proposals, model_calls, fallback)
+            if job.policy == "MODEL":
+                for rec in self._open_promotions:
+                    rec["decisions_until_action"] += 1
+                    if rec["first_model_call"] is None and model_calls:
+                        c = model_calls[0]
+                        rec["first_model_call"] = {k: c.get(k) for k in ("outcome", "server", "slot", "prefix_state",
+                                                                         "prompt_tokens", "cached_tokens")}
+                        rec["first_model_call"].update(c["timings"])
+                        # Decisions are event-driven (D-49): the first one may wait for a trigger.
+                        rec["first_decision_tick"] = job.tick
+                    if fallback is None:
+                        rec["_requests"] |= {r["action_request_id"] for r in requests}
+            return requests
         finally:
             self.pending = False
 
@@ -374,6 +479,12 @@ class AgentRuntime:
     def on_result(self, result: dict[str, Any]) -> None:
         request_id = result["action_request_id"]
         self.results[request_id] = result
+        if result["accepted"]:
+            for rec in list(self._open_promotions):
+                if request_id in rec["_requests"]:
+                    rec["first_validated_action_ms"] = round((time.perf_counter() - rec["_t0"]) * 1000)
+                    rec["first_action_tick"] = result.get("resolved_at_tick_id")
+                    self._close_promotion(rec, "VALIDATED")
         sent = self._sent.get(request_id)
         if sent is None or result["accepted"]:
             return

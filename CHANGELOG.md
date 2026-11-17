@@ -2,6 +2,29 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
+## G3c-1 — Two model servers, model-driven NPCs (2026-11-17; draft PR)
+
+Owner approvals and the first bake-off results come first; then the bake-off fixes; then G3c-1 (`docs/gates/G3_PLAN.md`, D-59 PROPOSED, `docs/gates/G3c_OWNER_CHECKLIST.md`).
+
+### Owner decisions
+- D-56, D-57, D-58 APPROVED (2026-11-16). llama.cpp b12443's two Windows checksums pinned in `tools/install_llama.py` (D-57).
+- Bake-off results and verdict recorded (G3_PLAN, D-58): Robot R defaults to F3 (Gemma 4 12B QAT), NPCs to N3 (Qwen3.5-4B Q4_K_M), KV cache q8_0; F2 leaves the core set.
+
+### Fixed
+- Bake-off VRAM on Windows: the change in total GPU memory where per-process memory is N/A; no more "CPU build" message.
+- Bake-off "promises kept": open promises shown by id with a rule for when to set the flag; scored as *flag* and *behavior*.
+- Bake-off: every unusable answer saved raw with its error; the progress line no longer leaves old text.
+- Answers cut off at the token limit are reported as such; C1 output cap 60 → 100 tokens.
+- Prompt-set hashes ignore line endings; `*.jsonl` pinned to LF in `.gitattributes`.
+- The from-source llama-server build no longer downloads the web UI.
+
+### Added
+- **Option C:** an NPC llama-server next to Robot R's, own port and key, started and stopped together; VRAM estimated and measured; fallback to Option B with the reason recorded (`inference_events.jsonl`, run manifest).
+- **Model-driven NPCs** at C1/C2 (`--npc-model`), with their own private goal in their own prompt only (D-51); canary and observer-filter checks in `tools/godot_check.py`.
+- **Persona snapshots and pre-warming** (T5, T6): slot save/restore, slot affinity, prefix state per call, promotion latency per promotion (`promotions.jsonl`); NPC persona prefix sent as a system message.
+- `decision_record`: optional `server`, `slot`, `prefix_state` on model calls; `activity` reserved for G3c-2.
+- **Bake-off:** `bakeoff/prompts_v2.jsonl` (Robot R, NPC and promise prompts; v1 unchanged), per-role tables, live runs with Option C in four modes (Robot R under NPC load, promotion latency warm and cold, VRAM per server).
+
 ## Planning — rigging and quantization (2026-11-16; proposed, docs only)
 
 ### Added

@@ -13,6 +13,10 @@ A run folder holds:
 - ``sidecar/decision_records.jsonl``: every decision, its context sizes and model calls
   (contracts/decision_record), which ``--model replay:<file>`` can replay;
 - ``sidecar/agent_memory.json``, ``sidecar/sidecar_*.jsonl``: memories and link traffic;
+- ``inference_events.jsonl``: which servers ran (Option C or the fallback to B, with the
+  reason), VRAM, persona snapshots and pre-warms (G3c-1);
+- ``promotions.jsonl``: every NPC promotion with its latency to the first validated action,
+  cold or warm (G3c-1). Wall-clock values stay out of the journal, so stepped runs stay exact;
 - ``summary.json``: counts for a quick look (evaluator only).
 """
 
@@ -31,7 +35,8 @@ from typing import Any
 
 from range_service import contracts
 from range_service.agents.factory import build_runtimes
-from range_service.agents.gateway import ProviderError, gateway_from_spec, tokenizer_for
+from range_service.agents.gateway import ProviderError, tokenizer_for
+from range_service.agents.runmodels import RunModels, models_from_specs
 from range_service.configs import ConfigSet, load_and_check
 from range_service.link.sidecar import Sidecar
 
@@ -39,6 +44,7 @@ REPO = contracts.REPO_ROOT
 GODOT_PROJECT = REPO / "godot_app"
 APP_VERSION = "0.3.0"
 STEP_TIMEOUT_DETAIL = "stepped run: no AGENTS_DONE"
+LOAD_TIER = "LOAD"   # synthetic NPC load in the bake-off; ranked after every real tier
 
 
 @dataclass
@@ -55,6 +61,11 @@ class RunOptions:
     timeout_s: float = 900.0
     godot_args: list[str] = field(default_factory=list)   # extra engine options, e.g. a renderer
     posing: bool = True   # skeleton poses (presentation only, D-54); the journal is the same either way
+    npc_model: str = "auto"   # G3c-1: what drives C1/C2 NPCs (agents/runmodels.py)
+    prewarm: bool | None = None   # None = configs/inference.yaml personas.prewarm
+    configs: ConfigSet | None = None   # tests: a checked config set to use instead of configs/
+    npc_load_streams: int = 0          # bake-off: synthetic NPC calls kept running on the NPC server
+    npc_load_prompts: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -160,7 +171,8 @@ def summarize(journal: list[dict[str, Any]], runtimes: dict[str, Any]) -> dict[s
 
 
 def manifest(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: int, run_id: str,
-             tainted_reasons: list[str], details: dict[str, Any], model_hash: str | None = None) -> dict[str, Any]:
+             tainted_reasons: list[str], details: dict[str, Any], model_hash: str | None = None,
+             npc_spec: str | None = None, npc_hash: str | None = None) -> dict[str, Any]:
     game_map = cs.items["maps"][scenario["map"]]
     avatars = []
     for avatar_id in sorted(scenario["cast"]):
@@ -168,15 +180,21 @@ def manifest(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: in
         persona = cs.items["personas"][entry["persona"]]
         preset = cs.items["presets"][entry["preset"]]
         llm = entry["controller"] == "LLM_AGENT"
-        model_id = (opts.model.split(":", 1)[0] if opts.model.startswith("replay:") else opts.model) \
-            if (llm and opts.model != "none") else None
-        brain = f"LLM: {opts.model}" if model_id else ("LLM: none (Demo policy)" if llm else "SCRIPTED")
+        focal = entry["persona"] == "robot_r" or llm
+        npc_driven = not focal and npc_spec not in (None, "none")
+        spec = opts.model if llm else (npc_spec if npc_driven else "none")
+        model_id = (spec.split(":", 1)[0] if spec.startswith("replay:") else spec) \
+            if ((llm or npc_driven) and spec != "none") else None
+        brain = f"LLM: {spec}" if model_id else ("LLM: none (Demo policy)" if llm else "SCRIPTED")
+        if npc_driven:
+            brain = f"C0 routine, C1/C2 NPC model: {spec}"
         avatars.append({
             "avatar_id": avatar_id, "controller": entry["controller"], "policy": entry["policy"],
             "cognition_level": persona["cognition_level"], "persona_id": entry["persona"],
             "body_id": opts.body_overrides.get(avatar_id, entry["body"]), "perception_preset": entry["preset"],
             "perception_mask": preset["layers"], "sensor_package": entry["sensor_package"],
-            "model": {"model_id": model_id, "model_hash": model_hash if model_id else None},
+            "model": {"model_id": model_id[-120:] if model_id else None,
+                      "model_hash": (model_hash if llm else npc_hash) if model_id else None},
             "capability_card": f"[{avatar_id} | {brain} | HORIZON: {entry['preset']} | memory: RCC | "
                                f"sensors: {entry['sensor_package']} | actions: v1]",
         })
@@ -195,8 +213,81 @@ def manifest(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: in
     }
 
 
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows), encoding="utf-8")
+
+
+def inference_events(models: RunModels) -> list[dict[str, Any]]:
+    """Server events (Option C started or the fallback to B, VRAM) and persona snapshots/pre-warms."""
+    rows = [dict(e) for e in models.events]
+    if models.inference is not None:
+        rows.append({"event": "VRAM", **models.inference.vram})
+    seen = set()
+    for gw in (models.focal, models.npc):
+        if gw is not None and id(gw) not in seen:
+            seen.add(id(gw))
+            rows += [dict(e) for e in gw.persona_events]
+    return rows
+
+
+async def snapshot_personas(runtimes: dict[str, Any], models: RunModels) -> None:
+    """T5: at scene load, warm (and save, where the server supports it) every model-driven NPC's
+    persona prefix for each level it can think at. Only for providers with slots (llama-server)."""
+    gw = models.npc
+    if gw is None or not gw.supports_personas() or models.inference is None:
+        return
+    if not models.inference.inference.get("personas", {}).get("snapshots", True):
+        return
+    todo = []
+    for agent_id in sorted(runtimes):
+        rt = runtimes[agent_id]
+        for tier in rt.model_tiers():
+            key, prefix = rt.persona_prefix(tier)
+            todo.append((agent_id, tier, key, prefix))
+    await gw.prepare_personas(todo)
+
+
+async def _npc_load(models: RunModels, stream: int, prompts: list[dict[str, Any]], out: list[dict[str, Any]]) -> None:
+    """Bake-off: keep the NPC server busy with recorded NPC prompts (lowest priority), to measure
+    Robot R's latency while NPCs load the other server."""
+    gw = models.npc
+    assert gw is not None
+    # Its own tier, below every real agent (the scheduler ranks unknown tiers last), with the C1
+    # deadline: the load never pushes a real NPC's call back, only fills free slots.
+    gw.deadlines_ms.setdefault(LOAD_TIER, gw.deadlines_ms["C1"])
+    i = stream
+    while True:
+        item = prompts[i % len(prompts)]
+        i += 1
+        result = await gw.decide(agent_id=f"npc_load_{stream}", tier=LOAD_TIER, prompt=item["prompt"],
+                                 prompt_sha256=item["prompt_sha256"], max_tokens=item["max_tokens"],
+                                 allowed_actions=item["allowed_actions"], tick=item["based_on_tick_id"])
+        for call in result.model_calls:
+            out.append({"stream": stream, "item_id": item["item_id"], "outcome": call["outcome"], **call["timings"]})
+        await asyncio.sleep(0)
+
+
+def promotion_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Promotion latency (promotion event -> first validated action), cold vs warm (G3c-1).
+    Warm = the first model call found the persona prefix in its slot (WARM or RESTORED)."""
+    def p50(values: list[int]) -> float | None:
+        vals = sorted(values)
+        return float(vals[len(vals) // 2]) if vals else None
+    done = [r for r in records if r["status"] == "VALIDATED" and r["first_validated_action_ms"] is not None]
+    warm = [r["first_validated_action_ms"] for r in done
+            if (r["first_model_call"] or {}).get("prefix_state") in ("WARM", "RESTORED")]
+    cold = [r["first_validated_action_ms"] for r in done
+            if (r["first_model_call"] or {}).get("prefix_state") not in ("WARM", "RESTORED")]
+    return {"count": len(records), "validated": len(done), "warm_n": len(warm), "warm_p50_ms": p50(warm),
+            "cold_n": len(cold), "cold_p50_ms": p50(cold),
+            "note": "cold includes calls whose slot state is unknown (fake or replay models have no slots)"}
+
+
 async def run_scenario(opts: RunOptions) -> RunResult:
-    cs, problems = load_and_check()
+    if opts.configs is not None:
+        cs, problems = opts.configs, []
+    else:
+        cs, problems = load_and_check()
     if problems:
         raise RunError("configs have problems; run: uv run python tools/validate_configs.py")
     scenario = check_options(opts, cs)
@@ -209,34 +300,53 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     details: dict[str, Any] = {}
     tokenizer = None
     try:
-        gateway = gateway_from_spec(opts.model, log_path=run_dir / "llama_server.log", seed=seed)
+        models = models_from_specs(opts.model, opts.npc_model, run_dir=run_dir, seed=seed, prewarm=opts.prewarm)
     except (ValueError, ProviderError) as exc:
         raise RunError(str(exc)) from exc
-    if gateway is not None:
-        try:
-            await gateway.start()   # llama: load the model, warm it up (T1)
-        except ProviderError as exc:
-            raise RunError(str(exc)) from exc
-    sidecar = None
     try:
-        tokenizer = tokenizer_for(gateway)
-        runtimes = build_runtimes(scenario, cs, gateway=gateway, body_overrides=opts.body_overrides, tokenizer=tokenizer)
+        await models.start()   # llama: load the model(s), warm them up (T1); Option C or the fallback to B
+    except ProviderError as exc:
+        raise RunError(str(exc)) from exc
+    for event in models.events:
+        if event["event"] == "OPTION_C_FALLBACK":
+            print(f"WARNING  NPC server not used, running Option B: {event['reason']}")
+    sidecar = None
+    load_tasks: list[asyncio.Task] = []
+    load_records: list[dict[str, Any]] = []
+    try:
+        tokenizer = tokenizer_for(models.focal)
+        npc_tokenizer = tokenizer if models.npc is models.focal else tokenizer_for(models.npc)
+        runtimes = build_runtimes(scenario, cs, gateway=models.focal, body_overrides=opts.body_overrides,
+                                  tokenizer=tokenizer, npc_gateway=models.npc, npc_tokenizer=npc_tokenizer,
+                                  prewarm=models.prewarm)
+        await snapshot_personas(runtimes, models)            # T5: at scene load, before the world starts
         token = secrets.token_hex(24)
         sidecar = Sidecar(token, {}, record_dir=run_dir / "sidecar", runtimes=runtimes, jitter_ms=opts.jitter_ms)
         port = await sidecar.start()
         env = dict(os.environ, RANGE_SESSION_TOKEN=token)
+        if opts.npc_load_streams and models.npc is not None and opts.npc_load_prompts:
+            load_tasks = [asyncio.create_task(_npc_load(models, k, opts.npc_load_prompts, load_records))
+                          for k in range(opts.npc_load_streams)]
         code, lines = await _run_godot(godot_command(opts, scenario, run_dir, port, seed), env, opts.timeout_s,
                                        run_dir / "godot.log")
     finally:
+        for task in load_tasks:
+            task.cancel()
+        if load_tasks:
+            await asyncio.gather(*load_tasks, return_exceptions=True)
         if sidecar is not None:
             await sidecar.stop()
-        if gateway is not None:
-            await gateway.stop()   # only the server this run started
+        await models.stop()   # only the servers this run started
     if tokenizer is not None:
         details["tokenizer"] = tokenizer.name
-    setup = getattr(gateway, "setup", None)
-    if setup is not None:
-        details.update(setup.manifest_settings())
+    details.update(models.manifest_settings())
+    setup = getattr(models.focal, "setup", None)
+    npc_setup = getattr(models.inference, "npc", None) if models.inference is not None else None
+    _write_jsonl(run_dir / "inference_events.jsonl", inference_events(models))
+    promotions = [r for aid in sorted(runtimes) for r in runtimes[aid].promotion_records(run_ended=True)]
+    _write_jsonl(run_dir / "promotions.jsonl", [dict(r, run_mode=opts.mode) for r in promotions])
+    if load_records:
+        _write_jsonl(run_dir / "npc_load.jsonl", load_records)
 
     journal_path = run_dir / "journal.jsonl"
     if not journal_path.is_file():
@@ -245,6 +355,10 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     digest = hashlib.sha256(journal_path.read_bytes()).hexdigest()
     summary = summarize(journal, runtimes)
     summary["sidecar_problems"] = list(sidecar.problems)
+    summary["inference"] = {"option": models.option, "npc_model": models.npc_spec,
+                            "fallback": next((e["reason"] for e in models.events if e["event"] == "OPTION_C_FALLBACK"), None)}
+    summary["promotions"] = promotion_summary(promotions)
+    summary["npc_load_calls"] = len(load_records)
     errors = [line for line in lines if line.startswith(("ERROR", "SCRIPT ERROR"))]
     taint = []
     if summary["step_timeouts"]:
@@ -254,7 +368,10 @@ async def run_scenario(opts: RunOptions) -> RunResult:
         taint.append("OTHER")
         details["taint_detail"] = "the run did not end normally"
     run_manifest = manifest(opts, cs, scenario, seed, run_id, sorted(set(taint)), details,
-                            model_hash=setup.model.sha256 if setup is not None else None)
+                            model_hash=setup.model.sha256 if setup is not None else None,
+                            npc_spec=models.npc_spec if models.npc is not None else None,
+                            npc_hash=npc_setup.model.sha256 if npc_setup is not None and models.option == "C"
+                            else (setup.model.sha256 if setup is not None and models.npc is not None else None))
     found = contracts.problems("run_manifest", run_manifest)
     if found:
         raise RunError(f"run manifest does not match its contract: {found[0]}")

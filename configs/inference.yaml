@@ -10,13 +10,29 @@ engine:
   startup_timeout_s: 300     # loading a 7 GB model from a slow disk can take a while
   warm_up: true              # one short request after loading, so the first decision is not slow
 servers:
-  focal:                     # Option A/B (INFERENCE_STRATEGY §4): one server for every agent
-    model: qwen35_9b_q4km    # a catalog id or label (configs/models/catalog.yaml) or a registry local id
+  focal:                     # Robot R's server (Option C, INFERENCE_STRATEGY §4; G3c-1, D-59)
+    model: gemma4_12b_qat    # F3 (owner verdict 2026-11-17, D-58); backup F1 qwen35_9b_q4km
     parallel_slots: 2        # one pinned slot for Robot R, one for everyone else
     context_per_slot: 6144   # tokens per slot; the focal budget is 3750 (D-51) plus room to answer
-    kv_cache_type: f16       # f16 or q8_0 (D-55 bake-off condition); q4_0 only if measured harmless
+    kv_cache_type: q8_0      # default since the bake-off (95-98% agreement with f16 at the same speed, D-58)
     flash_attention: auto
     gpu_layers: all          # all, or a number of layers to keep on the GPU
+  npc:                       # the NPC server: C1/C2 visitors (Option C). Remove it, or pass --npc-model none, for Option B
+    model: qwen35_4b_q4km    # N3 (owner verdict 2026-11-17, D-58); alternative N1 gemma4_e4b_qat
+    parallel_slots: 4        # shared by every NPC, with slot affinity; no pinned slot
+    context_per_slot: 2560   # C2 budget 1900 (D-51) + a repair note + 120 to answer
+    kv_cache_type: q8_0
+    flash_attention: auto
+    gpu_layers: all
+vram:                        # both servers must fit (G3c-1): estimated before the NPC server starts, measured after
+  budget_mib: 16376          # the owner's RTX 4070 Ti SUPER
+  reserve_mib: 2048          # Godot (~1-2 GB) and headroom (INFERENCE_STRATEGY §5)
+  compute_buffer_mib: 512    # per server
+  over_budget: FALLBACK      # FALLBACK = run Option B (one server), recorded; WARN = start anyway, recorded
+personas:                    # INFERENCE_STRATEGY T5, T6 (G3c-1)
+  snapshots: true            # at scene load, warm and save each model-driven NPC's persona prefix (slot save/restore)
+  prewarm: true              # when a promotion becomes likely, put that prefix into a free NPC slot first
+  system_prefix: true        # NPC prompts: persona prefix as a system message, so hybrid/SWA models reuse all of it
 sampling:
   temperature: 0.0           # decisions are compared across models and runs (D-55)
   top_p: 1.0
@@ -31,5 +47,5 @@ scheduler:                   # INFERENCE_STRATEGY step 3 (T4, T12): Option B on 
   min_service_ms: 300        # drop a queued call whose deadline is closer than this (stale)
 tiers:                       # deadlines as D-50; the slot policy as INFERENCE_STRATEGY T4
   FOCAL: {server: focal, deadline_ms: 4000, pin_slot: true}
-  C2: {server: focal, deadline_ms: 6000, pin_slot: false}
-  C1: {server: focal, deadline_ms: 3000, pin_slot: false}
+  C2: {server: npc, deadline_ms: 6000, pin_slot: false}
+  C1: {server: npc, deadline_ms: 3000, pin_slot: false}
