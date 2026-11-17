@@ -8,7 +8,7 @@ Close games, browsers with video and other GPU programs first: VRAM is measured.
 
 ## 1. Get the branch and update
 
-1. GitHub Desktop → **Fetch origin** → **Current branch** → `claude/g3c1-servers-npcs-345no5`.
+1. GitHub Desktop → **Fetch origin** → **Current branch** → `main` → **Pull origin** (G3c-1 is merged).
 2. In PowerShell:
    ```powershell
    cd G:\SOMA_CODEC

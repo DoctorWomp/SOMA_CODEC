@@ -211,8 +211,17 @@ class InferenceSet:
         if self.npc is None:
             self._fallback(self.npc_off_reason)
             return
-        if est_total > vram_cfg["budget_mib"]:
-            msg = (f"estimated VRAM {est_total} MiB (focal {est['focal']['total_mib']} + NPC {est['npc']['total_mib']} "
+        # Robot R's server is running now, so its real use replaces the estimate where it can be
+        # measured. The header estimate is an upper bound that can be far too high for
+        # sliding-window models (Gemma 4 12B: ~17 GB estimated on the owner's PC, 2026-11-17).
+        focal_basis, focal_label = est["focal"]["total_mib"], "focal"
+        if focal_mib is not None:
+            focal_basis, focal_label = focal_mib, "focal measured"
+        need = focal_basis + est["npc"]["total_mib"] + vram_cfg["reserve_mib"]
+        self.vram["fit_check_mib"] = need
+        self.vram["fit_check_basis"] = "focal measured + NPC estimate" if focal_mib is not None else "estimates"
+        if need > vram_cfg["budget_mib"]:
+            msg = (f"VRAM {need} MiB ({focal_label} {focal_basis} + NPC estimate {est['npc']['total_mib']} "
                    f"+ reserve {vram_cfg['reserve_mib']}) is over the {vram_cfg['budget_mib']} MiB budget")
             if vram_cfg["over_budget"] == "FALLBACK":
                 self.npc = None
