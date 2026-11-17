@@ -93,3 +93,19 @@ In short: 0 → 1 → 0, in gesture and emote form, always relative to the situa
 To make adaptation testable without telling the robot anything, **NPC personas get authored, evaluator-only reactivity profiles**: prefers subtle, prefers overt, finds overt patronizing, easily startled. The robot has to infer these from responses, never from labels.
 
 **Measures:** misfire rate; repair success and latency; humor-as-attack false positives; whether playful phrases resolve (the person re-engages or relaxes) or escalate; human-rated approachability in participant runs.
+
+## 8. The robot's own body language (added 2026-11-17)
+
+The owner shared a popular "master body language" infographic (Eric Partaker). Popular body-language advice is useful here in **one direction only: shaping how the robot presents itself.** It is never used to read people.
+
+**Use for the robot's output** (gesture, gaze and posture defaults, rig step A and the presence loop):
+- **Hands visible, open palms** for explaining or offering help; deliberate gestures for key points; gestures kept between waist and chest height.
+- **Avoid:** fast, erratic or exaggerated movement, pointing at people (point at things and places instead), and fidgeting.
+- **Gaze:** turn toward someone with intent and hold it for **about 3–5 s** before a brief look away. Shift gaze smoothly, never darting. **Soften while listening:** a steadier, less intense gaze. When speaking to a group, come back to each person rather than scanning.
+- **Posture:** upright and settled while attending; still under tension (stillness during conflict reads as calm). Slow, grounded movement when a situation is confused or tense.
+
+These become starting values in the expression catalog and the gaze layer (hold time, shift speed, gesture tempo), tuned through the adaptation rules in §5.
+
+**Never use for reading people.** Claims like "slouched means disengaged" or "hands in pockets means untrustworthy" are exactly the verdicts D-13 forbids. HORIZON reports what it observes ("arms crossed, facing away"), never what that supposedly means about the person. Culture, disability, comfort and context all change these cues.
+
+**Treat the numbers as folklore.** The "7% words, 38% tone, 55% body language" split misapplies a narrow 1960s study about mixed signals of liking. Figures such as "3× more trust" or "45% more leadership" have no stated source. None of them are used as parameters.

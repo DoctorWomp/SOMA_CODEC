@@ -145,6 +145,6 @@ Each body gets a simple battery resource, with a cost per activity and per model
 
 | Step | Work |
 |---|---|
-| **G3c, or its own step after G3c** | Activity + wake-condition contract (backward-compatible addition to the action/decision result); the deterministic intent monitor; presence-loop basics using rig step A's gaze and posture (glance at a new sound or movement, idle posture, slow light "breathing"); the pulse with triage, per-trigger cooldowns, backoff, jitter and an idle budget; time fields in the sitrep; lowest-priority scheduling |
+| **G3c, or its own step after G3c** | Owner field notes FN-1 and FN-2 ([FIELD_NOTES.md](FIELD_NOTES.md)) are acceptance tests for this step. Activity + wake-condition contract (backward-compatible addition to the action/decision result); the deterministic intent monitor; presence-loop basics using rig step A's gaze and posture (glance at a new sound or movement, idle posture, slow light "breathing"); the pulse with triage, per-trigger cooldowns, backoff, jitter and an idle budget; time fields in the sitrep; lowest-priority scheduling |
 | **G5** | Wake conditions and SURVEY guided by Focus, Prism, Haze and Trail; presence glances driven by Focus |
 | **G5–G6** | Energy model; the metrics and scenarios above |
