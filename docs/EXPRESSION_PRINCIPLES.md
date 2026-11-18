@@ -109,3 +109,26 @@ These become starting values in the expression catalog and the gaze layer (hold 
 **Never use for reading people.** Claims like "slouched means disengaged" or "hands in pockets means untrustworthy" are exactly the verdicts D-13 forbids. HORIZON reports what it observes ("arms crossed, facing away"), never what that supposedly means about the person. Culture, disability, comfort and context all change these cues.
 
 **Treat the numbers as folklore.** The "7% words, 38% tone, 55% body language" split misapplies a narrow 1960s study about mixed signals of liking. Figures such as "3× more trust" or "45% more leadership" have no stated source. None of them are used as parameters.
+
+## 9. Ambient state display (proposal, 2026-11-18; FIELD_NOTES FN-5 to FN-7)
+
+Between model decisions the robot should still show **what it is doing** and **whether it is considering something**, the way a person's face and posture do. The robot has no face or muscles, but its glyphs, lights and posture can stand in for those cues. This display is deterministic: it comes from the current activity and the agent's own state, with no model call. A model-chosen `EXPRESS` overrides it for its hold time.
+
+**Animated glyph loops.** One expression state can play a short frame loop instead of a static glyph. The world sees **one** expression change through the action gate (with its rate limit); the frames are rendering only. Owner's examples:
+
+| State | Visor loop (example) | Light (palette color + pattern) |
+|---|---|---|
+| Waiting for someone (`WAIT_FOR`) | `(   )` → `(.  )` → `(.. )` → `(...)` | calm blue, slow pulse |
+| Thinking (a model call in flight) | `( \| )` → `( / )` → `( - )` → `( \\ )` | neutral white, slow sweep |
+| Considering / uncertain (`HELD_OPEN`) | a slow look left and right, `(o_ )` ↔ `( _o)` | considered purple, slow breathing |
+| Listening | a steady glyph with occasional blinks | calm blue, steady |
+
+Frame rate ≤ 3 frames per second (D-14 light-safety spirit). The quadruped's light strip gets a strip equivalent (a dot moving along the strip).
+
+**Presence motion (micro-expressions).** Small, irregular-but-seeded movements: glyph blinks every few seconds, small eye shifts, slight head adjustments, a weight shift, light "breathing". Presentation only: they never change what the world simulates. These are presence signals, never claimed feelings (§6, honest stance).
+
+**Intensity through pattern, not hue.** Urgency and intensity show as pulse rate, sweep speed and brightness, always ≤ 3 Hz. Hue stays within the current state's palette color, so each color keeps its meaning (D-14). A playful color tease is allowed only as a brief, resolved phrase in a benign, mutual exchange (§4, §6). It never disguises a real intent, a safety state or a refusal. The owner decides this (FIELD_NOTES, "color shifting").
+
+**Amplitude dial: subtle ↔ performative.** Every ambient and presence channel scales with one amplitude setting. Too subtle and nobody notices; too performative and it reads as patronizing or overstimulating. The baseline comes from configuration (persona, directive, zone) until G5, when HORIZON readings adapt it by the §5 rules (start small, gauge, back off fast, warm up slowly). Inferred preferences stay within the interaction and decay (D-13).
+
+**Proposed build step: G3e** (after G3d), together with head-anchored sensing (FIELD_NOTES FN-6).
