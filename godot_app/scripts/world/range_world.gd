@@ -45,6 +45,9 @@ var sensing_enabled := true         # a scenario turns senses on when it starts
 ## Skeleton poses (D-54, D-56): presentation only, evaluated after every avatar moved in a tick.
 ## Off: robots keep their rest pose. The journal is byte-identical either way (tested).
 var posing_enabled := true
+## The presence dial for every robot, from the command line (-- --presence-amplitude=X, G3e, D-74);
+## below 0: none (each avatar's baseline, or its zone's override, applies). Presentation only.
+var presence_override := -1.0
 var run_active := false             # between start_run() and end_run()
 var _hold_reasons := {}
 ## The tick at which every navigation map could answer queries (-1 until then). Map updates run
@@ -216,6 +219,15 @@ func next_event_id() -> String:
 
 ## The environment values (light, visual range factor, noise floor) of the most specific zone
 ## containing the point; the map file declares them (ART_DIRECTION §5).
+## The zone at `p` (smallest first), or {} (G3e: a zone may override the presence dial, D-74).
+func zone_at(p: Vector3) -> Dictionary:
+	for zone in _zones_by_size:
+		var a: Dictionary = zone["area"]
+		if p.x >= float(a["x_min"]) and p.x <= float(a["x_max"]) and p.z >= float(a["z_min"]) and p.z <= float(a["z_max"]):
+			return zone
+	return {}
+
+
 func environment_at(p: Vector3) -> Dictionary:
 	for zone in _zones_by_size:
 		var a: Dictionary = zone["area"]

@@ -83,6 +83,53 @@ def body_problems(body: dict[str, Any]) -> list[str]:
     if ("SPEECH" in body["expression_channels"]) != bool(caps["can_speak"]):
         found.append("expression channel SPEECH and capabilities.can_speak must agree")
     found += rig_problems(body)
+    found += head_problems(body)
+    return found
+
+
+# ---------- the head (G3e, D-72): host-owned world state for bodies with a neck ----------
+
+NECK_KINDS = frozenset({"LEGGED_HUMANOID", "WHEELED_HUMANOID"})
+# The rig's default Neck limits (godot_app/scripts/rig/rig_spec.gd): yaw +/-85, pitch -40..60 with
+# positive looking DOWN. The head block's pitch is positive UP, so its max must fit 40 and its
+# min -60: the rig must be able to show every head pose the world simulates, unclamped.
+RIG_NECK_LIMITS_DEG = {"yaw": (-85.0, 85.0), "pitch": (-40.0, 60.0)}
+
+
+def head_settings(body: dict[str, Any]) -> dict[str, Any] | None:
+    """The neck (yaw limit, pitch limits, turn speed), or None when the sensor head is fixed to the body."""
+    head = body.get("head")
+    if not head or not head.get("neck"):
+        return None
+    return head
+
+
+def head_problems(body: dict[str, Any]) -> list[str]:
+    head = body.get("head")
+    if head is None:
+        return []
+    found = []
+    keys = ("yaw_limit_deg", "pitch_limit_deg", "turn_speed_deg_s")
+    if head["neck"]:
+        if body["kind"] not in NECK_KINDS:
+            found.append(f"head.neck: a {body['kind']} body has no neck; its sensor head is fixed to the body (D-56, D-72)")
+        missing = [k for k in keys if k not in head]
+        if missing:
+            found.append(f"head: a neck needs {', '.join(missing)}")
+        limits = {**{k: list(v) for k, v in RIG_NECK_LIMITS_DEG.items()},
+                  **body.get("rig", {}).get("joint_limits_deg", {}).get("Neck", {})}
+        if "yaw_limit_deg" in head and head["yaw_limit_deg"] > min(-limits["yaw"][0], limits["yaw"][1]):
+            found.append(f"head.yaw_limit_deg {head['yaw_limit_deg']} is beyond the rig's Neck yaw {limits['yaw']}")
+        if "pitch_limit_deg" in head:
+            lo, hi = head["pitch_limit_deg"]["min"], head["pitch_limit_deg"]["max"]
+            if hi > -limits["pitch"][0] or -lo > limits["pitch"][1]:
+                found.append(f"head.pitch_limit_deg {lo}..{hi} is beyond the rig's Neck pitch {limits['pitch']} "
+                             f"(the rig's pitch is positive looking down)")
+        if "head_turn_speed_deg_s" in body.get("rig", {}):
+            found.append("rig.head_turn_speed_deg_s: with a neck the head turns at head.turn_speed_deg_s (D-72); "
+                         "remove it from the rig block")
+    elif any(k in head for k in keys):
+        found.append("head: limits and a turn speed are only for a neck (neck: true)")
     return found
 
 

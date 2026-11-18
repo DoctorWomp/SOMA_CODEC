@@ -43,6 +43,12 @@
     "allows_not_engaging": {
       "description": "Every template allows choosing not to engage; silence and waiting are valid (INTERACTION_MODES §8).",
       "const": true
+    },
+    "presence_amplitude": {
+      "description": "G3e (D-74): the presence dial for this avatar's ambient display and presence motion, from 0 (subtle) to 1 (performative). Presentation only.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
     }
   }
 }

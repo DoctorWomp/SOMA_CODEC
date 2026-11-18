@@ -526,6 +526,7 @@ def pulse_checks(results: dict) -> tuple[list[str], str]:
                 problems.append(f"SB-06: Robot R interrupted Y while Y was busy: {waiting[0]['args'].get('text')!r}")
             if m["decisions"] > 10 or m["continues"] < 3 or m["glances"] < 3:
                 problems.append(f"SB-06: expected few decisions, quiet CONTINUEs and glances while waiting: {m}")
+            problems += ambient_checks(r.run_dir)
         if scenario_id == "SB07_EMPTY_HALL":
             moves = [json.loads(line) for line in (r.run_dir / "pulse.jsonl").read_text(encoding="utf-8").splitlines()]
             cells = [(e["at_ms"], (e["destination"]["x"], e["destination"]["z"])) for e in moves if e["event"] == "SURVEY"]
@@ -551,6 +552,35 @@ def pulse_checks(results: dict) -> tuple[list[str], str]:
         _, found = check_agent_records(r.run_dir)
         problems += [f"SB06 fake: {p}" for p in found]
     return problems, "; ".join(notes) + f"; SB06 fake model {(fake[0].journal_sha256 or '')[:12]} x2 and replayed"
+
+
+def ambient_checks(run_dir: Path, robot: str = "robot_r") -> list[str]:
+    """G3e (D-73) in SB-06: the waiting state can be perceived from the Beacon alone, the display
+    changes when the activity changes, and every change went through the gate within its limit."""
+    from range_service.eval.runner import read_journal
+
+    journal = read_journal(run_dir / "journal.jsonl")
+    shown = [(e["tick_id"], e["payload"]["expression_id"]) for e in journal
+             if e["kind"] == "EXPRESSION_SHOWN" and e["actor_id"] == robot]
+    ambient = [eid for _, eid in shown if eid.startswith("ambient_")]
+    problems = []
+    if "ambient_waiting" not in ambient:
+        problems.append(f"SB-06: Robot R never showed the waiting display (shown: {ambient[:8]})")
+    elif not any(eid != "ambient_waiting" for eid in ambient[ambient.index("ambient_waiting") + 1:]):
+        problems.append(f"SB-06: the display did not change when the activity changed after waiting ({ambient[:8]})")
+    gaps = [b - a for (a, _), (b, _) in zip(shown, shown[1:])]
+    if any(g < 20 for g in gaps):
+        problems.append(f"SB-06: Robot R changed its expression faster than the 1/3 s limit (gaps {sorted(gaps)[:3]} ticks)")
+    refused = [e for e in journal if e["kind"] == "ACTION_RESOLVED" and e["payload"]["result"]["agent_id"] == robot
+               and e["payload"]["request"]["action"] == "EXPRESS" and not e["payload"]["result"]["accepted"]]
+    if refused:
+        problems.append(f"SB-06: {len(refused)} expression change(s) refused, e.g. {refused[0]['payload']['result']['reason_code']}")
+    perceived = any(item["kind"] == "VISUAL_EXPRESSION" and item["value"].get("glyph") == "waiting_loop"
+                    for e in journal if e["kind"] == "OBSERVATION_DELIVERED" and e["actor_id"] != robot
+                    for item in e["payload"]["observations"])
+    if not perceived:
+        problems.append("SB-06: no visitor perceived the waiting display (glyph waiting_loop) within its sight rules")
+    return problems
 
 
 def npc_specs() -> tuple[dict[str, dict], dict[str, dict], tuple]:

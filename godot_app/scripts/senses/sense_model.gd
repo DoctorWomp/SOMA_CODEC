@@ -4,7 +4,10 @@ extends RefCounted
 ## Simple, labeled proxies, not models of real optics or acoustics; realism is a dial for later.
 ##
 ## Sight: rays from the observer's sensor (its mount height, D-36) to several points on the
-## target. Each point needs range, field of view and a clear line. Walls (unless
+## target. Each point needs range, field of view and a clear line. The field of view is centred
+## on the head (G3e, D-72): for a body with a neck the head's yaw, else the body's facing. The
+## sensor point itself stays at the neck (it does not swing with the head), so hearing and ranges
+## are unchanged; hearing is omnidirectional. Walls (unless
 ## blocks_sight is false), the platform, props, steps and other avatars block sight.
 ## Hearing: level falls 20·log10(distance); each wall on the way takes some off; the
 ## listener's zone noise floor masks it.
@@ -30,6 +33,12 @@ static func forward_of(a: Node3D) -> Vector3:
 
 static func right_of(a: Node3D) -> Vector3:
 	return forward_of(a).cross(Vector3.UP)
+
+
+## Where the head (its sensors, its visor) faces: the body's facing plus a neck's yaw (D-72).
+static func head_forward_of(a: Node3D) -> Vector3:
+	var yaw := a.rotation.y + (float(a.head_yaw) if a is Avatar else 0.0)
+	return Vector3(-sin(yaw), 0, -cos(yaw))
 
 
 ## Where an avatar's eyes or main sensors are: at its mount height, slightly forward (the
@@ -124,8 +133,8 @@ static func look(observer: Avatar, target: Avatar, visual_range: float, gesture 
 		if eye.distance_to(point) > visual_range:
 			continue
 		in_range = true
-		if absf(bearing(observer, eye, point)) > half_fov:
-			continue
+		if absf(wrapf(bearing(observer, eye, point) - observer.head_yaw, -PI, PI)) > half_fov:
+			continue   # outside the head's field of view (D-72)
 		in_view = true
 		if clear_line(space, eye, point, exclude):
 			visible.append(String(part))

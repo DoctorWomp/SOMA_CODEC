@@ -50,6 +50,9 @@
       "SPEECH",
       "LIGHT"
     ],
+    "head": {
+      "neck": false
+    },
     "rig": {
       "skeleton": "QUADRUPED",
       "head_turn_speed_deg_s": 90,

@@ -1,0 +1,13 @@
+# Ambient state display (G3e, D-73): a model call is in flight. See ambient_waiting.yaml.
+schema_version: "1.0"
+expression_id: ambient_thinking
+meaning: "Thinking (status)."
+glyph: {glyph_id: thinking_loop, visor: "( - )", strip: "-"}
+light: NEUTRAL
+light_pattern: SWEEP
+hold_ms: 10000
+ambient:
+  state: THINKING
+  frame_hz: 2
+  visor_frames: ["( | )", "( / )", "( - )", "( \\ )"]
+  strip_frames: ["|", "/", "-", "\\"]

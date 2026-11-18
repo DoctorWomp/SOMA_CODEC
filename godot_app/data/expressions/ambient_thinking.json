@@ -1,0 +1,34 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/ambient_thinking.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "ambient_thinking",
+    "meaning": "Thinking (status).",
+    "glyph": {
+      "glyph_id": "thinking_loop",
+      "visor": "( - )",
+      "strip": "-"
+    },
+    "light": "NEUTRAL",
+    "light_pattern": "SWEEP",
+    "hold_ms": 10000,
+    "ambient": {
+      "state": "THINKING",
+      "frame_hz": 2,
+      "visor_frames": [
+        "( | )",
+        "( / )",
+        "( - )",
+        "( \\ )"
+      ],
+      "strip_frames": [
+        "|",
+        "/",
+        "-",
+        "\\"
+      ]
+    }
+  }
+}

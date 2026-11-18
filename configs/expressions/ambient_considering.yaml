@@ -1,0 +1,14 @@
+# Ambient state display (G3e, D-73): reconsidering what it is doing (a pulse review in flight), or
+# its last answer could not be used. Prism's HELD_OPEN joins this state at G5. See ambient_waiting.yaml.
+schema_version: "1.0"
+expression_id: ambient_considering
+meaning: "Considering (status)."
+glyph: {glyph_id: considering_loop, visor: "(o_ )", strip: "o  "}
+light: CONSIDERED
+light_pattern: SLOW_PULSE
+hold_ms: 10000
+ambient:
+  state: CONSIDERING
+  frame_hz: 1
+  visor_frames: ["(o_ )", "( _o)"]
+  strip_frames: ["o  ", "  o"]

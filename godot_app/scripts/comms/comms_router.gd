@@ -73,7 +73,7 @@ func send_expression(sender: Avatar, expression_id: String, addressee_id = null,
 	if outcome != "OK":
 		return _reject(sender, "GESTURE", outcome)
 	var shown: Dictionary = sender.active_expression(world.clock.tick)
-	if addressee_id is String:
+	if addressee_id is String and not shown.get("ambient", false):
 		sender.look_toward(addressee_id, int(shown["until_tick"]) - world.clock.tick)
 	var obj := {"light": String(expression["light"]), "light_pattern": String(expression["light_pattern"])}
 	if expression.has("gesture"):
@@ -85,7 +85,9 @@ func send_expression(sender: Avatar, expression_id: String, addressee_id = null,
 		obj["display"] = BeaconRules.light_display(sender.body)
 	var comm := _comm("GESTURE", sender, addressee_id, "(%s)" % expression_id, event_id)
 	comm["expression"] = obj
-	_pending.append({"comm": comm, "event_id": event_id, "until_tick": int(shown["until_tick"]), "seen": {}})
+	# An ambient display is held until replaced (D-73); who perceived it is recorded over its hold_ms.
+	var record_until := mini(int(shown["until_tick"]), world.clock.tick + int(roundf(float(expression["hold_ms"]) * SimClock.TICK_HZ / 1000.0)))
+	_pending.append({"comm": comm, "event_id": event_id, "until_tick": record_until, "seen": {}})
 	world.journal_write("EXPRESSION_SHOWN", sender.avatar_id, {"avatar_id": sender.avatar_id, "event_id": event_id,
 		"expression_id": expression_id, "expression": obj, "hold_ms": int(expression["hold_ms"])})
 	return _ok(event_id)

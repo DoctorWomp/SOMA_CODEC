@@ -1,0 +1,16 @@
+# Ambient state display (G3e, D-73; EXPRESSION_PRINCIPLES §9): shown by the runtime from the agent's
+# own state, never chosen by a model, held until the state changes. A status display, not a
+# message, so it is not paired with words (D-73 records the exemption from D-14's pairing rule).
+# The frames are rendering only; the world sees one change. At most 3 frames per second (D-14).
+schema_version: "1.0"
+expression_id: ambient_waiting
+meaning: "Waiting for someone (status)."
+glyph: {glyph_id: waiting_loop, visor: "(...)", strip: "..."}
+light: CALM
+light_pattern: SLOW_PULSE
+hold_ms: 10000      # ambient: held until the next expression; hold_ms is not used
+ambient:
+  state: WAITING
+  frame_hz: 1.5
+  visor_frames: ["(   )", "(.  )", "(.. )", "(...)"]
+  strip_frames: [".  ", ".. ", "..."]

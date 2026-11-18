@@ -64,6 +64,13 @@ const TESTS := [
 	"test_gaze_layer",
 	"test_gesture_prosody_actions",
 	"test_quadruped_whole_body_gestures",
+	"test_head_glance_while_walking",
+	"test_head_beyond_neck_turns_body",
+	"test_quadruped_turns_body_to_look",
+	"test_behind_the_head_is_not_seen",
+	"test_ambient_display_loops_and_rates",
+	"test_presence_dial_scales_amplitude_never_rate",
+	"test_presence_motion_never_changes_the_world",
 ]
 
 ## Where tests write journals and packets for tools/godot_check.py to validate in Python.
@@ -2407,4 +2414,275 @@ func test_quadruped_whole_body_gestures() -> String:
 				if asym < deg_to_rad(2.0):
 					return "%s %s: left and right legs bend the same; the legs must make the body pose" % [id, phase]
 		await _ticks(200)
+	return ""
+
+
+# ---------- G3e: head-anchored sensing (FN-6, D-72) ----------
+
+func _look_at(w: RangeWorld, agent_id: String, point: Vector3, n: int) -> Dictionary:
+	return w.actions.submit({"schema_version": "1.0", "action_request_id": "act_%s_h%03d" % [agent_id, n],
+		"agent_id": agent_id, "based_on_tick_id": w.clock.tick, "action": "LOOK_AT",
+		"args": {"point": {"x": point.x, "y": point.y, "z": point.z}}}, [agent_id])
+
+
+## While walking a straight line, the legged and wheeled humanoids glance at a speaker off to the
+## side (outside the body's 120° cone, inside the neck's reach) with the head only: the body keeps
+## its heading and keeps walking, and the speaker enters the sight cone.
+func test_head_glance_while_walking() -> String:
+	var w := await _world(["legged_humanoid", "wheeled_humanoid", "human_walker"])
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["legged", "legged_humanoid", 6.0, 16.5, 0.0], ["wheeled", "wheeled_humanoid", 10.0, 16.5, 0.0],
+		["left_voice", "human_walker", 1.0, 15.0, 0.0], ["right_voice", "human_walker", 15.0, 15.0, 0.0]])
+	var pairs := [["legged", "left_voice"], ["wheeled", "right_voice"]]
+	for pair in pairs:
+		var robot: Avatar = av[pair[0]]
+		if not robot.has_neck():
+			return "%s should have a neck" % pair[0]
+		if not SenseModel.look(robot, av[pair[1]], 20.0)["visible"].is_empty():
+			return "%s should not see %s before glancing (it is outside the body's cone)" % pair
+		robot.drive(Vector3(0, 0, -0.6))        # a straight line ahead (-z), no path planning
+	await _ticks(30)
+	var yaw0 := {}
+	for pair in pairs:
+		var robot: Avatar = av[pair[0]]
+		yaw0[pair[0]] = robot.rotation.y
+		var voice: Avatar = av[pair[1]]
+		var r := _look_at(w, robot.avatar_id, SenseModel.sample_points(voice)["HEAD"], 1)
+		if r["reason_code"] != "OK":
+			return "LOOK_AT refused: %s" % r["reason_code"]
+	await _ticks(45)
+	for pair in pairs:
+		var robot: Avatar = av[pair[0]]
+		var voice: Avatar = av[pair[1]]
+		if robot.mode != Avatar.Mode.DIRECT or robot.speed < 0.3:
+			return "%s stopped walking to glance (mode %d, speed %.2f)" % [pair[0], robot.mode, robot.speed]
+		if absf(wrapf(robot.rotation.y - float(yaw0[pair[0]]), -PI, PI)) > deg_to_rad(3.0):
+			return "%s turned its body %.1f° to glance; the head should do it" % [pair[0],
+				rad_to_deg(wrapf(robot.rotation.y - float(yaw0[pair[0]]), -PI, PI))]
+		var want := clampf(robot.head_yaw_toward(SenseModel.sample_points(voice)["HEAD"]), -float(robot.neck["yaw"]), float(robot.neck["yaw"]))
+		if absf(robot.head_yaw - want) > deg_to_rad(6.0) or absf(robot.head_yaw) < deg_to_rad(55.0):
+			return "%s head yaw %.1f°, expected about %.1f° toward the voice" % [pair[0], rad_to_deg(robot.head_yaw), rad_to_deg(want)]
+		if SenseModel.look(robot, voice, 20.0)["visible"].is_empty():
+			return "%s turned its head but the speaker is still not in its sight cone" % pair[0]
+		var pose: Dictionary = w.senses.observe(robot)["observer_pose"]
+		if absf(float(pose.get("head_yaw_rad", 0.0)) - robot.head_yaw) > 1e-3 or not pose.has("head_pitch_rad"):
+			return "%s packet does not carry its head pose: %s" % [pair[0], pose]
+	return ""
+
+
+## A target beyond the neck's range turns the body when the robot is standing; while walking the
+## body keeps its heading and the head stops at its limit.
+func test_head_beyond_neck_turns_body() -> String:
+	var w := await _world(["legged_humanoid", "human_walker"])
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["robot", "legged_humanoid", 6.0, 16.5, 0.0], ["walker", "legged_humanoid", 10.0, 16.5, 0.0]])
+	var robot: Avatar = av["robot"]
+	var behind := robot.global_position + Vector3(-2.0, 1.5, 3.5)        # about 150° to the left, behind
+	_look_at(w, "robot", behind, 1)
+	if robot.mode != Avatar.Mode.TURN:
+		return "a standing robot should turn its body toward a target beyond its neck (mode %d)" % robot.mode
+	await _ticks(240)
+	if absf(robot.head_yaw_toward(behind)) > deg_to_rad(3.0) or absf(robot.head_yaw) > deg_to_rad(3.0):
+		return "after turning, the body should face the target with the head straight (body off by %.1f°, head %.1f°)" % [
+			rad_to_deg(robot.head_yaw_toward(behind)), rad_to_deg(robot.head_yaw)]
+	var walker: Avatar = av["walker"]
+	walker.drive(Vector3(0, 0, -0.6))
+	await _ticks(20)
+	var yaw0 := walker.rotation.y
+	_look_at(w, "walker", walker.global_position + Vector3(2.0, 1.5, 3.5), 2)   # behind on its right
+	await _ticks(60)
+	if walker.mode != Avatar.Mode.DIRECT or absf(wrapf(walker.rotation.y - yaw0, -PI, PI)) > deg_to_rad(3.0):
+		return "a walking robot must keep its heading (MOVE_TO owns it) when it looks beyond its neck"
+	if absf(absf(walker.head_yaw) - float(walker.neck["yaw"])) > 1e-3:
+		return "the head should stop at the neck's limit (%.1f°), got %.1f°" % [rad_to_deg(float(walker.neck["yaw"])), rad_to_deg(walker.head_yaw)]
+	return ""
+
+
+## The quadruped has no neck (D-56): LOOK_AT turns its whole body, its head yaw stays 0, and its
+## packet carries no head pose.
+func test_quadruped_turns_body_to_look() -> String:
+	var w := await _world(["quadruped", "quadruped_arm", "human_walker"])
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["dog", "quadruped", 6.0, 16.5, 0.0], ["arm", "quadruped_arm", 10.0, 16.5, 0.0]])
+	for id in ["dog", "arm"]:
+		var a: Avatar = av[id]
+		if a.has_neck():
+			return "%s must not have a neck" % id
+		var target := a.global_position + Vector3(-3.0, 0.5, -1.7)           # about 60° to the left
+		_look_at(w, id, target, 1)
+		await _ticks(90)
+		if absf(a.head_yaw_toward(target)) > deg_to_rad(3.0) or a.head_yaw != 0.0:
+			return "%s should turn its body to look (off by %.1f°, head %.2f)" % [id, rad_to_deg(a.head_yaw_toward(target)), a.head_yaw]
+		if w.senses.observe(a)["observer_pose"].has("head_yaw_rad"):
+			return "%s packet must not report a head pose (no neck)" % id
+	return ""
+
+
+## Something behind the head but inside the old body cone is no longer seen: the field of view
+## follows the head, and the packet reports the person as having left the field of view.
+func test_behind_the_head_is_not_seen() -> String:
+	var w := await _world(["wheeled_humanoid", "human_walker"])
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["robot", "wheeled_humanoid", 8.0, 16.5, 0.0], ["visitor", "human_walker", 10.8, 13.7, 0.0]])
+	var robot: Avatar = av["robot"]
+	var visitor: Avatar = av["visitor"]
+	var before := _about(w, w.senses.observe(robot), robot, visitor)
+	if before.is_empty() or before["validity"] != "OBSERVED":
+		return "the visitor 45° to the right should be seen with the head straight: %s" % before
+	robot.look_toward(robot.global_position + Vector3(-6.0, 1.5, 1.0), 400)   # far to the left: the head stops at its limit
+	await _ticks(40)
+	if absf(robot.head_yaw - float(robot.neck["yaw"])) > 1e-3:
+		return "the head should rest at its left limit, got %.1f°" % rad_to_deg(robot.head_yaw)
+	var after := _about(w, w.senses.observe(robot), robot, visitor)
+	if after.is_empty() or after["validity"] != "MISSING" or after.get("validity_reason") != "LEFT_FIELD_OF_VIEW":
+		return "with the head turned away the visitor should have left the field of view: %s" % after
+	if not SenseModel.look(robot, visitor, 20.0)["visible"].is_empty():
+		return "the sight cone must follow the head"
+	return ""
+
+
+
+# ---------- G3e: ambient display (FN-5, D-73) and presence motion with the dial (FN-7, D-74) ----------
+
+## Count value changes per second over `seconds`, sampled at 60 Hz; returns the worst second.
+func _changes_per_second(f: Callable, seconds: float) -> int:
+	var worst := 0
+	var prev = f.call(0.0)
+	var count := 0
+	var second := 0
+	for i in int(seconds * 60.0):
+		var t := float(i) / 60.0
+		if int(t) != second:
+			worst = maxi(worst, count)
+			count = 0
+			second = int(t)
+		var v = f.call(t)
+		if v != prev:
+			count += 1
+		prev = v
+	return maxi(worst, count)
+
+
+## Ambient expressions are held until replaced (one gated change), play their glyph loop at most
+## 3 frames per second, and the light patterns stay far below 3 Hz. Observers perceive the glyph id.
+func test_ambient_display_loops_and_rates() -> String:
+	var w := await _world(["legged_humanoid", "quadruped", "human_walker"])
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["legged", "legged_humanoid", 8.0, 16.5, 0.0], ["quad", "quadruped", 12.0, 16.5, 0.0],
+		["visitor", "human_walker", 8.0, 13.5, PI]])
+	for id in ["legged", "quad"]:
+		if _express(w, id, "ambient_waiting", 1)["reason_code"] != "OK":
+			return "%s refused ambient_waiting" % id
+	if _express(w, "legged", "ambient_thinking", 2)["reason_code"] != "RATE_LIMITED":
+		return "a second change within 1/3 s must be RATE_LIMITED (the gate counts ambient changes too)"
+	await _ticks(60 * 12)                                     # longer than any hold_ms
+	var legged: Avatar = av["legged"]
+	if legged.active_expression(w.clock.tick).get("expression_id") != "ambient_waiting":
+		return "an ambient display must stay until the next expression replaces it"
+	var seen := _about(w, w.senses.observe(av["visitor"]), av["visitor"], legged, "VISUAL_EXPRESSION")
+	if seen.is_empty() or seen["value"].get("glyph") != "waiting_loop" or seen["value"].get("light") != "CALM":
+		return "a visitor in front should perceive the waiting display from the Beacon alone: %s" % seen
+	for id in ["legged", "quad"]:
+		var b: Beacon = (av[id] as Avatar).beacon()
+		if b.frames.size() < 2:
+			return "%s should play the waiting loop" % id
+		var texts := {}
+		for i in 120:
+			texts[b.frame_at(float(i) / 30.0)["text"]] = true
+		if texts.size() < 3:
+			return "%s loop shows only %s" % [id, texts.keys()]
+		var rate := _changes_per_second(func(t: float) -> String: return String(b.frame_at(t)["text"]), 20.0)
+		if rate > 3:
+			return "%s glyph loop changes %d times in a second (at most 3, D-14)" % [id, rate]
+	await _ticks(BeaconRules.MIN_CHANGE_TICKS + 1)
+	if _express(w, "legged", "ambient_thinking", 3)["reason_code"] != "OK":
+		return "the next state change should be accepted"
+	var hb: Beacon = legged.beacon()
+	if hb.pattern != "SWEEP":
+		return "thinking should sweep the light"
+	# Light: count brightness peaks per second for the slowest-changing check of the pattern frequency.
+	for amp in [0.0, 1.0]:
+		hb.amplitude = amp
+		var peaks := 0
+		var e0 := float(hb.frame_at(0.0)["energy"][0])
+		var e1 := float(hb.frame_at(1.0 / 60.0)["energy"][0])
+		for i in range(2, 60 * 20):
+			var e2 := float(hb.frame_at(float(i) / 60.0)["energy"][0])
+			if e1 > e0 and e1 >= e2:
+				peaks += 1
+			e0 = e1
+			e1 = e2
+		if float(peaks) / 20.0 > BeaconRules.MAX_FLASH_HZ:
+			return "the sweep peaks %.1f times a second at amplitude %.1f" % [float(peaks) / 20.0, amp]
+	return ""
+
+
+## The dial measurably changes the amplitude of every presence channel (eye shifts, light
+## breathing, head adjustments) and never their rate: nothing changes faster than 3 Hz at any setting.
+func test_presence_dial_scales_amplitude_never_rate() -> String:
+	var w := await _world(["wheeled_humanoid"])
+	if w == null:
+		return "world failed to build"
+	var av := await _place(w, [["robot", "wheeled_humanoid", 8.0, 16.5, 0.0]])
+	if _express(w, "robot", "ambient_listening", 1)["reason_code"] != "OK":
+		return "ambient_listening refused"
+	var b: Beacon = (av["robot"] as Avatar).beacon()
+	var measured := {}
+	for amp in [0.2, 0.5, 1.0]:
+		b.amplitude = amp
+		var shift := 0.0
+		var lo := 99.0
+		var hi := -99.0
+		var head := 0.0
+		for i in 60 * 60:
+			var t := float(i) / 60.0
+			var f := b.frame_at(t)
+			shift = maxf(shift, absf(float(f["eye_shift"])))
+			lo = minf(lo, float(f["energy"][0]))
+			hi = maxf(hi, float(f["energy"][0]))
+			head = maxf(head, Poser.presence_head_offset(t, 77, amp).length())
+		measured[amp] = [shift, hi - lo, head]
+		var blinks := _changes_per_second(func(t: float) -> bool: return bool(Beacon.presence_signal(t, 77, amp)["blink"]), 60.0)
+		if blinks > 2:
+			return "blinks change %d times in a second at amplitude %.1f (a blink is one close and one open)" % [blinks, amp]
+		var texts := _changes_per_second(func(t: float) -> String: return String(b.frame_at(t)["text"]), 60.0)
+		if texts > 3:
+			return "the face changes %d times in a second at amplitude %.1f" % [texts, amp]
+	for k in 3:
+		if not (float(measured[1.0][k]) > 2.0 * float(measured[0.2][k]) and float(measured[0.5][k]) > float(measured[0.2][k])):
+			return "channel %d does not scale with the dial: %s" % [k, measured]
+	if rad_to_deg(float(measured[1.0][2])) > 3.7:
+		return "head adjustments must stay small (max %.1f°)" % rad_to_deg(float(measured[1.0][2]))
+	return ""
+
+
+## Presence motion is presentation: a run with the dial at 0 and at 1 writes the same journal, while
+## the robot's head pose (rig) does differ, so the motion really ran.
+func test_presence_motion_never_changes_the_world() -> String:
+	var digests: Array[String] = []
+	var necks: Array[float] = []
+	for amp in [0.0, 1.0]:
+		var w := await _world(["wheeled_humanoid", "human_walker"])
+		if w == null:
+			return "world failed to build"
+		w.presence_override = amp
+		w.start_run(31, artifacts_dir.path_join("presence_%d.jsonl" % int(amp)))
+		var av := await _place(w, [["robot", "wheeled_humanoid", 8.0, 16.5, 0.0], ["visitor", "human_walker", 8.5, 14.0, PI]])
+		_express(w, "robot", "ambient_listening", 1)
+		var moved := 0.0
+		for i in 60 * 8:
+			await get_tree().physics_frame
+			moved = maxf(moved, absf(float((av["robot"] as Avatar).rig().angles["Neck"]["yaw"])))
+		necks.append(moved)
+		digests.append(w.end_run())
+		await _cleanup()
+	if digests[0] == "" or digests[0] != digests[1]:
+		return "the dial changed the journal: %s" % [digests]
+	if necks[1] <= necks[0] + deg_to_rad(0.5):
+		return "head adjustments did not run at amplitude 1 (max neck yaw %.2f° vs %.2f°)" % [rad_to_deg(necks[1]), rad_to_deg(necks[0])]
 	return ""

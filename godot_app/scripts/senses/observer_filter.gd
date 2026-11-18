@@ -105,7 +105,8 @@ func observe(observer: Avatar) -> Dictionary:
 			items.append(presence)
 			if not gesture.is_empty() and visible.has("HAND") \
 					and eye.distance_to(seen["points"]["HAND"]) <= SenseModel.GESTURE_LEGIBLE_RANGE_M * world.visual_range_factor(observer.global_position, t.global_position):
-				var facing := SenseModel.forward_of(t).dot((observer.global_position - t.global_position).normalized())
+				# Toward whom a gesture is made follows the gesturer's head (D-72).
+				var facing := SenseModel.head_forward_of(t).dot((observer.global_position - t.global_position).normalized())
 				var g := _item("VISUAL_GESTURE", gesture["event_id"], track["track_id"], observer, eye, t.global_position,
 					{"gesture": gesture["gesture"], "direction": "TOWARD_OBSERVER" if facing > 0.5 else "AWAY_FROM_OBSERVER"},
 					now_ms, "OBSERVED", quality, VISUAL_PROVENANCE)
@@ -137,14 +138,19 @@ func observe(observer: Avatar) -> Dictionary:
 		if not item.is_empty():
 			items.append(item)
 			last_heard[observer.avatar_id] = {"text": speech["text"], "ms": now_ms, "validity": item["validity"]}
+	var pose := {"x": _r(observer.global_position.x), "y": _r(observer.global_position.y),
+		"z": _r(observer.global_position.z), "yaw_rad": _r(wrapf(observer.rotation.y, -PI, PI))}
+	if observer.has_neck():
+		# Own head pose (D-72): relative to the body, so bearings stay relative to the body.
+		pose["head_yaw_rad"] = _r(observer.head_yaw)
+		pose["head_pitch_rad"] = _r(observer.head_pitch)
 	return {
 		"schema_version": "1.0",
 		"observer_id": observer.avatar_id,
 		"based_on_tick_id": tick,
 		"sim_time_ms": now_ms,
 		"coordinate_frame": "world_meters_xyz",
-		"observer_pose": {"x": _r(observer.global_position.x), "y": _r(observer.global_position.y),
-			"z": _r(observer.global_position.z), "yaw_rad": _r(wrapf(observer.rotation.y, -PI, PI))},
+		"observer_pose": pose,
 		"observations": items,
 	}
 
@@ -220,7 +226,7 @@ func _visual_quality(eye: Vector3, t: Avatar, visual_range: float, parts_seen: i
 func _expression_item(observer: Avatar, eye: Vector3, t: Avatar, shown: Dictionary, head: Vector3, track_id: String,
 		now_ms: int, quality) -> Dictionary:
 	var to_observer := Vector3(eye.x - head.x, 0, eye.z - head.z).normalized()
-	var facing := SenseModel.forward_of(t).dot(to_observer)
+	var facing := SenseModel.head_forward_of(t).dot(to_observer)   # the visor turns with the head (D-72)
 	var glyph_display := BeaconRules.glyph_display(t.body)
 	var light_display := BeaconRules.light_display(t.body)
 	var factor := world.visual_range_factor(observer.global_position, t.global_position)

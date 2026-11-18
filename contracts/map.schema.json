@@ -88,7 +88,11 @@
       "properties": {
         "zone_id": { "$ref": "common.schema.json#/$defs/id" },
         "area": { "$ref": "#/$defs/rect" },
-        "environment": { "$ref": "#/$defs/environment" }
+        "environment": { "$ref": "#/$defs/environment" },
+        "presence_amplitude": {
+          "description": "G3e (D-74): overrides the presence dial of robots inside this zone (for example a quiet corner), from 0 (subtle) to 1 (performative). Presentation only.",
+          "type": "number", "minimum": 0, "maximum": 1
+        }
       }
     },
     "wall": {

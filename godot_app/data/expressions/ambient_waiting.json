@@ -1,0 +1,33 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/ambient_waiting.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "ambient_waiting",
+    "meaning": "Waiting for someone (status).",
+    "glyph": {
+      "glyph_id": "waiting_loop",
+      "visor": "(...)",
+      "strip": "..."
+    },
+    "light": "CALM",
+    "light_pattern": "SLOW_PULSE",
+    "hold_ms": 10000,
+    "ambient": {
+      "state": "WAITING",
+      "frame_hz": 1.5,
+      "visor_frames": [
+        "(   )",
+        "(.  )",
+        "(.. )",
+        "(...)"
+      ],
+      "strip_frames": [
+        ".  ",
+        ".. ",
+        "..."
+      ]
+    }
+  }
+}

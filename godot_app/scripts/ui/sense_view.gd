@@ -62,7 +62,7 @@ func draw_packet(a: Avatar, packet: Dictionary) -> void:
 	var half := deg_to_rad(float(a.body["sensors"]["fov_deg"])) / 2
 	_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
 	for s in [-1.0, 1.0]:
-		var dir := SenseModel.forward_of(a).rotated(Vector3.UP, half * s)
+		var dir := SenseModel.head_forward_of(a).rotated(Vector3.UP, half * s)   # the cone follows the head (D-72)
 		_line(eye, eye + dir * FOV_LEN_M, SEEN)
 	var used := 0
 	for item in packet["observations"]:
@@ -83,7 +83,7 @@ func draw_packet(a: Avatar, packet: Dictionary) -> void:
 			used += 1
 		elif kind == "AUDIO_SPEECH":
 			var b := float(item["bearing_rad"])
-			var dir := SenseModel.forward_of(a).rotated(Vector3.UP, b)
+			var dir := SenseModel.forward_of(a).rotated(Vector3.UP, b)   # bearings stay relative to the body
 			_line(eye, eye + dir * 1.2, LOST)
 	_mesh.surface_end()
 	# Speech is delivered in a single sample; keep showing the last thing heard for 3 s.

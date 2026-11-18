@@ -110,7 +110,7 @@ These become starting values in the expression catalog and the gaze layer (hold 
 
 **Treat the numbers as folklore.** The "7% words, 38% tone, 55% body language" split misapplies a narrow 1960s study about mixed signals of liking. Figures such as "3× more trust" or "45% more leadership" have no stated source. None of them are used as parameters.
 
-## 9. Ambient state display (proposal, 2026-11-18; FIELD_NOTES FN-5 to FN-7)
+## 9. Ambient state display (built at G3e, 2026-11-18: D-71 to D-74; FIELD_NOTES FN-5 to FN-7)
 
 Between model decisions the robot should still show **what it is doing** and **whether it is considering something**, the way a person's face and posture do. The robot has no face or muscles, but its glyphs, lights and posture can stand in for those cues. This display is deterministic: it comes from the current activity and the agent's own state, with no model call. A model-chosen `EXPRESS` overrides it for its hold time.
 
@@ -131,4 +131,10 @@ Frame rate ≤ 3 frames per second (D-14 light-safety spirit). The quadruped's l
 
 **Amplitude dial: subtle ↔ performative.** Every ambient and presence channel scales with one amplitude setting. Too subtle and nobody notices; too performative and it reads as patronizing or overstimulating. The baseline comes from configuration (persona, directive, zone) until G5, when HORIZON readings adapt it by the §5 rules (start small, gauge, back off fast, warm up slowly). Inferred preferences stay within the interaction and decay (D-13).
 
-**Proposed build step: G3e** (after G3d), together with head-anchored sensing (FIELD_NOTES FN-6).
+**As built at G3e (D-73, D-74; color shifting decided in D-71):**
+- **States from the agent's own state:** THINKING (a model call in flight), CONSIDERING (a pulse review in flight, or its last answer could not be used; Prism's HELD_OPEN joins at G5), LISTENING, WAITING (`WAIT_FOR`), ATTENDING. Catalog entries `configs/expressions/ambient_*.yaml` hold the loops above (thinking uses a new `SWEEP` pattern: one palette color moving across the display at 0.5 Hz); attending is a face `._.` with no light.
+- **Not paired with words:** the ambient display is a status display, not a message, so D-14's pairing rule does not apply to it (D-73). Anything addressed to a person still pairs light with words or a gesture.
+- **Models never choose ambient expressions;** the runtime shows them, and a chosen expression overrides them for its hold time.
+- **Presence motion lives with the ambient display** and is presentation only. Head adjustments are presentation too: moving the world's head would move the sight cone (D-72) and could flicker tracks at its edge.
+- **The dial:** 0 (subtle) to 1 (performative); baseline from the directive, else the persona, else `configs/pulse.yaml` (0.5); a map zone may override it; `tools/run_scenario.py --presence subtle|default|performative` for comparisons. G5 adapts it (`presence_dial.adapt`).
+- **Not built:** the color tease (G5, needs Prism's reading of a playful, mutual context), a weight shift or idle posture (rig step B), adaptation (G5).

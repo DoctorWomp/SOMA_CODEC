@@ -44,6 +44,7 @@ from range_service.comms import disclosure
 
 from . import guardrails
 from . import activity as activities
+from .ambient import AmbientDisplay
 from .pulse import Digest, Event, IntentMonitor, Presence, Pulse, Survey, is_closing, voice_key
 from .cognition import FAR_FROM_FOCAL_M, LEVELS, NEAR_FOCAL_M, CognitionLevel, Signals
 from .context import OUTPUT_CAPS, Assembled, ContextAssembler, Identity, ago
@@ -112,7 +113,8 @@ class AgentRuntime:
                  tokenizer: Tokenizer | None = None, expression_gestures: dict[str, str] | None = None,
                  own_private_goal: str | None = None, prewarm: bool = True, pa_operator: bool = False,
                  pulse: dict[str, Any] | None = None, seed: int = 0, post: dict[str, float] | None = None,
-                 post_duty: bool = False, survey_area: dict[str, float] | None = None) -> None:
+                 post_duty: bool = False, survey_area: dict[str, float] | None = None,
+                 ambient: dict[str, str] | None = None, expression_holds: dict[str, int] | None = None) -> None:
         self.agent_id = agent_id
         self.body = body
         self.focal = focal
@@ -188,10 +190,17 @@ class AgentRuntime:
         self._sources_now: set[str] = set()
         self._queued_sources: set[str] = set()
         self._presence_events: dict[str, dict[str, Any]] = {}   # presence request id -> its pulse-log event
+        # The ambient state display (G3e, D-73): state -> expression id this body can show; only with
+        # the pulse on (agents that decide for themselves) and a Beacon.
+        self.ambient = AmbientDisplay(ambient or {}, expression_holds or {}) if pulse is not None and ambient else None
+        self.pending_policy: str | None = None
+        self._last_fallback = False
         if pulse is not None:
             self.monitor = IntentMonitor(pulse["pulse"]["cooldowns_s"])
             self.pulse = Pulse(pulse["pulse"], agent_id, seed)
             self.presence = Presence(pulse["presence"])
+            if self.ambient is not None:
+                self.presence.idle_expression = None     # the ambient display shows waiting instead (D-73)
             self.survey = Survey(pulse["survey"], survey_area, post) if survey_area is not None else None
         else:
             self.monitor = self.pulse = self.presence = self.survey = None   # type: ignore[assignment]
@@ -409,6 +418,10 @@ class AgentRuntime:
                 self._sources_now.add(self.activity.target_id)
         if triggers and self._first_trigger_ms is None:
             self._first_trigger_ms = now
+        # The ambient display (D-73) yields to a decision about to be made from this packet: a chosen
+        # expression gets the light-change slot first, and the display follows on a later packet.
+        if not triggers or self.pending:
+            self._ambient_step(now)
         if triggers:
             self.pulse.schedule(now, self.activity, reset=True)
             return triggers
@@ -451,6 +464,35 @@ class AgentRuntime:
             elif self.activity.kind == "RETURN_TO_POST" and not self.survey.returning:
                 self.activity.kind = "SURVEY"
         return triggers
+
+    def ambient_state(self) -> str:
+        """The agent's own state, for the ambient display (G3e, D-73). Own state only, in order:
+        THINKING (a decision's model call in flight), CONSIDERING (a pulse review in flight, or the
+        last model answer could not be used; Prism's HELD_OPEN joins at G5), LISTENING (a
+        conversation is open and it is not speaking), WAITING (activity WAIT_FOR), ATTENDING."""
+        if self.pending and self.pending_policy == "MODEL":
+            return "THINKING" if self.pending_kind == "REAL" else "CONSIDERING"
+        if self._last_fallback:
+            return "CONSIDERING"
+        if self._conversation_open() and self.ws.now_ms >= self._speaking_until_ms:
+            return "LISTENING"
+        if self.activity is not None and self.activity.kind == "WAIT_FOR":
+            return "WAITING"
+        return "ATTENDING"
+
+    def _ambient_step(self, now: int) -> None:
+        """At most one gated EXPRESS per change of state, through the normal action path."""
+        if self.ambient is None or "EXPRESS" not in self.allowed_actions:
+            return
+        if self.ws.tick - self._last_express_tick < EXPRESSION_MIN_GAP_TICKS:
+            return                                      # the host's 1/3 s light-change limit (D-14)
+        state = self.ambient_state()
+        eid = self.ambient.want(state, now)
+        if eid is None:
+            return
+        self._log("AMBIENT", state=state, expression=eid)
+        self._presence_out.append(("EXPRESS", {"expression_id": eid, "target_id": None}, self.pulse_log[-1]))
+        self.ambient.sent(eid, now)
 
     def sitrep(self) -> str:
         """Time made explicit for the model (PULSE_PROTOCOL §6): the activity and how long it has
@@ -798,6 +840,7 @@ class AgentRuntime:
         """Answer a job: returns the action requests to send. Model calls happen here."""
         self.pending = True
         self.pending_kind = "PULSE" if job.triggers == ["PULSE_REVIEW"] else "REAL"
+        self.pending_policy = job.policy
         try:
             model_calls: list[dict[str, Any]] = []
             fallback = None
@@ -846,6 +889,7 @@ class AgentRuntime:
         finally:
             self.pending = False
             self.pending_kind = None
+            self.pending_policy = None
 
     def decide_now(self, job: DecisionJob) -> list[dict[str, Any]]:
         """Synchronous answer for jobs that need no model (ROUTINE, TEMPLATE, DEMO)."""
@@ -912,7 +956,8 @@ class AgentRuntime:
             self._sent[request_id] = {"action": p.action, "commitment_id": commitment_id, "decision_id": job.decision_id,
                                       "replanned": "ACTION_REJECTED" in job.triggers, "target": target,
                                       "checked": checked, "job_ms": job.now_ms, "policy": job.policy,
-                                      "tier": job.tier, "started_at": job.started_at}
+                                      "tier": job.tier, "started_at": job.started_at,
+                                      "expression_id": p.args.get("expression_id") if p.action == "EXPRESS" else None}
             if closing_at is not None and i == closing_at:
                 closing_id = request_id
             if closing_id is not None and i > closing_at and self._moves_away(p.as_dict()):
@@ -927,6 +972,7 @@ class AgentRuntime:
             self._end_conversation("FAREWELL")
         self.stats["decisions"] += 1
         self.stats["requests"] += len(requests)
+        self._last_fallback = fallback is not None and job.policy == "MODEL"
         if fallback is not None:
             self.stats["fallbacks"] += 1
         record = {
@@ -967,6 +1013,11 @@ class AgentRuntime:
             self._log("RESULT", request_id=request_id, accepted=bool(result["accepted"]),
                       reason_code=result["reason_code"],
                       action=sent["action"] if sent is not None else presence.get("event"))
+        if self.ambient is not None and presence is not None and presence.get("event") == "AMBIENT":
+            self.ambient.result(presence["expression"], bool(result["accepted"]))
+        if self.ambient is not None and sent is not None and sent["action"] == "EXPRESS" and result["accepted"]:
+            # A chosen expression overrides the ambient display for its hold time (D-73).
+            self.ambient.override(sent.get("expression_id"), self.ws.now_ms)
         staged = self._staged.pop(request_id, None)
         held = self._held.pop(request_id, None)
         if sent is None:

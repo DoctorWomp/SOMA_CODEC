@@ -217,3 +217,30 @@ def test_rig_ranges_outside_the_contract_fail_the_schema(config_copy):  # noqa: 
     _edit(config_copy / "bodies" / "quadruped.yaml", "  gesture_amplitude: {min: 0.5, max: 1.5}",
           "  gesture_amplitude: {min: 0.5, max: 2.0}")
     assert any("quadruped.yaml" in m for m in _messages(config_copy))
+
+
+# ---------- G3e: the head (D-72) ----------
+
+def test_head_block_rules():
+    from range_service.bodies import head_problems, head_settings
+    from tests.agent_helpers import CONFIGS
+
+    bodies = CONFIGS.items["bodies"]
+    assert head_settings(bodies["legged_humanoid"]) and head_settings(bodies["wheeled_humanoid"])
+    assert head_settings(bodies["quadruped"]) is None and head_settings(bodies["quadruped_arm"]) is None
+    assert head_settings(bodies["human_walker"]) is None                 # people: rig step C
+    for b in bodies.values():
+        assert head_problems(b) == [], b["body_id"]
+    dog = dict(bodies["quadruped"], head={"neck": True, "yaw_limit_deg": 60, "pitch_limit_deg": {"min": -20, "max": 20},
+                                           "turn_speed_deg_s": 90})
+    assert any("has no neck" in p for p in head_problems(dog))
+    legged = bodies["legged_humanoid"]
+    assert any("needs" in p for p in head_problems(dict(legged, head={"neck": True})))
+    narrow = dict(legged, rig=dict(legged["rig"], joint_limits_deg={"Neck": {"yaw": [-60, 60]}}))
+    assert any("beyond the rig's Neck yaw" in p for p in head_problems(narrow))
+    up = dict(legged, head=dict(legged["head"], pitch_limit_deg={"min": -40, "max": 40}),
+              rig=dict(legged["rig"], joint_limits_deg={"Neck": {"pitch": [-30, 60]}}))
+    assert any("beyond the rig's Neck pitch" in p for p in head_problems(up))
+    twice = dict(legged, rig=dict(legged["rig"], head_turn_speed_deg_s=90))
+    assert any("head.turn_speed_deg_s" in p for p in head_problems(twice))
+    assert any("only for a neck" in p for p in head_problems(dict(bodies["quadruped"], head={"neck": False, "yaw_limit_deg": 30})))

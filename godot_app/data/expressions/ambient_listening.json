@@ -1,0 +1,28 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/ambient_listening.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "ambient_listening",
+    "meaning": "Listening (status).",
+    "glyph": {
+      "glyph_id": "listening_face",
+      "visor": "o_o",
+      "strip": "o o"
+    },
+    "light": "CALM",
+    "light_pattern": "STEADY",
+    "hold_ms": 10000,
+    "ambient": {
+      "state": "LISTENING",
+      "frame_hz": 1,
+      "visor_frames": [
+        "o_o"
+      ],
+      "strip_frames": [
+        "o o"
+      ]
+    }
+  }
+}

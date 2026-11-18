@@ -35,6 +35,8 @@ sensors:
   dropout_rate: 0.0
 gestures: [HEAD_TILT, SIT_IN_PLACE]
 expression_channels: [SPEECH, LIGHT]   # speaker and the light around the sensor visor
+# No neck (D-56): the sensor head is fixed to the body, so LOOK_AT turns the whole body (G3e, D-72).
+head: {neck: false}
 # Skeleton (rig step A, D-54, D-56): rigid body with the sensor head fixed to it (no neck),
 # 3 joints per leg; gaze and HEAD_TILT are whole-body poses made by the legs, feet planted.
 # Pose is presentation only.

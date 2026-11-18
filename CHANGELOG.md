@@ -2,6 +2,20 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
+## G3e — Presence and expression (2026-11-18; draft PR)
+
+`docs/gates/G3_PLAN.md` (G3e), D-71 APPROVED (owner: color shifting, option a), D-72 to D-74 PROPOSED, `docs/gates/G3e_OWNER_CHECKLIST.md`. FIELD_NOTES FN-5 to FN-7.
+
+### Added
+- Head-anchored sensing (D-72): body config `head` block; the humanoids' head yaw and pitch are world state; the sight cone, gesture direction and visor follow the head; `LOOK_AT` turns the head first; head pose in the observation packet (optional `head_yaw_rad`, `head_pitch_rad`).
+- The ambient state display (D-73): `configs/expressions/ambient_*.yaml` with glyph loops (≤ 3 frames/s), a `SWEEP` light pattern (0.5 Hz), one gated change per change of the agent's own state.
+- Presence motion and the dial (D-74): blinks, eye shifts, light breathing, small head adjustments (presentation only); `presence_amplitude` in personas, directives and map zones; `tools/run_scenario.py --presence`.
+
+### Changed
+- `LOOK_AT` no longer turns a humanoid's body within its neck's reach, and never while it walks; the rig's Neck follows the simulated head.
+- The pulse's idle `waiting` breathing is replaced by the ambient display; models are never offered ambient expressions (prompts unchanged).
+- Journals: every robot packet gains its head pose, so every hash moves; see the table in G3_PLAN (G3e result) for why each one moved.
+
 ## G3d — Closing G3: review fixes and measurement tools (2026-11-18; draft PR)
 
 `docs/gates/G3_PLAN.md` (G3d), D-62 to D-70 PROPOSED, `docs/gates/G3d_OWNER_CHECKLIST.md`. D-60 and D-61 stay PROPOSED until the owner's PC run.

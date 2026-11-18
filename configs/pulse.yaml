@@ -8,7 +8,10 @@ presence:                       # loop 2: no model
   glance_cooldown_s: 8          # at most one glance per source in this time
   gaze_hold_s: 4                # EXPRESSION_PRINCIPLES §8: hold about 3-5 s on a person
   return_to_partner_s: 1.0      # a glance away during a conversation returns within about 1 s
-  idle_expression: waiting      # slow Beacon "breathing" (SLOW_PULSE, 0.5 Hz, well under 3 Hz; D-14)
+  idle_expression: waiting      # without an ambient display only (G3e: the ambient display shows waiting, D-73); slow Beacon "breathing" (SLOW_PULSE, 0.5 Hz, well under 3 Hz; D-14)
+  amplitude:                    # G3e (D-74): the presence dial, 0 subtle ... 1 performative (presentation only)
+    default: 0.5                # when neither the persona nor the directive sets presence_amplitude
+    presets: {subtle: 0.2, default: 0.5, performative: 1.0}   # names for tools/run_scenario.py --presence
 pulse:                          # loop 4: triage first, the model only when something changed
   backoff_s: [15, 30, 60]       # review interval after each CONTINUE; reset on any meaningful change
   jitter_frac: 0.1              # seeded, so several agents don't all think at once

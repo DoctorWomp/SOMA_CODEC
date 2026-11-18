@@ -67,8 +67,11 @@ func setup(target_world: RangeWorld, scen: Dictionary, overrides := {}) -> bool:
 		else:
 			appearance = {"badge": str(robots + 1), "trim": ROBOT_TRIMS[robots % ROBOT_TRIMS.size()], "bands": robots % 3 + 1}
 			robots += 1
-		if world.spawn_at(String(avatar_id), body_id, String(scen["cast"][avatar_id]["spawn"]), appearance) == null:
+		var spawned := world.spawn_at(String(avatar_id), body_id, String(scen["cast"][avatar_id]["spawn"]), appearance)
+		if spawned == null:
 			return false
+		# The presence dial's baseline (G3e, D-74), resolved by Python from persona and directive.
+		spawned.presence_baseline = float(scen["cast"][avatar_id].get("presence_amplitude", spawned.presence_baseline))
 	for operator_id in scen.get("pa_operators", []):
 		world.comms.pa_operators[String(operator_id)] = true
 	for i in scen["events"].size():
