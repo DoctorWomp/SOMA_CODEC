@@ -72,10 +72,18 @@ class _Packets:
         return p
 
 
+def _accept(rt: AgentRuntime, requests: list[dict[str, Any]]) -> None:
+    """The world accepts what the agent says here (G3d, D-64: memory follows accepted actions)."""
+    for r in requests:
+        rt.on_result({"schema_version": "1.0", "action_request_id": r["action_request_id"], "agent_id": rt.agent_id,
+                      "accepted": True, "executed": True, "reason_code": "OK", "resulting_event_ids": [],
+                      "resolved_at_tick_id": r["based_on_tick_id"] + 1})
+
+
 def _step(rt: AgentRuntime, packet: dict[str, Any]):
     job = rt.observe(packet)
     if job is not None:
-        rt.decide_now(job)
+        _accept(rt, rt.decide_now(job))
     return job
 
 

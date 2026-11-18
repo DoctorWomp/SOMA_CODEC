@@ -150,6 +150,8 @@ Each level is reached only after the one below works and passes the **render tax
 
 Headless mode (no rendering) is always available for ablation sweeps.
 
+**Tooling (G3d, D-69):** `tools/run_scenario.py --watch --resolution 1920x1080 --render-preset v0` and the bake-off's `LIVE_RENDERED` mode record frame time p50/p95/p99 and spikes, and peak VRAM sampled during the run; results.md has a render-tax table (headless LIVE vs LIVE_RENDERED: Robot R p50/p95, NPC calls per minute). Initial frame target to report against, not tune to: p95 ≤ 16.7 ms at 60 FPS.
+
 ## 8. HUD vs world
 
 The operator HUD and layer viewer use their own diagnostic look (dark panels, cyan accents, like the concept atlases) so they are never confused with in-world objects or Beacon signals. HUD meaning is never color-only; patterns and labels back it up (Atlas §9, D-14).

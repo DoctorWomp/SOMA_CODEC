@@ -35,6 +35,9 @@ CLOSING_WORDS = ("bye", "goodbye", "see you", "excuse me", "sorry", "i need to g
                  "back in a moment", "one moment", "i'll be back", "i will be back", "take care", "enjoy")
 
 
+WORLD_LOOK_HOLD_MS = 3000      # the world holds a LOOK_AT this long (avatar.gd GAZE_HOLD_TICKS = 180)
+
+
 def is_closing(text: str) -> bool:
     lowered = text.lower()
     return any(w in lowered for w in CLOSING_WORDS)
@@ -203,7 +206,8 @@ class Presence:
     def step(self, *, now_ms: int, ws: Any, perceived: Any, heard: list[dict[str, Any]], partner: str | None,
              speaking_until_ms: int, activity: Activity | None, can_look: bool,
              expressions: list[str]) -> tuple[list[tuple[str, dict[str, Any]]], list[Event]]:
-        """Presence actions for this packet: [(action, args)] and their log events."""
+        """Presence actions for this packet: [(action, args)] and their log events, one event per
+        action and in the same order (G3d: each event learns its request id and the host's result)."""
         out: list[tuple[str, dict[str, Any]]] = []
         events: list[Event] = []
         if not can_look:
@@ -228,7 +232,10 @@ class Presence:
                 sources.append((track, "movement"))
         if not speaking:
             for track, why in sources:
-                if track == self.gaze_target or now_ms - self.last_glance.get(track, -10**9) < self.cooldown_ms:
+                # Already looking at it only while the world still holds the last LOOK_AT (G3d, D-65);
+                # it used to count as looked at forever after one glance.
+                held = track == self.gaze_target and now_ms - self.gaze_since_ms < WORLD_LOOK_HOLD_MS
+                if held or now_ms - self.last_glance.get(track, -10**9) < self.cooldown_ms:
                     continue
                 self.last_glance[track] = now_ms
                 out.append(("LOOK_AT", {"point": voices[track]} if track in voices else {"target_id": track}))
@@ -248,6 +255,7 @@ class Presence:
                 self.gaze_target, self.gaze_since_ms = partner, now_ms
             elif self.gaze_target == partner and now_ms - self.gaze_since_ms >= self.hold_ms and not speaking:
                 out.append(("LOOK_AT", {"target_id": partner}))          # renew the hold (the world holds 3 s)
+                events.append(Event("GAZE_HOLD", now_ms, {"target": partner}))   # logged: gaze intervals (G3d)
                 self.gaze_since_ms = now_ms
         idle = activity is not None and activity.kind in IDLE_KINDS and partner is None
         if idle and not self.shown_idle and self.idle_expression in expressions and not out:

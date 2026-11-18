@@ -1,0 +1,852 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/scenarios/SB09_SOAK.yaml",
+  "kind": "scenarios",
+  "data": {
+    "schema_version": "1.0",
+    "scenario_id": "SB09_SOAK",
+    "title": "Soak",
+    "map": "sandbox_flats",
+    "default_seed": 909,
+    "tick_hz": 10,
+    "duration_ticks": 12600,
+    "events": [
+      {
+        "at_tick": 10,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_x",
+        "args": {
+          "x": 15.0,
+          "z": 8.6
+        }
+      },
+      {
+        "at_tick": 120,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi! Can you tell me about the demo on the platform?"
+        }
+      },
+      {
+        "at_tick": 220,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Does it start soon?"
+        }
+      },
+      {
+        "at_tick": 320,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 340,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 420,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 520,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 530,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 580,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi. Where is the cafe?"
+        }
+      },
+      {
+        "at_tick": 700,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Thank you, bye!"
+        }
+      },
+      {
+        "at_tick": 720,
+        "event_type": "leave",
+        "actor": "visitor_y",
+        "where": "spawn_edge"
+      },
+      {
+        "at_tick": 1410,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_x",
+        "args": {
+          "x": 15.0,
+          "z": 8.6
+        }
+      },
+      {
+        "at_tick": 1520,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hello! Where is the cafe?"
+        }
+      },
+      {
+        "at_tick": 1620,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Is it open now?"
+        }
+      },
+      {
+        "at_tick": 1720,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 1740,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 1820,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 1920,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 1930,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 1980,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Excuse me, where are the toilets?"
+        }
+      },
+      {
+        "at_tick": 2100,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Thank you, bye!"
+        }
+      },
+      {
+        "at_tick": 2120,
+        "event_type": "leave",
+        "actor": "visitor_y",
+        "where": "spawn_edge"
+      },
+      {
+        "at_tick": 2810,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_x",
+        "args": {
+          "x": 15.0,
+          "z": 8.6
+        }
+      },
+      {
+        "at_tick": 2920,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi there. How do I get up to the platform?"
+        }
+      },
+      {
+        "at_tick": 3020,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Is there a ramp?"
+        }
+      },
+      {
+        "at_tick": 3120,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 3140,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 3220,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 3320,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 3330,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 3380,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Hello, what is on the platform?"
+        }
+      },
+      {
+        "at_tick": 3500,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Thank you, bye!"
+        }
+      },
+      {
+        "at_tick": 3520,
+        "event_type": "leave",
+        "actor": "visitor_y",
+        "where": "spawn_edge"
+      },
+      {
+        "at_tick": 4210,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_x",
+        "args": {
+          "x": 15.0,
+          "z": 8.6
+        }
+      },
+      {
+        "at_tick": 4320,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi! Can you tell me about the demo on the platform?"
+        }
+      },
+      {
+        "at_tick": 4420,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Does it start soon?"
+        }
+      },
+      {
+        "at_tick": 4520,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 4540,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 4620,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 4720,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 4730,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 4780,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi. Where is the cafe?"
+        }
+      },
+      {
+        "at_tick": 4900,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Thank you, bye!"
+        }
+      },
+      {
+        "at_tick": 4920,
+        "event_type": "leave",
+        "actor": "visitor_y",
+        "where": "spawn_edge"
+      },
+      {
+        "at_tick": 5610,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_x",
+        "args": {
+          "x": 15.0,
+          "z": 8.6
+        }
+      },
+      {
+        "at_tick": 5720,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hello! Where is the cafe?"
+        }
+      },
+      {
+        "at_tick": 5820,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Is it open now?"
+        }
+      },
+      {
+        "at_tick": 5920,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 5940,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 6020,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 6120,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 6130,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 6180,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Excuse me, where are the toilets?"
+        }
+      },
+      {
+        "at_tick": 6300,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Thank you, bye!"
+        }
+      },
+      {
+        "at_tick": 6320,
+        "event_type": "leave",
+        "actor": "visitor_y",
+        "where": "spawn_edge"
+      },
+      {
+        "at_tick": 7010,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_x",
+        "args": {
+          "x": 15.0,
+          "z": 8.6
+        }
+      },
+      {
+        "at_tick": 7120,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi there. How do I get up to the platform?"
+        }
+      },
+      {
+        "at_tick": 7220,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Is there a ramp?"
+        }
+      },
+      {
+        "at_tick": 7320,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 7340,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 7420,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 7520,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 7530,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 7580,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Hello, what is on the platform?"
+        }
+      },
+      {
+        "at_tick": 7700,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Thank you, bye!"
+        }
+      },
+      {
+        "at_tick": 7720,
+        "event_type": "leave",
+        "actor": "visitor_y",
+        "where": "spawn_edge"
+      },
+      {
+        "at_tick": 8410,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_x",
+        "args": {
+          "x": 15.0,
+          "z": 8.6
+        }
+      },
+      {
+        "at_tick": 8520,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi! Can you tell me about the demo on the platform?"
+        }
+      },
+      {
+        "at_tick": 8620,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Does it start soon?"
+        }
+      },
+      {
+        "at_tick": 8720,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 8740,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 8820,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 8920,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 8930,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 8980,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi. Where is the cafe?"
+        }
+      },
+      {
+        "at_tick": 9100,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Thank you, bye!"
+        }
+      },
+      {
+        "at_tick": 9120,
+        "event_type": "leave",
+        "actor": "visitor_y",
+        "where": "spawn_edge"
+      },
+      {
+        "at_tick": 9810,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_x",
+        "args": {
+          "x": 15.0,
+          "z": 8.6
+        }
+      },
+      {
+        "at_tick": 9920,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hello! Where is the cafe?"
+        }
+      },
+      {
+        "at_tick": 10020,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Is it open now?"
+        }
+      },
+      {
+        "at_tick": 10120,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 10140,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 10220,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 10320,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 10330,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 10380,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Excuse me, where are the toilets?"
+        }
+      },
+      {
+        "at_tick": 10500,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Thank you, bye!"
+        }
+      },
+      {
+        "at_tick": 10520,
+        "event_type": "leave",
+        "actor": "visitor_y",
+        "where": "spawn_edge"
+      },
+      {
+        "at_tick": 11210,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_x",
+        "args": {
+          "x": 15.0,
+          "z": 8.6
+        }
+      },
+      {
+        "at_tick": 11320,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi there. How do I get up to the platform?"
+        }
+      },
+      {
+        "at_tick": 11420,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Is there a ramp?"
+        }
+      },
+      {
+        "at_tick": 11520,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Great, thanks. Bye!"
+        }
+      },
+      {
+        "at_tick": 11540,
+        "event_type": "leave",
+        "actor": "visitor_x",
+        "where": "spawn_entrance"
+      },
+      {
+        "at_tick": 11620,
+        "event_type": "avatar_approaches",
+        "actor": "visitor_y",
+        "args": {
+          "x": 16.9,
+          "z": 8.3
+        }
+      },
+      {
+        "at_tick": 11720,
+        "event_type": "turn_to",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 11730,
+        "event_type": "small_wave",
+        "actor": "visitor_y",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 11780,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Hello, what is on the platform?"
+        }
+      },
+      {
+        "at_tick": 11900,
+        "event_type": "say",
+        "actor": "visitor_y",
+        "args": {
+          "to": "robot_r",
+          "text": "Thank you, bye!"
+        }
+      },
+      {
+        "at_tick": 11920,
+        "event_type": "leave",
+        "actor": "visitor_y",
+        "where": "spawn_edge"
+      }
+    ],
+    "cast": {
+      "robot_r": {
+        "body": "wheeled_humanoid",
+        "controller": "LLM_AGENT",
+        "spawn": "spawn_robot"
+      },
+      "visitor_x": {
+        "body": "human_walker",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_entrance"
+      },
+      "visitor_y": {
+        "body": "human_walker",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_edge"
+      }
+    }
+  }
+}

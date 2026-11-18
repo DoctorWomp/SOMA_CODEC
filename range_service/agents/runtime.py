@@ -12,7 +12,20 @@ For each observation packet the runtime:
 5. turns the answer into ``action_request`` messages and writes a ``decision_record``.
 
 Results come back from the host's action gate. A ``STALE_OBSERVATION`` or ``TARGET_UNKNOWN``
-rejection triggers one replan from the latest observation (T27); a rejected promise is released.
+rejection triggers one replan from the latest observation (T27).
+
+G3d (D-63, D-64):
+- **Memory follows what the world accepted.** A promise, a kept promise, the agent's own speech
+  turn and a conversation it starts are staged per action request and applied once, when the
+  host accepts that request; a rejection leaves memory as it was. While a request is sent but not
+  yet accepted, the next decision sees one line saying so (never as memory).
+- **Relevance check before sending** (``recheck``, live runs): a MOVE_TO, a SPEAK or GESTURE aimed
+  at someone, or an action that makes or keeps a promise is dropped, with the reason recorded, if
+  its person is no longer perceived or someone else has addressed the agent since the decision's
+  observation; the decision then gets the usual single replan. A model answer not sent within its
+  decision deadline plus the send margin is dropped too.
+- **FN-1:** a departure from an open conversation needs a closing line the partner could hear,
+  before it in the same answer, and is held back until the host accepts that line.
 
 The runtime sees only its own packets, its own memory and the public part of its persona.
 """
@@ -43,6 +56,12 @@ from .working_set import Perceived, WorkingSet
 PARTNER_SILENCE_END_MS = 20_000     # a conversation ends after this long without an exchange
 EXPRESSION_MIN_GAP_TICKS = 20       # the host refuses expression changes faster than 3 per second (D-14)
 REPLAN_REASONS = frozenset({"STALE_OBSERVATION", "TARGET_UNKNOWN"})
+# G3d (D-63): a model answer must be handed to the link within its decision deadline plus this
+# much (event-loop lag); the rest of the 500 ms delivery margin covers the link and one world tick.
+SEND_GRACE_MS = 400
+# Model work started by the agent's own pulse or wake conditions while idle (counted by the idle budget).
+IDLE_WORK_TRIGGERS = frozenset({"PULSE_REVIEW", "WAKE_CONDITION"})
+DELIVERY_MARGIN_MS = 500
 _WORD = re.compile(r"[a-zà-ÿ']{4,}")
 STOPWORDS = frozenset({"about", "there", "where", "what", "that", "this", "with", "your", "have", "from", "they",
                        "would", "could", "should", "thanks", "tell", "please"})
@@ -80,6 +99,9 @@ class DecisionJob:
     demo_hint: str | None
     prefix_key: str | None = None         # the persona prefix of this tier (T5/T6), for the provider
     choices: dict[str, Any] | None = None  # what the answer may name, fixed when the job is made (D-60)
+    started_at: float = 0.0               # time.monotonic() when the job was made: the decision deadline counts from here (D-63)
+    now_ms: int = 0                       # simulated time of the observation it is based on
+    sources: list[str] = field(default_factory=list)   # who or what triggered it (tracks, voices), for metrics (D-65)
 
 
 class AgentRuntime:
@@ -156,6 +178,16 @@ class AgentRuntime:
         self._sitrep_changes: list[str] = []
         self._fn1_events: list[str] = []
         self._first_trigger_ms: int | None = None
+        # G3d (D-63, D-64): memory changes staged until the host accepts the request; departures held
+        # for a closing line; what was dropped before sending and why.
+        self._staged: dict[str, dict[str, Any]] = {}
+        self._held: dict[str, list[dict[str, Any]]] = {}      # closing SPEAK id -> MOVE_TOs waiting for it
+        self._release_out: list[dict[str, Any]] = []
+        self._addressed_log: list[tuple[int, str]] = []       # (sim ms, speaker) of speech addressed to it
+        self.delivery_log: list[dict[str, Any]] = []
+        self._sources_now: set[str] = set()
+        self._queued_sources: set[str] = set()
+        self._presence_events: dict[str, dict[str, Any]] = {}   # presence request id -> its pulse-log event
         if pulse is not None:
             self.monitor = IntentMonitor(pulse["pulse"]["cooldowns_s"])
             self.pulse = Pulse(pulse["pulse"], agent_id, seed)
@@ -192,8 +224,13 @@ class AgentRuntime:
             self._started = True
             triggers.append("START")
         conv = self.conversation
+        self._sources_now = set()
         for item in p.addressed:
             speaker = item.get("track_id")
+            source = _source_of(item)
+            self._sources_now.add(source)
+            self._addressed_log.append((now, source))
+            del self._addressed_log[:-50]
             topics = topics_of(item["value"]["text"])
             stored = self.memory.remember_heard(item, packet, topics)
             if conv.partner is None and speaker is not None:
@@ -210,18 +247,23 @@ class AgentRuntime:
             triggers.append("ADDRESSED_SPEECH")
         if p.greetings:
             triggers.append("DIRECTED_GESTURE")
+            self._sources_now |= {i["track_id"] for i in p.greetings if i.get("track_id")}
         if p.invites:
             triggers.append("GROUP_INVITE")
         near = [t for t in p.new_tracks if (self.ws.tracks[t].range_m or 99.0) <= NEAR_FOCAL_M]
         if near:
             triggers.append("PERSON_NEAR")
+            self._sources_now |= set(near)
         if conv.partner is not None and (conv.partner in p.lost_tracks and not self.ws.visible(conv.partner)
                                          or now - conv.last_exchange_ms > PARTNER_SILENCE_END_MS):
+            self._sources_now.add(conv.partner)
             self._end_conversation("PARTNER_LEFT" if conv.partner in p.lost_tracks else "SILENCE")
             triggers.append("PARTNER_LEFT")
         if conv.partner is None and any(self.ws.visible(t) for c in self.memory.open_commitments()
                                         for t in c["audience_present"]):
             triggers.append("COMMITMENT_DUE")
+            self._sources_now |= {t for c in self.memory.open_commitments() for t in c["audience_present"]
+                                  if self.ws.visible(t)}
         if self._replan_due:
             self._replan_due = False
             triggers.append("ACTION_REJECTED")
@@ -243,13 +285,17 @@ class AgentRuntime:
                 if self.pending_kind == "PULSE" and any(t != "PULSE_REVIEW" for t in triggers):
                     self.preempt_requested = True      # a real event: the pulse review gives way (D-61)
                 self._queued += [t for t in triggers if t not in self._queued and t != "PULSE_REVIEW"]
+                self._queued_sources |= self._sources_now
                 self.stats["skipped_pending"] += 1
             return None
         triggers = sorted(set(self._queued + triggers), key=_TRIGGER_ORDER.index)
-        self._queued = []
+        sources = self._queued_sources | self._sources_now
+        self._queued, self._queued_sources = [], set()
         if not triggers:
             return None
-        return self._job(triggers, packet)
+        job = self._job(triggers, packet)
+        job.sources = sorted(sources)
+        return job
 
     def _update_cognition(self, p: Perceived, addressed: bool, packet: dict[str, Any]) -> None:
         # Distance to focal agents is not knowable from anonymous tracks; the closest seen person
@@ -325,6 +371,8 @@ class AgentRuntime:
         if due and now - self._last_due_ms >= cfg["pulse"]["cooldowns_s"]["commitment_due"] * 1000:
             self._last_due_ms = now
             triggers.append("COMMITMENT_DUE")
+            self._sources_now |= {t for c in self.memory.open_commitments() for t in c["audience_present"]
+                                  if self.ws.visible(t)}
         if self.survey is not None:
             self.survey.observe(now, self.ws.pose)
         glance_range = cfg["presence"]["glance_range_m"]
@@ -344,9 +392,10 @@ class AgentRuntime:
             heard=heard,
             partner=self.conversation.partner, speaking_until_ms=self._speaking_until_ms, activity=self.activity,
             can_look="LOOK_AT" in self.allowed_actions, expressions=self.expressions)
-        self._presence_out += actions
-        for e in events:
-            self.pulse_log.append(e.record())
+        for (action, args), e in zip(actions, events):
+            record = e.record()
+            self.pulse_log.append(record)
+            self._presence_out.append((action, args, record))
         # Loop 3: the intent monitor. Speech that could be to it (unknown addressee, within
         # conversation range) may wake it; speech to someone else only gets a glance (FN-2).
         possibly_to_me = [h["track_id"] for h in p.heard if h["addressed"] is None and h["track_id"]
@@ -356,6 +405,8 @@ class AgentRuntime:
         if wakes:
             triggers.append("WAKE_CONDITION")
             self._log("WAKE", conditions=wakes)
+            if self.activity is not None and self.activity.target_id:
+                self._sources_now.add(self.activity.target_id)
         if triggers and self._first_trigger_ms is None:
             self._first_trigger_ms = now
         if triggers:
@@ -394,9 +445,9 @@ class AgentRuntime:
             move = None if someone_close else self.survey.next_move(now, self.ws.pose, people)
             if move is not None:
                 why, dest = move
-                self._presence_out.append(("MOVE_TO", {"destination": dest}))
                 self.activity.kind, self.activity.destination = why, dest
                 self._log(why, destination=dest)
+                self._presence_out.append(("MOVE_TO", {"destination": dest}, self.pulse_log[-1]))
             elif self.activity.kind == "RETURN_TO_POST" and not self.survey.returning:
                 self.activity.kind = "SURVEY"
         return triggers
@@ -428,47 +479,87 @@ class AgentRuntime:
         """Presence-loop and survey actions to send now (LOOK_AT, EXPRESS, MOVE_TO): through the
         normal action path, journaled and gated like any other request."""
         out = []
-        for action, args in self._presence_out:
+        for action, args, event in self._presence_out:
             if action not in self.allowed_actions:
+                event["not_sent"] = "NOT_ALLOWED"
                 continue
             if action == "EXPRESS":
                 if self.ws.tick - self._last_express_tick < EXPRESSION_MIN_GAP_TICKS:
+                    event["not_sent"] = "LIGHT_TOO_SOON"
                     continue
                 self._last_express_tick = self.ws.tick
             self._requests += 1
-            out.append({"schema_version": "1.0", "action_request_id": f"act_{self.agent_id}_{self._requests:05d}"[:64],
+            request_id = f"act_{self.agent_id}_{self._requests:05d}"[:64]
+            event["request_id"] = request_id
+            self._presence_events[request_id] = event
+            out.append({"schema_version": "1.0", "action_request_id": request_id,
                         "agent_id": self.agent_id, "based_on_tick_id": self.ws.tick, "action": action, "args": args})
         self._presence_out = []
         self.stats["presence"] = self.stats.get("presence", 0) + len(out)
+        # Departures released once their closing line was accepted (FN-1, D-66), rechecked first.
+        released, self._release_out = self._release_out, []
+        for request in released:
+            reason = self._irrelevant(self._sent.get(request["action_request_id"], {}), since_ms=None)
+            if reason is not None:
+                self._discard(request, reason)
+                continue
+            request["based_on_tick_id"] = self.ws.tick      # rechecked against this observation just now
+            out.append(request)
+            self._delivery("RELEASED", request, "closing line accepted")
         return out
+
+    def _moves_away(self, a: dict[str, Any]) -> bool:
+        """A MOVE_TO that takes the agent away from its conversation partner."""
+        if a["action"] != "MOVE_TO" or self.conversation.partner is None:
+            return False
+        partner = self.conversation.partner
+        state = self.ws.tracks.get(partner)
+        target = a["args"].get("target_id")
+        dest = a["args"].get("destination")
+        if target is not None:
+            return target != partner
+        if dest is not None and state is not None and state.x is not None and self.ws.pose is not None:
+            d_now = math.hypot(state.x - self.ws.pose["x"], state.z - self.ws.pose["z"])
+            return math.hypot(state.x - dest["x"], state.z - dest["z"]) > d_now + 0.5
+        return False
+
+    def _audible_closing(self, a: dict[str, Any]) -> bool:
+        """A closing or excuse line the partner could hear (FN-1, G3d D-66): addressed to them, or LOCAL
+        speech to nobody in particular while they are within earshot. Earshot is the conversation
+        range (3.5 m: speech is clear that far on the main floor, D-40)."""
+        if a["action"] != "SPEAK" or not is_closing(a["args"].get("text", "")):
+            return False
+        partner = self.conversation.partner
+        to = a["args"].get("addressee_id")
+        if to is not None:
+            return to == partner
+        state = self.ws.tracks.get(partner) if partner else None
+        return a["args"].get("channel") == "LOCAL" and state is not None and state.range_m is not None \
+            and state.range_m <= self.pulse_cfg["conversation"]["range_m"]
 
     def _fn1_problem(self, actions: list[dict[str, Any]], activity: dict[str, Any] | None) -> str | None:
         """FN-1 (D-61, agent policy, not the host's gate): during an open conversation, moving away
-        needs a closing or excuse line in the same answer."""
+        needs a closing or excuse line the partner could hear, before the departure in the same
+        answer (G3d, D-66)."""
         if self.pulse is None or not self._conversation_open():
             return None
         partner = self.conversation.partner
-        state = self.ws.tracks[partner]
-        away = False
-        for a in actions:
-            if a["action"] != "MOVE_TO":
-                continue
-            target = a["args"].get("target_id")
-            dest = a["args"].get("destination")
-            if target is not None and target != partner:
-                away = True
-            elif dest is not None and state.x is not None and self.ws.pose is not None:
-                d_now = math.hypot(state.x - self.ws.pose["x"], state.z - self.ws.pose["z"])
-                if math.hypot(state.x - dest["x"], state.z - dest["z"]) > d_now + 0.5:
-                    away = True
-        if activity is not None and activity.get("kind") in ("TRAVEL_TO", "SURVEY", "RETURN_TO_POST", "REST"):
-            away = True
-        if not away:
+        first_move = next((i for i, a in enumerate(actions) if self._moves_away(a)), None)
+        leaving = first_move is not None or (
+            activity is not None and activity.get("kind") in ("TRAVEL_TO", "SURVEY", "RETURN_TO_POST", "REST"))
+        if not leaving:
             return None
-        if any(a["action"] == "SPEAK" and is_closing(a["args"].get("text", "")) for a in actions):
+        closing = next((i for i, a in enumerate(actions) if self._audible_closing(a)), None)
+        if closing is not None and (first_move is None or closing < first_move):
             return None
+        if closing is None and any(a["action"] == "SPEAK" and is_closing(a["args"].get("text", "")) for a in actions):
+            return (f"you are in a conversation with {partner}: your closing line must be said to {partner} "
+                    "(addressee_id) so they hear it, before moving away")
+        if closing is not None:
+            return (f"you are in a conversation with {partner}: say the closing line first, then move away "
+                    "(put the SPEAK before the MOVE_TO)")
         return (f"you are in a conversation with {partner}: before moving away, say a closing or excuse line "
-                "in the same answer (for example \"Excuse me, I need to go\"), or stay with them")
+                f"to {partner} first in the same answer (for example \"Excuse me, I need to go\"), or stay with them")
 
     def _answer_check(self, actions: list[dict[str, Any]], activity: dict[str, Any] | None) -> str | None:
         if activity is not None:
@@ -481,7 +572,8 @@ class AgentRuntime:
                 return error
         return self._fn1_problem(actions, activity)
 
-    def _set_activity(self, job: DecisionJob, proposals: list[Proposal]) -> dict[str, Any]:
+    def _set_activity(self, job: DecisionJob, proposals: list[Proposal],
+                      requests: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         cfg = self.pulse_cfg["pulse"]
         chosen = None
         if self._answer_activity is not None:
@@ -493,6 +585,8 @@ class AgentRuntime:
         self._answer_activity = None
         if chosen is None:
             promised = {t: c["memory_id"] for c in self.memory.open_commitments() for t in c["audience_present"]}
+            promised.update({st["commit"]["target"]: st["commit"]["memory_id"] for st in self._staged.values()
+                             if "commit" in st and st["commit"]["target"]})        # made now, not yet accepted
             chosen = activities.derive([{"action": p.action, "args": p.args, "commitment": p.commitment}
                                         for p in proposals], now_ms=self.ws.now_ms, current=self.activity,
                                        partner=self.conversation.partner, promised=promised,
@@ -505,15 +599,19 @@ class AgentRuntime:
         self.activity = chosen
         self.pulse.last_review_ms = self.ws.now_ms
         self.pulse.schedule(self.ws.now_ms, chosen, reset=True)
-        if job.policy == "MODEL" and chosen.kind in activities.IDLE_KINDS and \
-                ("PULSE_REVIEW" in job.triggers or "WAKE_CONDITION" in job.triggers):
-            self.pulse.model_reviews_at.append(self.ws.now_ms)
         self._sitrep_changes = []
         waited = self.ws.now_ms - self._first_trigger_ms if self._first_trigger_ms is not None else 0
         self._first_trigger_ms = None
+        reqs = requests or []
         self._log("REVIEW" if "PULSE_REVIEW" in job.triggers else "DECISION", policy=job.policy,
                   triggers=job.triggers, activity=chosen.kind, source=chosen.source, waited_ms=waited,
-                  tokens=job.assembled.record["total_tokens"] if job.assembled else None)
+                  tokens=job.assembled.record["total_tokens"] if job.assembled else None,
+                  # G3d (D-65): what it responded to and at whom it acted, for source-linked metrics.
+                  sources=list(job.sources),
+                  targets=sorted({t for r in reqs for t in [r["args"].get("addressee_id", r["args"].get("target_id"))]
+                                  if t}),
+                  actions=[[r["action_request_id"], r["action"], r["args"].get("addressee_id", r["args"].get("target_id"))]
+                           for r in reqs])
         return chosen.record()
 
     # ---------- persona prefixes, pre-warming and promotion latency (G3c-1; T5, T6) ----------
@@ -628,8 +726,29 @@ class AgentRuntime:
 
     def _goal_text(self) -> str:
         if self.conversation.partner is not None:
-            return f"In conversation with {self.conversation.partner}. Task: {self.task or self.identity.public_goal}"
-        return f"Task: {self.task or self.identity.public_goal}"
+            text = f"In conversation with {self.conversation.partner}. Task: {self.task or self.identity.public_goal}"
+        else:
+            text = f"Task: {self.task or self.identity.public_goal}"
+        pending = self.pending_line()
+        return text + ("\n" + pending if pending else "")
+
+    def pending_line(self) -> str | None:
+        """What was sent but not yet accepted by the world (G3d, D-64): one line in the next decision,
+        never memory. In stepped runs results arrive before the next sample, so it is always empty."""
+        parts = []
+        for request_id, st in self._staged.items():
+            if "speech" in st:
+                to = st["speech"]["target"]
+                parts.append(f'SPEAK{" to " + to if to else ""} "{st["speech"]["text"][:60]}"')
+            if "commit" in st:
+                parts.append(f'promise "{st["commit"]["text"][:60]}"')
+            if "fulfill" in st:
+                parts.append("keeping a promise")
+        for held in self._held.values():
+            parts += [f"{r['action']} (waits for your closing line)" for r in held]
+        if not parts:
+            return None
+        return "Sent, not yet confirmed by the world: " + "; ".join(parts[:4]) + ". Do not repeat them."
 
     def _job(self, triggers: list[str], packet: dict[str, Any]) -> DecisionJob:
         self._decisions += 1
@@ -666,8 +785,14 @@ class AgentRuntime:
         choices = self.answer_choices() if policy == "MODEL" else None
         if choices is not None and self.pulse is not None:
             choices["activity"] = self.pulse_cfg["pulse"]["max_review_after_s"]
+        if self.pulse is not None and policy == "MODEL" and set(triggers) <= IDLE_WORK_TRIGGERS and \
+                (self.activity is None or self.activity.kind in activities.IDLE_KINDS):
+            # The idle budget caps attempted work (G3d, D-67): debited when the job is admitted,
+            # so a review later cancelled, pre-empted or timed out still counts.
+            self.pulse.model_reviews_at.append(self.ws.now_ms)
+            self._log("IDLE_DEBIT", decision_id=decision_id, triggers=triggers)
         return DecisionJob(decision_id, self.ws.tick, triggers, policy, tier, self.cognition.level, assembled,
-                           proposals, demo_hint, prefix_key, choices)
+                           proposals, demo_hint, prefix_key, choices, started_at=time.monotonic(), now_ms=self.ws.now_ms)
 
     async def decide(self, job: DecisionJob) -> list[dict[str, Any]]:
         """Answer a job: returns the action requests to send. Model calls happen here."""
@@ -694,7 +819,8 @@ class AgentRuntime:
                     # shape stays one message, as the G3b bake-off measured it.
                     prefix=self.persona_prefix(job.tier)[1] if self.npc_model else None,
                     choices=job.choices, background=job.triggers == ["PULSE_REVIEW"],
-                    check=self._answer_check if self.pulse is not None else None)
+                    check=self._answer_check if self.pulse is not None else None, started_at=job.started_at,
+                    evidence_ms=job.now_ms)
                 model_calls, fallback = result.model_calls, result.fallback
                 proposals = [_proposal_from_model(a, self.memory, self.conversation) for a in result.actions]
                 self._answer_activity = result.activity
@@ -754,26 +880,49 @@ class AgentRuntime:
                     continue
                 self._last_express_tick = job.tick
             kept.append(p)
-        for p in kept:
+        # FN-1 (D-66): a departure after an audible closing line waits until the host accepts that line.
+        closing_at = None
+        if self.pulse is not None and self._conversation_open():
+            closing_at = next((i for i, p in enumerate(kept) if self._audible_closing(p.as_dict())), None)
+        closing_id = None
+        held: list[dict[str, Any]] = []
+        for i, p in enumerate(kept):
             self._requests += 1
             request_id = f"act_{self.agent_id}_{self._requests:05d}"[:64]
-            requests.append({"schema_version": "1.0", "action_request_id": request_id, "agent_id": self.agent_id,
-                             "based_on_tick_id": job.tick, "action": p.action, "args": p.args})
+            request = {"schema_version": "1.0", "action_request_id": request_id, "agent_id": self.agent_id,
+                       "based_on_tick_id": job.tick, "action": p.action, "args": p.args}
             commitment_id = None
             target = p.args.get("addressee_id", p.args.get("target_id"))
+            # Memory follows what the world accepts (D-64): staged here, applied in on_result.
+            staged: dict[str, Any] = {}
             if p.commitment:
-                commitment_id = self.memory.commit(p.commitment, target, now_ms=self.ws.now_ms)["memory_id"]
-            for memory_id in p.fulfills:
-                self.memory.set_commitment_state(memory_id, "FULFILLED")
+                commitment_id = self.memory.reserve_id()
+                staged["commit"] = {"text": p.commitment, "target": target, "memory_id": commitment_id,
+                                    "at_ms": self.ws.now_ms}
+            if p.fulfills:
+                staged["fulfill"] = list(p.fulfills)
             if p.action == "SPEAK":
-                self.ws.my_turn(p.args["text"], target)
-                self._speaking_until_ms = self.ws.now_ms + min(8000, 60 * len(p.args["text"]))
-                if target is not None and self.conversation.partner is None:
-                    self._start_conversation(target, None)
-                if target is not None and target == self.conversation.partner:
-                    self.conversation.last_exchange_ms = self.ws.now_ms
+                staged["speech"] = {"text": p.args["text"], "target": target,
+                                    "start": target is not None and self.conversation.partner is None,
+                                    "touch": target is not None and target == self.conversation.partner}
+            if staged:
+                self._staged[request_id] = staged
+            checked = p.action == "MOVE_TO" or (p.action in ("SPEAK", "GESTURE") and target is not None) \
+                or bool(p.commitment) or bool(p.fulfills)
             self._sent[request_id] = {"action": p.action, "commitment_id": commitment_id, "decision_id": job.decision_id,
-                                      "replanned": "ACTION_REJECTED" in job.triggers}
+                                      "replanned": "ACTION_REJECTED" in job.triggers, "target": target,
+                                      "checked": checked, "job_ms": job.now_ms, "policy": job.policy,
+                                      "tier": job.tier, "started_at": job.started_at}
+            if closing_at is not None and i == closing_at:
+                closing_id = request_id
+            if closing_id is not None and i > closing_at and self._moves_away(p.as_dict()):
+                held.append(request)
+                continue
+            requests.append(request)
+        if held:
+            self._held[closing_id] = held
+            for r in held:
+                self._delivery("HELD_FOR_CLOSING", r, f"waits for {closing_id} to be accepted")
         if self.conversation.closing:
             self._end_conversation("FAREWELL")
         self.stats["decisions"] += 1
@@ -784,13 +933,14 @@ class AgentRuntime:
             "schema_version": "1.0", "decision_id": job.decision_id, "agent_id": self.agent_id,
             "based_on_tick_id": job.tick, "cognition_level": job.level, "tier": job.tier, "policy": job.policy,
             "triggers": job.triggers, "context": job.assembled.record if job.assembled else None,
-            "model_calls": model_calls, "action_request_ids": [r["action_request_id"] for r in requests],
+            "model_calls": model_calls,
+            "action_request_ids": [r["action_request_id"] for r in requests + held],
             "fallback": fallback,
         }
         if self.pulse is not None:
             if self._fn1_problem([p.as_dict() for p in kept], None) and any(p.action == "MOVE_TO" for p in kept):
                 self._log("FN1_VIOLATION", partner=self.conversation.partner)      # should never happen (tested)
-            record["activity"] = self._set_activity(job, kept)
+            record["activity"] = self._set_activity(job, kept, requests + held)
         self.records.append(record)
         if job.assembled is not None:
             entry = {"decision_id": job.decision_id, "prompt": job.assembled.prompt}
@@ -811,22 +961,139 @@ class AgentRuntime:
                     rec["first_action_tick"] = result.get("resolved_at_tick_id")
                     self._close_promotion(rec, "VALIDATED")
         sent = self._sent.get(request_id)
-        if sent is None or result["accepted"]:
+        presence = self._presence_events.pop(request_id, None)
+        if self.pulse is not None and (sent is not None or presence is not None):
+            # Accepted outcomes, not only proposals (G3d, D-65).
+            self._log("RESULT", request_id=request_id, accepted=bool(result["accepted"]),
+                      reason_code=result["reason_code"],
+                      action=sent["action"] if sent is not None else presence.get("event"))
+        staged = self._staged.pop(request_id, None)
+        held = self._held.pop(request_id, None)
+        if sent is None:
+            return
+        if result["accepted"]:
+            if staged:
+                self._apply(staged)
+            if held:
+                self._release_out += held          # sent with the next sample, after a recheck (FN-1)
             return
         self.stats["rejected"] += 1
-        if sent["commitment_id"] is not None:
-            self.memory.set_commitment_state(sent["commitment_id"], "RELEASED")
+        # A rejection leaves memory as it was (D-64): nothing staged is applied.
+        if staged and "commit" in staged:
+            self._forget_promise(staged["commit"]["memory_id"])
+        if held:
+            for r in held:
+                self._delivery("DROPPED", r, f"the closing line was refused ({result['reason_code']}): stays")
+            self._log("FN1_STAYED", partner=self.conversation.partner, refused=result["reason_code"])
+            self._stay_with_partner()
         # One replan per rejected decision, from the next observation (T27); never a loop.
-        if result["reason_code"] in REPLAN_REASONS and not sent["replanned"] \
-                and sent["decision_id"] not in self._replanned_decisions:
+        if result["reason_code"] in REPLAN_REASONS:
+            self._allow_replan(sent)
+
+    def _apply(self, staged: dict[str, Any]) -> None:
+        """Apply an accepted request's memory changes, once (D-64)."""
+        if "commit" in staged:
+            c = staged["commit"]
+            self.memory.commit(c["text"], c["target"], now_ms=c["at_ms"], memory_id=c["memory_id"])
+        for memory_id in staged.get("fulfill", []):
+            try:
+                if self.memory.get(memory_id)["content"].get("commitment_state") == "OPEN":
+                    self.memory.set_commitment_state(memory_id, "FULFILLED")
+            except KeyError:
+                pass
+        if "speech" in staged:
+            sp = staged["speech"]
+            self.ws.my_turn(sp["text"], sp["target"])
+            self._speaking_until_ms = max(self._speaking_until_ms, self.ws.now_ms + min(8000, 60 * len(sp["text"])))
+            if sp["start"] and self.conversation.partner is None:
+                self._start_conversation(sp["target"], None)
+            if sp["touch"] and sp["target"] == self.conversation.partner:
+                self.conversation.last_exchange_ms = self.ws.now_ms
+
+    def _forget_promise(self, memory_id: str) -> None:
+        """A promise the world never heard: the activity built on it no longer holds."""
+        if self.activity is not None and self.activity.commitment_id == memory_id:
+            self.activity = None
+
+    def _stay_with_partner(self) -> None:
+        partner = self.conversation.partner
+        if partner is not None and self.pulse is not None:
+            self.activity = activities.Activity("CONVERSE", partner, None, 20, [{"addressed": True}, {"target_lost": True}],
+                                                "DERIVED", self.ws.now_ms)
+
+    def _allow_replan(self, sent: dict[str, Any]) -> None:
+        if not sent["replanned"] and sent["decision_id"] not in self._replanned_decisions:
             self._replanned_decisions.add(sent["decision_id"])
             self._replan_due = True
             self.stats["replans"] += 1
+
+    # ---------- before sending: is the answer still relevant? (G3d, D-63) ----------
+
+    def _irrelevant(self, info: dict[str, Any], since_ms: int | None = None) -> str | None:
+        """Why a sent-to-be action no longer fits the agent's latest observation, or None."""
+        if not info or not info.get("checked"):
+            return None
+        target = info.get("target")
+        if target is not None and not self.ws.visible(target):
+            return "TARGET_NOT_PERCEIVED"
+        since = info["job_ms"] if since_ms is None else since_ms
+        others = {who for at, who in self._addressed_log if at > since and who != target}
+        if others:
+            return "SOMEONE_ELSE_ADDRESSING"
+        return None
+
+    def recheck(self, requests: list[dict[str, Any]], live: bool = True) -> list[dict[str, Any]]:
+        """Just before sending a decision's requests (the sidecar calls it): drop what no longer fits
+        the latest observation, and (live) a model answer that missed its decision deadline. Dropped
+        requests are recorded with the reason, their staged memory changes are discarded, and the
+        decision may replan once. In stepped runs nothing changes while the agents think."""
+        keep = []
+        for request in requests:
+            info = self._sent.get(request["action_request_id"], {})
+            reason = self._irrelevant(info)
+            if reason is None and live and info.get("policy") == "MODEL" and self.gateway is not None:
+                limit_ms = self.gateway.deadlines_ms.get(info["tier"], 0) + SEND_GRACE_MS
+                if (time.monotonic() - info["started_at"]) * 1000 > limit_ms:
+                    reason = "DECISION_DEADLINE_PASSED"
+            if reason is None:
+                keep.append(request)
+                continue
+            self._discard(request, reason)
+            if reason != "DECISION_DEADLINE_PASSED":
+                self._allow_replan(info)
+        return keep
+
+    def _discard(self, request: dict[str, Any], reason: str) -> None:
+        request_id = request["action_request_id"]
+        staged = self._staged.pop(request_id, None)
+        if staged and "commit" in staged:
+            self._forget_promise(staged["commit"]["memory_id"])
+        for r in self._held.pop(request_id, []):          # a dropped closing line keeps its departure back too
+            self._delivery("DROPPED", r, "its closing line was not sent: stays")
+            self._stay_with_partner()
+        self.stats["discarded"] = self.stats.get("discarded", 0) + 1
+        self._delivery("DISCARDED", request, reason)
+
+    def _delivery(self, what: str, request: dict[str, Any], reason: str) -> None:
+        info = self._sent.get(request["action_request_id"], {})
+        self.delivery_log.append({"event": what, "at_ms": self.ws.now_ms, "tick": self.ws.tick,
+                                  "decision_id": info.get("decision_id"), "action_request_id": request["action_request_id"],
+                                  "action": request["action"], "target": info.get("target"), "reason": reason})
+        if self.pulse is not None:
+            self._log("DELIVERY", what=what, request_id=request["action_request_id"], action=request["action"],
+                      reason=reason)
 
 
 _TRIGGER_ORDER = ["START", "ADDRESSED_SPEECH", "DIRECTED_GESTURE", "DIRECTED_EXPRESSION", "PERSON_NEAR",
                   "PARTNER_LEFT", "GROUP_INVITE", "ACTION_REJECTED", "COMMITMENT_DUE", "TASK_STEP",
                   "WAKE_CONDITION", "PULSE_REVIEW"]
+
+
+def _source_of(item: dict[str, Any]) -> str:
+    """Who an observation came from: its track, or for an unseen voice its direction (as presence keys it)."""
+    if item.get("track_id"):
+        return item["track_id"]
+    return voice_key(item.get("bearing_rad") or 0.0)
 
 
 def _proposal_entry(p: Proposal) -> dict[str, Any]:

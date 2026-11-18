@@ -59,7 +59,7 @@ Each technique with its effect, cost and when to use it.
 | Engine | **Dedicated focal server** (T2), resident all run (T1) |
 | Slots | 1 pinned slot per focal agent (T4), plus 1 spare for pre-warming or a second sandbox robot |
 | Context | ~4–6K tokens, stable prefix (T3), deterministic compaction (T7) |
-| When it thinks | Event-driven from HORIZON triggers (T14); highest priority (T12) with a deadline; fallback `WAIT` on timeout |
+| When it thinks | Event-driven from HORIZON triggers (T14); highest priority (T12) with a deadline; fallback `WAIT` on timeout. One deadline per decision covers queue, generation and the one repair (D-63) |
 | While it thinks | Fast-lane nonverbal cue (T11); speech streamed (T10) |
 | Output | Schema-constrained action (T9) |
 | Not allowed in trials | Response cache (T15); mid-run model changes (T18) |

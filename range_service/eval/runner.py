@@ -17,7 +17,12 @@ A run folder holds:
   reason), VRAM, persona snapshots and pre-warms (G3c-1);
 - ``promotions.jsonl``: every NPC promotion with its latency to the first validated action,
   cold or warm (G3c-1). Wall-clock values stay out of the journal, so stepped runs stay exact;
-- ``summary.json``: counts for a quick look (evaluator only).
+- ``frames.json`` (rendered runs, or ``frame_stats``): frame times and Godot's video memory (G3d);
+- ``sidecar/delivery.jsonl``: requests held back or dropped before sending, and why (G3d);
+- ``summary.json``: counts for a quick look (evaluator only), with ``render`` (frame pacing, peak
+  VRAM sampled during the run) and ``report`` (offered vs accepted actions, response latency,
+  timeouts and fallbacks, model calls, glances, FN-1 continuity) per agent (G3d, D-69).
+  ``summary.json`` holds no prompt or memory text: it is the file to share.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import secrets
 import subprocess
 import time
@@ -38,6 +44,7 @@ from range_service.agents.factory import build_runtimes
 from range_service.agents.gateway import ProviderError, tokenizer_for
 from range_service.agents.runmodels import RunModels, models_from_specs
 from range_service.configs import ConfigSet, load_and_check
+from range_service.eval.run_report import VramSampler, frame_summary, run_report
 from range_service.link.sidecar import Sidecar
 
 REPO = contracts.REPO_ROOT
@@ -45,6 +52,14 @@ GODOT_PROJECT = REPO / "godot_app"
 APP_VERSION = "0.3.0"
 STEP_TIMEOUT_DETAIL = "stepped run: no AGENTS_DONE"
 LOAD_TIER = "LOAD"   # synthetic NPC load in the bake-off; ranked after every real tier
+# Rendered-client presets (G3d, D-69): named, so a comparison states what was rendered. The V0
+# greybox is the project's own settings (Forward+, ART_DIRECTION §3) with the 60 FPS cap.
+RENDER_PRESETS: dict[str, dict[str, Any]] = {
+    "v0": {"args": [], "max_fps": 60, "about": "V0 greybox, project settings (Forward+), 60 FPS cap"},
+    "v0_compat": {"args": ["--rendering-method", "gl_compatibility"], "max_fps": 60,
+                  "about": "V0 greybox on the Compatibility renderer, 60 FPS cap"},
+}
+DEFAULT_RESOLUTION = "1920x1080"
 
 
 @dataclass
@@ -68,6 +83,10 @@ class RunOptions:
     snapshots: bool | None = None      # None = configs/inference.yaml personas.snapshots (bake-off LIVE_COLD: False)
     pulse: str = "auto"                # G3c-2: on, off, or auto (on if the scenario asks or a model drives Robot R)
     npc_load_prompts: list[dict[str, Any]] = field(default_factory=list)
+    resolution: str | None = None      # rendered runs: WIDTHxHEIGHT (default 1920x1080) (G3d)
+    render_preset: str = "v0"          # rendered runs: a RENDER_PRESETS name (G3d)
+    frame_stats: bool | None = None    # None = on for rendered runs; True also records headless frames
+    sample_vram: bool | None = None    # None = for LIVE, rendered or llama runs (nvidia-smi once a second)
 
 
 @dataclass
@@ -98,6 +117,10 @@ def check_options(opts: RunOptions, cs: ConfigSet) -> dict[str, Any]:
         raise RunError(f"unknown scenario {opts.scenario_id!r}; see configs/scenarios/")
     if opts.mode not in ("STEPPED", "LIVE"):
         raise RunError("mode must be STEPPED or LIVE")
+    if opts.render_preset not in RENDER_PRESETS:
+        raise RunError(f"unknown render preset {opts.render_preset!r}; use one of {', '.join(RENDER_PRESETS)}")
+    if opts.resolution is not None and not re.fullmatch(r"\d{3,5}x\d{3,5}", opts.resolution):
+        raise RunError("--resolution must be WIDTHxHEIGHT, e.g. 1920x1080")
     for avatar_id, body_id in opts.body_overrides.items():
         if avatar_id not in scenario["cast"]:
             raise RunError(f"--body: {avatar_id!r} is not in the cast of {opts.scenario_id}")
@@ -109,6 +132,9 @@ def check_options(opts: RunOptions, cs: ConfigSet) -> dict[str, Any]:
 def godot_command(opts: RunOptions, scenario: dict[str, Any], run_dir: Path, port: int, seed: int) -> list[str]:
     # RANGE plays no sound yet: the dummy audio driver avoids audio-device errors on machines without one.
     cmd = [opts.godot, "--path", str(GODOT_PROJECT), "--audio-driver", "Dummy", *opts.godot_args]
+    if not opts.headless:
+        preset = RENDER_PRESETS[opts.render_preset]
+        cmd += ["--resolution", opts.resolution or DEFAULT_RESOLUTION, "--max-fps", str(preset["max_fps"]), *preset["args"]]
     if opts.headless:
         cmd.append("--headless")
         # STEPPED: simulate as fast as the agents allow (the world waits for them anyway). LIVE must
@@ -123,7 +149,19 @@ def godot_command(opts: RunOptions, scenario: dict[str, Any], run_dir: Path, por
         cmd.append("--bodies=" + ",".join(f"{a}:{b}" for a, b in sorted(opts.body_overrides.items())))
     if not opts.posing:
         cmd.append("--no-pose")
+    if _frame_stats_on(opts):
+        cmd.append(f"--frame-stats={(run_dir / 'frames.json').as_posix()}")
     return cmd
+
+
+def _frame_stats_on(opts: RunOptions) -> bool:
+    return opts.frame_stats if opts.frame_stats is not None else not opts.headless
+
+
+def _vram_on(opts: RunOptions) -> bool:
+    if opts.sample_vram is not None:
+        return opts.sample_vram
+    return opts.mode == "LIVE" or not opts.headless or opts.model.startswith("llama") or opts.npc_model.startswith("llama")
 
 
 async def _run_godot(cmd: list[str], env: dict[str, str], timeout_s: float, log_path: Path) -> tuple[int, list[str]]:
@@ -207,6 +245,9 @@ def manifest(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: in
         })
     settings: dict[str, Any] = {"run_mode": opts.mode, "model": opts.model[-200:], "tokenizer": "approx_chars_v1",
                                 "jitter_ms": opts.jitter_ms, "headless": opts.headless}
+    if not opts.headless:
+        settings["render_preset"] = opts.render_preset
+        settings["resolution"] = opts.resolution or DEFAULT_RESOLUTION
     for avatar_id, body_id in sorted(opts.body_overrides.items()):
         settings[f"body_override.{avatar_id}"] = body_id
     settings.update(details)
@@ -329,6 +370,7 @@ async def run_scenario(opts: RunOptions) -> RunResult:
         if event["event"] == "OPTION_C_FALLBACK":
             print(f"WARNING  NPC server not used, running Option B: {event['reason']}")
     sidecar = None
+    vram = VramSampler()
     load_tasks: list[asyncio.Task] = []
     load_records: list[dict[str, Any]] = []
     try:
@@ -348,9 +390,12 @@ async def run_scenario(opts: RunOptions) -> RunResult:
         if opts.npc_load_streams and models.npc is not None and opts.npc_load_prompts:
             load_tasks = [asyncio.create_task(_npc_load(models, k, opts.npc_load_prompts, load_records))
                           for k in range(opts.npc_load_streams)]
+        if _vram_on(opts):
+            vram.start()                      # peak VRAM during the run, not only after server start (G3d)
         code, lines = await _run_godot(godot_command(opts, scenario, run_dir, port, seed), env, opts.timeout_s,
                                        run_dir / "godot.log")
     finally:
+        await vram.stop()
         for task in load_tasks:
             task.cancel()
         if load_tasks:
@@ -388,6 +433,12 @@ async def run_scenario(opts: RunOptions) -> RunResult:
         from range_service.eval.pulse_metrics import pulse_summary   # noqa: PLC0415
 
         summary["pulse"] = pulse_summary(runtimes, journal, scenario)
+    summary["render"] = {"headless": opts.headless, "mode": opts.mode, "pulse": bool(details.get("pulse")),
+                         "resolution": None if opts.headless else (opts.resolution or DEFAULT_RESOLUTION),
+                         "preset": None if opts.headless else opts.render_preset,
+                         "frames": frame_summary(run_dir / "frames.json") if _frame_stats_on(opts) else None,
+                         "vram": vram.summary() if _vram_on(opts) else None}
+    summary["report"] = run_report(run_dir, journal, sorted(runtimes))
     errors = [line for line in lines if line.startswith(("ERROR", "SCRIPT ERROR"))]
     taint = []
     if summary["step_timeouts"]:

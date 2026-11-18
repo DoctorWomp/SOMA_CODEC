@@ -50,7 +50,8 @@ class AgentMemory:
             scope: str = "PUBLIC", importance: str = "NORMAL", untrusted: bool = False,
             expires_at_ms: int | None = None, shared_by: str | None = None, source_event_id: str | None = None,
             audience: list[str] | tuple[str, ...] = (), commitment_state: str | None = None,
-            tags: set[str] | None = None, supersedes: str | None = None) -> dict[str, Any]:
+            tags: set[str] | None = None, supersedes: str | None = None,
+            memory_id: str | None = None) -> dict[str, Any]:
         if store not in STORES:
             raise MemoryRuleError(f"unknown store {store!r}")
         content: dict[str, Any] = {"text": text[:1000], "untrusted_text": untrusted}
@@ -58,7 +59,7 @@ class AgentMemory:
             content["commitment_state"] = commitment_state
         item = {
             "schema_version": "1.0",
-            "memory_id": self._next_id(),
+            "memory_id": memory_id or self._next_id(),
             "owner_id": self.agent_id,
             "store": store,
             "status": status,
@@ -150,8 +151,13 @@ class AgentMemory:
 
     # ---------- commitments and refusals (D-13) ----------
 
+    def reserve_id(self) -> str:
+        """An id for an item that will be added later, if at all (G3d, D-64: a promise is recorded
+        only once the world accepts the action that made it, under the id it was given then)."""
+        return self._next_id()
+
     def commit(self, text: str, to_track: str | None, *, now_ms: int, ttl_ms: int = COMMITMENT_TTL_MS,
-               tags: set[str] | None = None) -> dict[str, Any]:
+               tags: set[str] | None = None, memory_id: str | None = None) -> dict[str, Any]:
         while len(self.open_commitments()) >= MAX_OPEN_COMMITMENTS:
             oldest = self.open_commitments()[0]
             self.set_commitment_state(oldest["memory_id"], "RELEASED")
@@ -159,7 +165,7 @@ class AgentMemory:
         return self.add("COMMITMENTS_AND_REFUSALS", text, now_ms=now_ms, source_class="SELF", scope="PUBLIC",
                         importance="CRITICAL", expires_at_ms=now_ms + ttl_ms, shared_by=None,
                         audience=[to_track] if to_track else [], commitment_state="OPEN",
-                        tags=(tags or set()) | ({to_track} if to_track else set()))
+                        tags=(tags or set()) | ({to_track} if to_track else set()), memory_id=memory_id)
 
     def refuse(self, text: str, to_track: str | None, *, now_ms: int) -> dict[str, Any]:
         return self.add("COMMITMENTS_AND_REFUSALS", text, now_ms=now_ms, source_class="SELF", scope="PUBLIC",

@@ -35,6 +35,21 @@ def scenario_runtimes(scenario_id: str, gateway: ModelGateway | None = None) -> 
     return build_runtimes(CONFIGS.items["scenarios"][scenario_id], CONFIGS, gateway=gateway)
 
 
+def accept(rt: AgentRuntime, requests: list[dict[str, Any]], tick: int | None = None) -> list[dict[str, Any]]:
+    """Play the world's action gate: accept every request (G3d, D-64: memory changes apply on acceptance)."""
+    for r in requests:
+        rt.on_result({"schema_version": "1.0", "action_request_id": r["action_request_id"], "agent_id": rt.agent_id,
+                      "accepted": True, "executed": True, "reason_code": "OK", "resulting_event_ids": [],
+                      "resolved_at_tick_id": tick if tick is not None else r["based_on_tick_id"] + 1})
+    return requests
+
+
+def refuse(rt: AgentRuntime, request: dict[str, Any], reason: str = "TARGET_UNKNOWN") -> None:
+    rt.on_result({"schema_version": "1.0", "action_request_id": request["action_request_id"], "agent_id": rt.agent_id,
+                  "accepted": False, "executed": False, "reason_code": reason, "resulting_event_ids": [],
+                  "resolved_at_tick_id": request["based_on_tick_id"] + 1})
+
+
 @dataclass
 class Scene:
     """A tiny scripted world seen by one observer: call the item builders, then ``packet()``."""
