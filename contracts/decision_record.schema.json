@@ -72,7 +72,9 @@
           "ACTION_REJECTED",
           "COMMITMENT_DUE",
           "TASK_STEP",
-          "START"
+          "START",
+          "WAKE_CONDITION",
+          "PULSE_REVIEW"
         ]
       }
     },
@@ -132,8 +134,68 @@
       ]
     },
     "activity": {
-      "description": "Reserved for G3c-2 (PULSE_PROTOCOL \u00a73: an optional activity with wake conditions). Not produced yet: absent or null.",
-      "type": "null"
+      "description": "G3c-2 (PULSE_PROTOCOL \u00a73, D-61): what the agent is now doing and when it reconsiders. CHOSEN: the model named it; DERIVED: the runtime derived it from the actions (no activity in the answer); CONTINUED: kept from before. Null for decisions that do not set one (pulse off).",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "target_id",
+            "commitment_id",
+            "review_after_s",
+            "wake_if",
+            "source"
+          ],
+          "properties": {
+            "kind": {
+              "$ref": "common.schema.json#/$defs/activity_kind"
+            },
+            "target_id": {
+              "oneOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "commitment_id": {
+              "oneOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "review_after_s": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 3600
+            },
+            "wake_if": {
+              "type": "array",
+              "maxItems": 6,
+              "items": {
+                "$ref": "common.schema.json#/$defs/wake_condition"
+              }
+            },
+            "source": {
+              "enum": [
+                "CHOSEN",
+                "DERIVED",
+                "CONTINUED"
+              ]
+            }
+          }
+        }
+      ]
     }
   },
   "$defs": {

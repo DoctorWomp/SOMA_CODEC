@@ -3,5 +3,7 @@
   "missing_section": "minItems",
   "unsafe_fallback": "oneOf",
   "third_attempt": "enum",
-  "bad_prefix_state": "enum"
+  "bad_prefix_state": "enum",
+  "wake_condition_two_keys": "maxProperties",
+  "unknown_activity": "enum"
 }

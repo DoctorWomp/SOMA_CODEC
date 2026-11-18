@@ -1,0 +1,31 @@
+# SB-07 Empty hall (G3c-2, D-61; PULSE_PROTOCOL §5, §10): Robot R alone with no task and no post
+# duty. Expected: a slow survey toward the parts of the hall it has seen least recently (its own
+# position history, no HORIZON), back to its post on a schedule, no pacing, few model calls.
+schema_version: "1.0"
+scenario_id: SB07_EMPTY_HALL
+title: Empty hall
+map: sandbox_flats
+default_seed: 707
+tick_hz: 10
+duration_ticks: 2400   # 240 s
+pulse: true
+
+cast:
+  robot_r:
+    persona: robot_r
+    body: wheeled_humanoid
+    controller: LLM_AGENT
+    policy: LLM
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_robot
+    directive: expo_assistant
+    pin_cognition: true
+
+events: []
+
+measure: [cells_visited, returns_to_post, pacing, model_calls_per_minute]
+
+# EVALUATOR ONLY: never shown to any agent.
+evaluator_only:
+  hall_is_empty: true

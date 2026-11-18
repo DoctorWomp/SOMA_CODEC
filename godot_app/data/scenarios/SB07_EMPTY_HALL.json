@@ -1,0 +1,22 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/scenarios/SB07_EMPTY_HALL.yaml",
+  "kind": "scenarios",
+  "data": {
+    "schema_version": "1.0",
+    "scenario_id": "SB07_EMPTY_HALL",
+    "title": "Empty hall",
+    "map": "sandbox_flats",
+    "default_seed": 707,
+    "tick_hz": 10,
+    "duration_ticks": 2400,
+    "events": [],
+    "cast": {
+      "robot_r": {
+        "body": "wheeled_humanoid",
+        "controller": "LLM_AGENT",
+        "spawn": "spawn_robot"
+      }
+    }
+  }
+}

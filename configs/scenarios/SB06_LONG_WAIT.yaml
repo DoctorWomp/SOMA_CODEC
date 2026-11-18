@@ -1,0 +1,77 @@
+# SB-06 Long wait (G3c-2, D-61; PULSE_PROTOCOL §10): Visitor Y asks Robot R for help, then asks it
+# to wait a moment; Robot R promises to help when Y is ready. Y
+# then stays busy talking with Visitor Z for about three minutes. Expected: Robot R keeps waiting
+# (WAIT_FOR), does not interrupt, makes few deliberate decisions, stays visibly present (glances,
+# slow Beacon breathing), and helps Y as soon as Y turns back to it.
+schema_version: "1.0"
+scenario_id: SB06_LONG_WAIT
+title: Long wait
+map: sandbox_flats
+default_seed: 606
+tick_hz: 10
+duration_ticks: 2400   # 240 s
+pulse: true
+
+cast:
+  robot_r:
+    persona: robot_r
+    body: wheeled_humanoid
+    controller: LLM_AGENT
+    policy: LLM
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_robot
+    task: Help visitors at the information point.
+    directive: expo_assistant
+    pin_cognition: true
+    post_duty: true
+  visitor_y:
+    persona: visitor_y
+    body: human_walker
+    controller: SCRIPTED
+    policy: SCRIPTED
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_talker
+  visitor_z:
+    persona: visitor_x
+    body: human_walker
+    controller: SCRIPTED
+    policy: SCRIPTED
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_edge
+
+events:
+  - {at_tick: 20, event_type: move_to, actor: visitor_z, args: {x: 16.6, z: 7.6}}
+  - {at_tick: 50, event_type: say, actor: visitor_y, args: {to: robot_r, text: "Hello! Could you help me find the cafe? Oh, one moment, sorry."}}
+  - {at_tick: 80, event_type: turn_to, actor: visitor_y, args: {target: visitor_z}}
+  - {at_tick: 90, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "Hi, yes, I can talk now."}}
+  - {at_tick: 180, event_type: say, actor: visitor_z, args: {to: visitor_y, text: "Great, about the booth plan for tomorrow."}}
+  - {at_tick: 270, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "We need two more tables."}}
+  - {at_tick: 360, event_type: say, actor: visitor_z, args: {to: visitor_y, text: "I can bring them in the morning."}}
+  - {at_tick: 450, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "And the posters?"}}
+  - {at_tick: 540, event_type: say, actor: visitor_z, args: {to: visitor_y, text: "They are printed already."}}
+  - {at_tick: 630, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "Good. What about the power cables?"}}
+  - {at_tick: 720, event_type: say, actor: visitor_z, args: {to: visitor_y, text: "I'll ask the organisers."}}
+  - {at_tick: 810, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "Thanks. Let's also check the schedule."}}
+  - {at_tick: 900, event_type: say, actor: visitor_z, args: {to: visitor_y, text: "We start at nine."}}
+  - {at_tick: 990, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "Then we meet at eight thirty."}}
+  - {at_tick: 1080, event_type: say, actor: visitor_z, args: {to: visitor_y, text: "Fine with me."}}
+  - {at_tick: 1170, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "Who brings the laptop?"}}
+  - {at_tick: 1260, event_type: say, actor: visitor_z, args: {to: visitor_y, text: "I will."}}
+  - {at_tick: 1350, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "And the spare battery?"}}
+  - {at_tick: 1440, event_type: say, actor: visitor_z, args: {to: visitor_y, text: "Also me."}}
+  - {at_tick: 1530, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "Perfect. One more thing about lunch."}}
+  - {at_tick: 1620, event_type: say, actor: visitor_z, args: {to: visitor_y, text: "Sandwiches are fine."}}
+  - {at_tick: 1710, event_type: say, actor: visitor_y, args: {to: visitor_z, text: "Great, see you tomorrow then."}}
+  - {at_tick: 1780, event_type: leave, actor: visitor_z, where: spawn_entrance}
+  - {at_tick: 1840, event_type: turn_to, actor: visitor_y, args: {target: robot_r}}
+  - {at_tick: 1860, event_type: say, actor: visitor_y, args: {to: robot_r, text: "Sorry for the wait. Where is the cafe?"}}
+
+measure: [kept_waiting, interrupted_y, model_calls_while_waiting, helped_y]
+
+# EVALUATOR ONLY: never shown to any agent.
+evaluator_only:
+  y_busy_until_s: 178
+  y_wants_help: true

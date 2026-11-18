@@ -70,8 +70,19 @@ def action_schema_text(allowed_actions: list[str], gestures: list[str], expressi
     return "\n".join(lines)
 
 
-def guardrails_section(tier: str, persona_actions: list[str], body: dict[str, Any], expressions: list[str]) -> str:
+ACTIVITY_FORMAT = (
+    'You may add "activity": {"kind": CONVERSE|WAIT_FOR|ATTEND|SURVEY|TRAVEL_TO|ASSIST|OBSERVE|RETURN_TO_POST|REST, '
+    '"target_id": track, "review_after_s": s, "wake_if": [{"addressed": true}, {"target_within_m": m}, '
+    '{"target_lost": true}, {"speech_heard": true}, {"new_track": true}, {"commitment_due": true}]}: '
+    "what you do until one of these happens. In a conversation, say goodbye or excuse yourself before leaving."
+)
+
+
+def guardrails_section(tier: str, persona_actions: list[str], body: dict[str, Any], expressions: list[str],
+                       activity: bool = False) -> str:
     short = tier == "C1"
     rules = GUARDRAILS_SHORT if short else GUARDRAILS
     gestures = list(body["gestures"]) if body["capabilities"]["can_gesture"] else []
-    return rules + "\n" + action_schema_text(persona_actions, gestures, expressions, short)
+    text = rules + "\n" + action_schema_text(persona_actions, gestures, expressions, short)
+    # G3c-2 (D-61): with the pulse protocol on, the answer may carry an activity.
+    return text + "\n" + ACTIVITY_FORMAT if activity else text

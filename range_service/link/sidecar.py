@@ -59,6 +59,8 @@ class Sidecar:
         self.jitter_ms = jitter_ms           # test: random extra delay before answering (determinism checks)
         self.run_mode = "LIVE"
         self._step_jobs: list[tuple[AgentRuntime, DecisionJob]] = []
+        self._step_presence: dict[str, list[dict[str, Any]]] = {}     # stepped: presence actions per agent
+        self._live_tasks: dict[str, asyncio.Task] = {}                 # live: each agent's decision task
         self._tasks: set[asyncio.Task] = set()
         self.loop_lags: list[float] = []
         self._records_written = 0
@@ -227,6 +229,20 @@ class Sidecar:
 
     async def _runtime_observation(self, ws: ServerConnection, runtime: AgentRuntime, payload: dict[str, Any]) -> None:
         job = runtime.observe(payload)
+        presence = runtime.take_presence()
+        if presence:
+            # Loop 2 (G3c-2): glances and survey moves need no model. Stepped: sent with the sample's
+            # answers, in agent-id order; live: at once.
+            if self.run_mode == "STEPPED":
+                self._step_presence.setdefault(runtime.agent_id, []).extend(presence)
+            else:
+                await self._send_requests(ws, presence)
+        if runtime.preempt_requested:
+            runtime.preempt_requested = False
+            task = self._live_tasks.get(runtime.agent_id)
+            if task is not None and not task.done():
+                task.cancel()                     # a pulse review gives way to a real event (D-61)
+                runtime.pulse_log.append({"event": "PREEMPTED", "at_ms": runtime.ws.now_ms})
         for tier, key, prefix in runtime.take_prewarms():
             # T6: a promotion looks likely. Warm the persona prefix in the background; it never
             # holds up an answer, and in stepped runs it cannot change what the world sees.
@@ -244,10 +260,16 @@ class Sidecar:
             return
         task = asyncio.create_task(self._answer_live(ws, runtime, job))
         self._tasks.add(task)
+        self._live_tasks[runtime.agent_id] = task
         task.add_done_callback(self._tasks.discard)
 
     async def _answer_live(self, ws: ServerConnection, runtime: AgentRuntime, job: DecisionJob) -> None:
-        requests = await runtime.decide(job)
+        try:
+            requests = await runtime.decide(job)
+        except asyncio.CancelledError:
+            if runtime.pending_kind is None and self._server is not None:
+                return                            # pre-empted pulse review: nothing to send
+            raise
         await self._pause()
         try:
             await self._send_requests(ws, requests)
@@ -256,8 +278,11 @@ class Sidecar:
 
     async def _finish_step(self, ws: ServerConnection, sample_tick: int) -> None:
         jobs, self._step_jobs = sorted(self._step_jobs, key=lambda j: j[0].agent_id), []
+        presence, self._step_presence = self._step_presence, {}
         answers = await asyncio.gather(*(runtime.decide(job) for runtime, job in jobs))
         await self._pause()
+        for agent_id in sorted(presence):
+            await self._send_requests(ws, presence[agent_id])
         for requests in answers:
             await self._send_requests(ws, requests)
         await self._send(ws, "link.step", {"sample_tick_id": sample_tick, "phase": "AGENTS_DONE"})

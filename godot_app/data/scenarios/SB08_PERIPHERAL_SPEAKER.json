@@ -1,0 +1,95 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/scenarios/SB08_PERIPHERAL_SPEAKER.yaml",
+  "kind": "scenarios",
+  "data": {
+    "schema_version": "1.0",
+    "scenario_id": "SB08_PERIPHERAL_SPEAKER",
+    "title": "Peripheral speaker",
+    "map": "sandbox_flats",
+    "default_seed": 808,
+    "tick_hz": 10,
+    "duration_ticks": 1200,
+    "events": [
+      {
+        "at_tick": 5,
+        "event_type": "move_to",
+        "actor": "visitor_q",
+        "args": {
+          "x": 17.5,
+          "z": 13.0
+        }
+      },
+      {
+        "at_tick": 5,
+        "event_type": "move_to",
+        "actor": "visitor_w",
+        "args": {
+          "x": 19.0,
+          "z": 14.0
+        }
+      },
+      {
+        "at_tick": 200,
+        "event_type": "say",
+        "actor": "visitor_q",
+        "args": {
+          "to": "visitor_w",
+          "text": "Have you seen the robot demo yet?"
+        }
+      },
+      {
+        "at_tick": 260,
+        "event_type": "say",
+        "actor": "visitor_w",
+        "args": {
+          "to": "visitor_q",
+          "text": "Not yet, maybe later."
+        }
+      },
+      {
+        "at_tick": 450,
+        "event_type": "say",
+        "actor": "visitor_q",
+        "args": {
+          "to": "visitor_w",
+          "text": "It looks busy over there."
+        }
+      },
+      {
+        "at_tick": 650,
+        "event_type": "turn_to",
+        "actor": "visitor_q",
+        "args": {
+          "target": "robot_r"
+        }
+      },
+      {
+        "at_tick": 660,
+        "event_type": "say",
+        "actor": "visitor_q",
+        "args": {
+          "to": "robot_r",
+          "text": "Excuse me, is the demo open today?"
+        }
+      }
+    ],
+    "cast": {
+      "robot_r": {
+        "body": "wheeled_humanoid",
+        "controller": "LLM_AGENT",
+        "spawn": "spawn_robot"
+      },
+      "visitor_q": {
+        "body": "human_walker",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_entrance"
+      },
+      "visitor_w": {
+        "body": "human_walker",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_edge"
+      }
+    }
+  }
+}

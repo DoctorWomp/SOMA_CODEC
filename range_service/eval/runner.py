@@ -66,6 +66,7 @@ class RunOptions:
     configs: ConfigSet | None = None   # tests: a checked config set to use instead of configs/
     npc_load_streams: int = 0          # bake-off: synthetic NPC calls kept running on the NPC server
     snapshots: bool | None = None      # None = configs/inference.yaml personas.snapshots (bake-off LIVE_COLD: False)
+    pulse: str = "auto"                # G3c-2: on, off, or auto (on if the scenario asks or a model drives Robot R)
     npc_load_prompts: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -333,9 +334,12 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     try:
         tokenizer = tokenizer_for(models.focal)
         npc_tokenizer = tokenizer if models.npc is models.focal else tokenizer_for(models.npc)
+        pulse_on = opts.pulse == "on" or (opts.pulse == "auto" and (bool(scenario.get("pulse")) or opts.model != "none"))
+        details["pulse"] = pulse_on
         runtimes = build_runtimes(scenario, cs, gateway=models.focal, body_overrides=opts.body_overrides,
                                   tokenizer=tokenizer, npc_gateway=models.npc, npc_tokenizer=npc_tokenizer,
-                                  prewarm=models.prewarm)
+                                  prewarm=models.prewarm, pulse=cs.items["pulse"]["pulse"] if pulse_on else None,
+                                  seed=seed)
         await snapshot_personas(runtimes, models)            # T5: at scene load, before the world starts
         token = secrets.token_hex(24)
         sidecar = Sidecar(token, {}, record_dir=run_dir / "sidecar", runtimes=runtimes, jitter_ms=opts.jitter_ms)
@@ -364,6 +368,9 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     _write_jsonl(run_dir / "promotions.jsonl", [dict(r, run_mode=opts.mode) for r in promotions])
     if load_records:
         _write_jsonl(run_dir / "npc_load.jsonl", load_records)
+    pulse_rows = [dict(e, agent_id=aid) for aid in sorted(runtimes) for e in runtimes[aid].pulse_log]
+    if pulse_rows:
+        _write_jsonl(run_dir / "pulse.jsonl", pulse_rows)
 
     journal_path = run_dir / "journal.jsonl"
     if not journal_path.is_file():
@@ -377,6 +384,10 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     summary["promotions"] = promotion_summary(promotions)
     summary["npc_load_calls"] = len(load_records)
     summary["event_loop_lag_ms"] = sidecar.loop_lag_summary()
+    if details.get("pulse"):
+        from range_service.eval.pulse_metrics import pulse_summary   # noqa: PLC0415
+
+        summary["pulse"] = pulse_summary(runtimes, journal, scenario)
     errors = [line for line in lines if line.startswith(("ERROR", "SCRIPT ERROR"))]
     taint = []
     if summary["step_timeouts"]:

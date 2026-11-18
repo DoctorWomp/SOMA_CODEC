@@ -68,6 +68,7 @@ class Perceived:
     greetings: list[dict[str, Any]] = field(default_factory=list)       # gesture items directed at the agent
     expressions: list[dict[str, Any]] = field(default_factory=list)
     invites: list[dict[str, Any]] = field(default_factory=list)
+    heard: list[dict[str, Any]] = field(default_factory=list)          # speech not addressed to it (G3c-2): words not kept
 
 
 @dataclass
@@ -158,10 +159,15 @@ class WorkingSet:
             self.turns.append(Turn(item["observed_at_ms"], track_id or "unknown", value["text"], True))
             del self.turns[:-CONVERSATION_KEEP]
             out.addressed.append(item)
-        elif track_id and track_id in self.tracks:
-            self.tracks[track_id].speaking_ms = item["observed_at_ms"]   # words not kept (D-12)
-        elif track_id is None:
-            self.voices.append({"at_ms": item["observed_at_ms"], "bearing": item.get("bearing_rad")})
+        else:
+            # Only that someone spoke, where, and whether it could be to us: never the words (D-12).
+            out.heard.append({"track_id": track_id, "addressed": value.get("addressed_to_observer"),
+                              "at_ms": item["observed_at_ms"], "range_m": item.get("range_m"),
+                              "bearing_rad": item.get("bearing_rad")})
+            if track_id and track_id in self.tracks:
+                self.tracks[track_id].speaking_ms = item["observed_at_ms"]
+            elif track_id is None:
+                self.voices.append({"at_ms": item["observed_at_ms"], "bearing": item.get("bearing_rad")})
 
     def my_turn(self, text: str, to: str | None) -> None:
         self.turns.append(Turn(self.now_ms, "me", text, False, to))

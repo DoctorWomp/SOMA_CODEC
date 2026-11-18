@@ -1,0 +1,34 @@
+# The pulse protocol (PULSE_PROTOCOL; G3c-2, D-61): continuous presence between model decisions,
+# without prompting the model more often. Checked by contract `pulse`. Times are simulated time,
+# so stepped runs stay byte-exact.
+schema_version: "1.0"
+pulse_id: pulse
+presence:                       # loop 2: no model
+  glance_range_m: 12.0          # glance toward new movement or speech within this range (own senses only)
+  glance_cooldown_s: 8          # at most one glance per source in this time
+  gaze_hold_s: 4                # EXPRESSION_PRINCIPLES §8: hold about 3-5 s on a person
+  return_to_partner_s: 1.0      # a glance away during a conversation returns within about 1 s
+  idle_expression: waiting      # slow Beacon "breathing" (SLOW_PULSE, 0.5 Hz, well under 3 Hz; D-14)
+pulse:                          # loop 4: triage first, the model only when something changed
+  backoff_s: [15, 30, 60]       # review interval after each CONTINUE; reset on any meaningful change
+  jitter_frac: 0.1              # seeded, so several agents don't all think at once
+  idle_budget_per_min: 2        # at most this many idle reviews that call the model, per minute
+  default_review_after_s: 60    # when an activity names no review time
+  max_review_after_s: 600
+  cooldowns_s:                  # per wake condition, like skill cooldowns
+    target_within_m: 5
+    target_lost: 5
+    speech_heard: 5
+    new_track: 8
+    commitment_due: 10
+  npc_busy_share: 0.7           # skip an NPC's pulse review while NPC calls take this share of their deadline
+conversation:                   # FN-1: holding a conversation
+  range_m: 3.5                  # the partner must be perceived within this distance
+  silence_limit_s: 20           # after this long without an exchange the conversation is over (D-49)
+survey:                         # SURVEY and RETURN_TO_POST, no HORIZON
+  cell_m: 5.0                   # the hall is divided into cells; roam toward the least recently observed one
+  observe_radius_m: 6.0         # a cell counts as observed when the agent is within this distance of it
+  min_revisit_s: 90             # never return to a cell observed this recently (no pacing)
+  people_clearance_m: 3.0       # never pick a cell this close to a perceived person
+  return_to_post_s: 120         # go back to post after this long away
+  dwell_s: 10                   # pause at each cell before choosing the next

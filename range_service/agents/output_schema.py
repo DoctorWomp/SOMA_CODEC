@@ -29,6 +29,7 @@ from typing import Any
 
 from range_service import contracts
 
+from .activity import answer_schema_part as activity_part
 from .gateway import MAX_ACTIONS, PROMISE_ACTIONS
 
 KEEP = {"type", "properties", "required", "additionalProperties", "items", "minItems", "maxItems", "enum",
@@ -216,7 +217,8 @@ def _limit_enums(node: Any, limits: dict[str, tuple[str, ...]]) -> Any:
 @lru_cache(maxsize=256)
 def answer_schema(allowed_actions: tuple[str, ...], targets: tuple[str, ...] | None = None,
                   channels: tuple[str, ...] = ALL_CHANNELS, tier: str = "FOCAL",
-                  gestures: tuple[str, ...] | None = None, expressions: tuple[str, ...] | None = None) -> dict[str, Any]:
+                  gestures: tuple[str, ...] | None = None, expressions: tuple[str, ...] | None = None,
+                  activity_max_review_s: int = 0) -> dict[str, Any]:
     """The constrained answer for these actions. ``targets`` (G3c-2): the person ids the agent may
     name now (None = any id, as before); ``channels``: the speech channels it may use; ``tier``
     sets the length limits (TIER_LIMITS)."""
@@ -251,6 +253,7 @@ def answer_schema(allowed_actions: tuple[str, ...], targets: tuple[str, ...] | N
         "properties": {
             "actions": {"type": "array", "minItems": 1, "maxItems": max_actions, "items": {"anyOf": choices}},
             "reason_summary": {"type": "string", "maxLength": reason_max},
+            **({"activity": activity_part(targets, activity_max_review_s)} if activity_max_review_s else {}),
         },
         "required": ["actions"],
         "additionalProperties": False,
