@@ -2,6 +2,31 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
+## G3d — Closing G3: review fixes and measurement tools (2026-11-18; draft PR)
+
+`docs/gates/G3_PLAN.md` (G3d), D-62 to D-70 PROPOSED, `docs/gates/G3d_OWNER_CHECKLIST.md`. D-60 and D-61 stay PROPOSED until the owner's PC run.
+
+### Fixed (each reproduced first, with a regression test)
+- A repair got a fresh deadline, so a decision could outlast the world's 6.5 s stale window: one deadline per decision now covers queue, generation and repair (D-63).
+- Answers were sent even when their person had left or someone else had spoken meanwhile: a relevance check drops them before sending, with the reason, and allows the usual single replan (D-63).
+- Memory changed when a request was sent, not when the world accepted it: promises, kept promises, the agent's own speech and conversation starts now apply on acceptance only (D-64).
+- Pulse metrics counted any decision and "the last gaze target" as responses, and proposals as outcomes: only source-linked, accepted responses count, with 3 s gaze intervals (D-65). This exposed a presence-loop defect (a source glanced at once was never glanced at again), now fixed.
+- FN-1 accepted a goodbye said to someone else, or after leaving: the closing line must be audible to the partner and come first, and the departure waits for the world to accept it (D-66).
+- The idle budget missed cancelled and pre-empted reviews: it is debited at admission (D-67).
+
+### Added
+- Rendered-run frame pacing (`frames.json`, p50/p95/p99, spikes) and peak VRAM sampled during the run; `--resolution`, `--render-preset`; the bake-off's `LIVE_RENDERED` mode and render-tax table (D-69).
+- `--no-pulse` (run_scenario, bake-off live), a per-agent `report` in `summary.json`, `tools/compare_runs.py` (D-69).
+- SB-09 Soak and `tools/soak.py` (D-70).
+- Scheduler job labels (observer, layer, evidence time, deadline, cost) and observer-isolation tests (D-62).
+
+### Changed
+- `tools/check.py` runs its scenario runs side by side (D-68).
+- Journals: SB-06 and SB-08 changed (more glances, from the presence fix); the fake-model SB-04 and SB-06 changed (the presence fix and the idle debit at admission); SB-04 (Demo) and SB-07 are unchanged. Memory staging, the deadline and FN-1 change no stepped journal (checked by reverting the other two).
+
+### Found, not fixed (owner decision)
+- Memory grows linearly with raw heard speech over long runs (D-70 proposes a bound).
+
 ## G3c-2 — Usable NPCs, real-time live runs, the pulse protocol (2026-11-17 to 2026-11-18; draft PR)
 
 `docs/gates/G3_PLAN.md` (G3c-2), D-60 and D-61 PROPOSED, `docs/gates/G3c2_OWNER_CHECKLIST.md`. D-59 APPROVED (owner, 2026-11-17); the owner's G3c-1 results recorded in G3_PLAN and D-59.

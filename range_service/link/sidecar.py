@@ -114,6 +114,17 @@ class Sidecar:
             await self._server.wait_closed()
         self.write_memory()
         self.write_records()
+        self.write_delivery()
+
+    def write_delivery(self) -> None:
+        """What each runtime held back or dropped before sending, and why (G3d, D-63, D-66)."""
+        if self.record_dir is None:
+            return
+        rows = [dict(e, agent_id=aid) for aid in sorted(self.runtimes) for e in self.runtimes[aid].delivery_log]
+        if rows:
+            self.record_dir.mkdir(parents=True, exist_ok=True)
+            (self.record_dir / "delivery.jsonl").write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows),
+                                                            encoding="utf-8")
 
     def bound_hosts(self) -> list[str]:
         return [s.getsockname()[0] for s in self._server.sockets] if self._server else []
@@ -256,7 +267,7 @@ class Sidecar:
             self._step_jobs.append((runtime, job))
             return
         if job.proposals is not None and not self.delay_ms and not self.jitter_ms:
-            await self._send_requests(ws, runtime.decide_now(job))
+            await self._send_requests(ws, runtime.recheck(runtime.decide_now(job), live=True))
             return
         task = asyncio.create_task(self._answer_live(ws, runtime, job))
         self._tasks.add(task)
@@ -271,6 +282,9 @@ class Sidecar:
                 return                            # pre-empted pulse review: nothing to send
             raise
         await self._pause()
+        # G3d (D-63): just before sending, drop what no longer fits the latest observation, or what
+        # missed its decision deadline; the reason is recorded (sidecar/delivery.jsonl).
+        requests = runtime.recheck(requests, live=True)
         try:
             await self._send_requests(ws, requests)
         except ConnectionClosed:
@@ -283,8 +297,10 @@ class Sidecar:
         await self._pause()
         for agent_id in sorted(presence):
             await self._send_requests(ws, presence[agent_id])
-        for requests in answers:
-            await self._send_requests(ws, requests)
+        for (runtime, _job), requests in zip(jobs, answers):
+            # Stepped: the world is held while agents think, so this changes nothing (and never
+            # applies a wall-clock deadline); it runs so both modes take the same path.
+            await self._send_requests(ws, runtime.recheck(requests, live=False))
         await self._send(ws, "link.step", {"sample_tick_id": sample_tick, "phase": "AGENTS_DONE"})
 
     async def _pause(self) -> None:

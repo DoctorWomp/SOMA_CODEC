@@ -14,7 +14,10 @@ A provider-neutral interface between agents and models. Agents never call a mode
 - **Invalid output** gets exactly one repair request that quotes the problem; still invalid →
   ``WAIT`` with a machine-readable error (T26).
 - **Timeouts:** each tier has a deadline; when it passes, the agent does ``WAIT`` and the late
-  answer is discarded (T25).
+  answer is discarded (T25). **One deadline per decision** (G3d, D-63): it covers queue,
+  generation and the repair. A repair gets only the time that is left, and only if that is at
+  least ``max(REPAIR_MIN_MS, the first attempt's model time)``; otherwise the decision falls back
+  to ``WAIT`` at once, saying why. The world's stale window is derived from this (D-63).
 - **Record and replay** (T20): every call is returned as a ``decision_record`` model-call entry
   with the prompt hash, response text and timings. ``ReplayModel`` serves those responses in
   order and reports a changed prompt as ``REPLAY_DIVERGED``: a rerun, never a replay.
@@ -42,6 +45,9 @@ MAX_ACTIONS = 3
 # Actions that can carry a promise: words, or a nod/expression toward someone (a nonverbal "I'll be with you").
 PROMISE_ACTIONS = frozenset({"SPEAK", "GESTURE", "EXPRESS"})
 FALLBACK_WAIT_MS = 1000
+# A repair is only tried if at least this much of the decision's deadline is left (and at least
+# as long as the first attempt took at the model): the scheduler's min_service_ms (G3d, D-63).
+REPAIR_MIN_MS = 300
 REPAIR_NOTE = ("Your previous answer could not be used: {error}. Answer again with one JSON object only, "
                "using only the listed actions.")
 _FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
@@ -336,8 +342,8 @@ class ModelGateway:
         self.persona_events.append(entry)
         return entry
 
-    async def _one(self, request: ModelRequest, deadline_ms: int,
-                   background: bool = False) -> tuple[ModelResponse | None, dict[str, Any]]:
+    async def _one(self, request: ModelRequest, deadline_ms: int, background: bool = False,
+                   label: dict[str, Any] | None = None) -> tuple[ModelResponse | None, dict[str, Any]]:
         started = time.perf_counter()
         response: ModelResponse | None = None
         outcome, error = "VALID", None
@@ -348,7 +354,9 @@ class ModelGateway:
             async with asyncio.timeout(deadline_ms / 1000):
                 if self.scheduler is not None:
                     slot = await self.scheduler.acquire(request.agent_id, request.tier,
-                                                        time.monotonic() + deadline_ms / 1000, background=background)
+                                                        time.monotonic() + deadline_ms / 1000, background=background,
+                                                        label=dict(label or {}, deadline_ms=deadline_ms,
+                                                                   est_cost_tokens=len(request.prompt) // 4))
                     queue_ms = round((time.perf_counter() - started) * 1000)
                     request.slot = slot
                     busy = self.activity.begin(self.server or "?") if self.activity is not None else None
@@ -410,13 +418,15 @@ class ModelGateway:
                      allowed_actions: list[str], tick: int, demo_hint: str | None = None,
                      prefix_key: str | None = None, prefix: str | None = None,
                      choices: dict[str, Any] | None = None, background: bool = False,
-                     check: Callable[[list[dict[str, Any]], dict[str, Any] | None], str | None] | None = None) -> GatewayResult:
+                     check: Callable[[list[dict[str, Any]], dict[str, Any] | None], str | None] | None = None,
+                     started_at: float | None = None, evidence_ms: int | None = None) -> GatewayResult:
         """``choices`` (G3c-2, D-60): what the agent may name now, for the constrained answer:
         ``targets`` (perceived track ids), ``channels``, ``gestures``, ``expressions``, and
         ``activity`` (G3c-2: the answer may carry an activity; its value is the longest review time).
         Absent keys keep the contract's full range. ``background``: a pulse review, scheduled after
         every real call. ``check(actions, activity)`` is the runtime's policy check (activity rules,
-        FN-1): an error gets the same one repair as invalid output."""
+        FN-1): an error gets the same one repair as invalid output. ``started_at``: when the decision
+        started (``time.monotonic()``); the tier deadline counts from then (G3d, D-63)."""
         from .output_schema import ALL_CHANNELS, answer_schema   # noqa: PLC0415 (it imports this module)
 
         if tier in self.refuse_tiers:
@@ -430,11 +440,27 @@ class ModelGateway:
                                tuple(c["expressions"]) if c.get("expressions") is not None else None,
                                int(c["activity"]) if c.get("activity") else 0)
         allow_activity = bool(c.get("activity"))
+        # One deadline for the whole decision (G3d, D-63): queue, generation and repair. The caller
+        # may pass when the decision started (the runtime does); else it starts now.
+        deadline_at = (started_at if started_at is not None else time.monotonic()) + deadline_ms / 1000
         request = ModelRequest(agent_id, self._call_id(agent_id), tier, prompt, prompt_sha256, max_tokens, 0, demo_hint,
                                schema, prefix_key=prefix_key, prefix=prefix)
+        first_model_ms = 0
         for attempt in (0, 1):
-            response, call = await self._one(request, deadline_ms, background)
+            left_ms = round((deadline_at - time.monotonic()) * 1000)
+            if attempt == 1:
+                needed_ms = max(REPAIR_MIN_MS, first_model_ms)
+                if left_ms < needed_ms:
+                    note = f"; not repaired: {max(0, left_ms)} ms of the decision deadline left, a repair needs about {needed_ms} ms"
+                    calls[-1]["error"] = (calls[-1]["error"] or "")[:300 - len(note)] + note
+                    return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": "INVALID_OUTPUT"},
+                                         fallback_error=calls[-1]["error"])
+            if left_ms < 1:
+                left_ms = 1
+            response, call = await self._one(request, left_ms, background,
+                                             {"layer": "DELIBERATION", "evidence_ms": evidence_ms})
             calls.append(call)
+            first_model_ms = max(first_model_ms, call["timings"]["total_ms"] - call["timings"]["queue_ms"])
             if response is None:
                 reason = {"TIMEOUT": "TIMEOUT", "REPLAY_DIVERGED": "REPLAY_DIVERGED"}.get(call["outcome"], "PROVIDER_ERROR")
                 return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": reason})

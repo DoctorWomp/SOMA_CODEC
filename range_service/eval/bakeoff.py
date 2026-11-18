@@ -322,6 +322,19 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
                 f"{f(r.get('promotion_cold_to_call_p50_ms'))} / {f(r.get('promotion_cold_call_p50_ms'))} / "
                 f"{f(r.get('promotion_cold_p50_ms'))} ({r.get('promotion_cold_n', 0)}) | "
                 f"{f(r.get('vram_focal_mib'))} / {f(r.get('vram_npc_mib'))} |")
+        lines += ["", "### Pulse, render, frame pacing and peak VRAM (G3d)", "",
+                  "| Robot R model | NPC model | Mode | Pulse | Render | NPC calls/min | Frame p50 / p95 / p99 ms | "
+                  "Frame spikes | Frame target p95 <= 16.7 ms | Peak VRAM MiB (sampled during the run) |",
+                  "|---|---|---|---|---|---|---|---|---|---|"]
+        for r in live:
+            target = "–" if r.get("frame_p95_ms") is None or r.get("frame_headless") else \
+                ("met" if r["frame_p95_ms"] <= 16.75 else "NOT met")
+            lines.append(f"| {r['label']} | {r.get('npc_label', '–')} | {r['mode']} | {'on' if r.get('pulse', True) else 'off'} | "
+                         f"{r.get('render') or 'headless'} | {f(r.get('npc_calls_per_min'))} | "
+                         f"{f(r.get('frame_p50_ms'))} / {f(r.get('frame_p95_ms'))} / {f(r.get('frame_p99_ms'))} | "
+                         f"{f(r.get('frame_spikes'))} | {target} | "
+                         f"{f(r.get('vram_peak_mib')) if r.get('vram_peak_mib') is not None else '– (' + str(r.get('vram_peak_note')) + ')'} |")
+        lines += render_tax_lines(live, f) + pulse_ab_lines(live, f)
         lines += ["", "Modes: LIVE (pre-warm and snapshots on), LIVE_COLD (both off), LIVE_LOAD (pre-warm on, plus "
                   "synthetic NPC calls on all NPC slots but one, to measure Robot R under NPC load), STEPPED. Since "
                   "G3c-2 LIVE runs in real time (90 s per SB-04) and rows pool all repeats. Robot R columns count "
@@ -337,3 +350,47 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
               "– = not measured (see results.json for the reason)."]
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, md_path
+
+
+def render_tax_lines(live: list[dict], f) -> list[str]:
+    """ART_DIRECTION §7: the same scenario headless (LIVE) and rendered (LIVE_RENDERED)."""
+    out = []
+    for r in [x for x in live if x["mode"] == "LIVE_RENDERED"]:
+        base = next((x for x in live if x["mode"] == "LIVE" and x["label"] == r["label"]
+                     and x.get("npc_label") == r.get("npc_label") and x.get("pulse", True) == r.get("pulse", True)), None)
+        if base is None:
+            continue
+
+        def change(a, b):
+            return f"{(b - a) / a * 100:+.0f}%" if a and b is not None else "–"
+        if not out:
+            out = ["", "### Render tax: headless LIVE vs LIVE_RENDERED (ART_DIRECTION §7; proposed limit <= 10% of focal throughput)", "",
+                   "| Robot R model | NPC model | Render | Robot R p50 ms headless / rendered (change) | "
+                   "Robot R p95 ms headless / rendered (change) | NPC calls/min headless / rendered (change) |",
+                   "|---|---|---|---|---|---|"]
+        out.append(f"| {r['label']} | {r.get('npc_label', '–')} | {r.get('render')} | "
+                   f"{f(base['p50_ms'])} / {f(r['p50_ms'])} ({change(base['p50_ms'], r['p50_ms'])}) | "
+                   f"{f(base['p95_ms'])} / {f(r['p95_ms'])} ({change(base['p95_ms'], r['p95_ms'])}) | "
+                   f"{f(base.get('npc_calls_per_min'))} / {f(r.get('npc_calls_per_min'))} "
+                   f"({change(base.get('npc_calls_per_min'), r.get('npc_calls_per_min'))}) |")
+    return out
+
+
+def pulse_ab_lines(live: list[dict], f) -> list[str]:
+    """Pulse on vs off for the same model, NPC model and mode (G3d, --no-pulse)."""
+    out = []
+    for off in [x for x in live if x.get("pulse") is False]:
+        on = next((x for x in live if x.get("pulse", True) and x["label"] == off["label"] and x["mode"] == off["mode"]
+                   and x.get("npc_label") == off.get("npc_label")), None)
+        if on is None:
+            continue
+        if not out:
+            out = ["", "### Pulse on vs off (same models, mode and scene)", "",
+                   "| Robot R model | Mode | Robot R calls on / off | Robot R p50 / p95 ms on | off | "
+                   "Robot R actions accepted on / off | Timeouts on / off | Frame p95 ms on / off |",
+                   "|---|---|---|---|---|---|---|---|"]
+        out.append(f"| {off['label']} | {off['mode']} | {on['decisions']} / {off['decisions']} | "
+                   f"{f(on['p50_ms'])} / {f(on['p95_ms'])} | {f(off['p50_ms'])} / {f(off['p95_ms'])} | "
+                   f"{f(on.get('robot_actions_accepted'))} / {f(off.get('robot_actions_accepted'))} | "
+                   f"{f(on['timeouts'])} / {f(off['timeouts'])} | {f(on.get('frame_p95_ms'))} / {f(off.get('frame_p95_ms'))} |")
+    return out

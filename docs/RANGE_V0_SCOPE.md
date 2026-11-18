@@ -70,6 +70,8 @@ Viewer features, in build order:
 
 The first version is a **2D top-down view** drawn from logged layer data, so it works on replays. The 3D Halo view in Godot comes after.
 
+**Per observer (D-62):** every diagnostic the viewer shows is labelled with the observer it belongs to. Each HORIZON-equipped avatar is its own observer with its own track ids, so "track anon_… seen by robot_legged" and "track anon_… seen by robot_quadruped" may be the same visitor and are never merged in the viewer's per-observer panels; evaluator truth stays on its own labelled panel.
+
 ### 2.5 Presets and the ablation runner
 
 - Layer masks can be saved as **presets**, like mixer snapshots. The Atlas ladder `H0`–`H6` ships as built-in presets (D-03).
@@ -144,8 +146,8 @@ Gates follow the Blueprint (D-02). One deliberate change: **G1 builds Sandbox Fl
 | **G1** | Sandbox Flats in Godot: capsules, platform, stairs, ramp, partitions, cameras | Owner's PC |
 | **G2** | Observer filter, COMMS channels, group permissions, disclosure gate, event journal | Cloud (tests) + PC |
 | **G3** | Agent runtime: scripted policy first, then one local LLM agent; action gate; scheduler | PC for the model |
-| **G4** | Spectator cameras, Director basics, Participant basics ([INTERACTION_MODES.md](INTERACTION_MODES.md) §10), **layer viewer v1 (2D)** | PC |
-| **G5** | HORIZON L4–L8, ΔP, masks, presets, bypass, **ablation runner**; sandbox SB-01…SB-06 pass | Cloud + PC |
+| **G4** | Spectator cameras, Director basics, Participant basics ([INTERACTION_MODES.md](INTERACTION_MODES.md) §10), **layer viewer v1 (2D)**, with every diagnostic labelled per observer (D-62) | PC |
+| **G5** | First step: the three-body peripheral-speaker experiment of [HORIZON_OPERATIONAL_ARCHITECTURE.md](HORIZON_OPERATIONAL_ARCHITECTURE.md) (one observer per avatar; solo reference, concurrent replay, rendered LIVE; D-62). Then HORIZON L4–L8, ΔP, masks, presets, bypass, **ablation runner**; sandbox SB-01…SB-06 pass | Cloud + PC |
 | **G6** | Expo Hall A, expo scenarios, paired runner, replay, metrics export | PC |
 | **G7** | Windows release folder, launcher, docs, smoke test | PC |
 

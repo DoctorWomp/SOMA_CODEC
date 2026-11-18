@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 COMPLETE (merged 2026-11-17; D-59 APPROVED 2026-11-17) · G3c-2 built 2026-11-18 (draft PR; D-60, D-61 PROPOSED) · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md), [G3c-2](G3c2_OWNER_CHECKLIST.md)
+**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 COMPLETE (merged 2026-11-17; D-59 APPROVED 2026-11-17) · G3c-2 built 2026-11-18 (D-60, D-61 PROPOSED) · **G3d built 2026-11-18 (draft PR; D-62 to D-70 PROPOSED): G3 complete pending the owner's PC results** · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md), [G3c-2](G3c2_OWNER_CHECKLIST.md), [G3d](G3d_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -283,6 +283,26 @@ What these showed, diagnosed in G3c-2 (D-60): NPC answers failed because MOVE_TO
   - the live bake-off in real time with F3 + N3;
   - watched runs of SB-04, SB-06 and SB-08 to judge FN-1 and FN-2 by eye;
   - approval of the stale-window change (D-60).
+
+## G3d — Closing G3: five review fixes, measurement tools, the multi-observer constraints (built 2026-11-18, draft PR; D-62 to D-70 PROPOSED)
+
+**Owner direction (2026-11-18):** an independent review of main at G3c-2 found five defects, each confirmed by the owner. Fix each: reproduce it with a failing test, make the smallest fix, record the decision. Add measurement tooling (no new behavior): rendered-client numbers, a pulse on/off switch, a soak, a faster `tools/check.py`. Record the HORIZON operational architecture as design constraints (docs and tests only). D-60 and D-61 stay PROPOSED until the owner's PC run. Owner steps: [G3d_OWNER_CHECKLIST.md](G3d_OWNER_CHECKLIST.md).
+
+| # | What | Decision | Proof (cloud) |
+|---|---|---|---|
+| 1 | One deadline per decision (queue, generation, repair, delivery); repair only with the time left; the stale window re-derived (stays 6.5 s while C2 has 6 s); a relevance check before sending | D-63 | `tests/test_decision_deadline.py` (reproduced on main: ~600 ms against a 500 ms deadline); traces for a target that leaves, a new speaker, an invalid answer near the deadline |
+| 2 | Memory follows what the world accepted: staged by request id, applied once on acceptance; a pending request is one line in the next decision | D-64 | `tests/test_memory_outcomes.py` (reproduced on main); changes no stepped journal; the 16 rebuilt promise prompts identical to prompts_v3 |
+| 3 | Pulse metrics: source-linked responses only, gaze intervals, accepted vs proposed. The honest metric found one zombie event each in SB-06 and SB-08 (a presence-loop defect); fixed and re-run: zero | D-65 | `tests/test_pulse_metrics.py`; SB-06 `4269273ce181`, SB-08 `8aa856e4442c` |
+| 4 | FN-1: a closing line the partner could hear, before the departure; the departure waits for the host to accept it | D-66 | `tests/test_fn1_goodbye.py` |
+| 5 | The idle budget debited at admission (cancelled and pre-empted reviews count) | D-67 | `tests/test_idle_budget.py` (reproduced on main) |
+| 6–7 | Frame pacing and peak VRAM for rendered runs; LIVE_RENDERED and the render-tax table; `--no-pulse`; a per-run report; `tools/compare_runs.py` | D-69 | `tests/test_run_report.py`; SB-08 pulse on/off; SB-04 rendered under Xvfb (software GL, plumbing only) |
+| 8 | Soak: SB-09 (21 min) and `tools/soak.py` | D-70 | prompt tokens and logs bounded; **memory grows** with raw heard speech (finding; a bound is proposed for the owner) |
+| 9 | `tools/check.py`: the 22 scenario runs side by side | D-68 | Godot step 753.5 s → 561.7 s, whole check 13:01 → 9:53 (4 cores) |
+| 10 | HORIZON operational architecture as design constraints; scheduler job labels; its experiment the first step of G5 | D-62 | `tests/test_observer_isolation.py` |
+
+**G3 is complete pending the owner's PC results** (the checklist): the rendered SB-04 with F3 + N3 and its frame times and peak VRAM, the pulse on/off comparison, the live bake-off rerun with the render tax, and approval of D-60 to D-70.
+
+**Not in G3d:** a memory retention rule for raw heard speech (D-70 proposes one for the owner); HORIZON layers and the three-body experiment (G5, after G4); lowering C2's deadline (needs the owner's real-time numbers).
 
 ## Out of scope for G3
 

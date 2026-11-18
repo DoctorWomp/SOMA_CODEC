@@ -4,6 +4,9 @@
     uv run python tools/bakeoff.py offline --models N1 N3 S1 --kv q8_0
     uv run python tools/bakeoff.py offline --set bakeoff/prompts_v1.jsonl   # the G3b set, for comparison
     uv run python tools/bakeoff.py live --models F3 F1 --npc-model N3       # Option C runs of SB-04
+    uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE LIVE_RENDERED \
+        --resolution 1920x1080 --render-preset v0                           # the render tax (G3d)
+    uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE --no-pulse  # pulse off (G3d)
     uv run python tools/bakeoff.py report                        # print results.md again
 
     uv run python tools/bakeoff.py build-set                     # maintainers: rebuild bakeoff/prompts_v3.jsonl
@@ -16,8 +19,12 @@ results show Robot R and NPC prompts in separate tables. prompts_v1 (G3b) stays 
 **live** runs SB-04 in Godot (headless) with Option C, the model under test on Robot R's
 server and the NPC model on the NPC server, in four modes: LIVE, LIVE_COLD (no pre-warming),
 LIVE_LOAD (synthetic NPC calls keep the NPC server busy) and STEPPED. It reports Robot R's
-p50/p95, NPC calls, promotion latency warm and cold, and VRAM per server. Both commands add to
-results.json and rewrite results.md: paste that file back.
+p50/p95, NPC calls, promotion latency warm and cold, and VRAM per server. G3d (D-69): LIVE_RENDERED
+is LIVE with the rendered client open at a declared resolution and render preset; every live row
+records frame times (p50/p95/p99, spikes) and the peak VRAM sampled during the run, and results.md
+compares LIVE with LIVE_RENDERED (the render tax, ART_DIRECTION §7) and pulse on with pulse off
+(--no-pulse) where both were run. Both commands add to results.json and rewrite results.md:
+paste that file back.
 
 Nothing is downloaded: models come from your registry (tools/models.py). Needs an NVIDIA GPU for
 meaningful speeds; on a CPU it runs, slowly (the cloud smoke test uses model T1).
@@ -241,7 +248,9 @@ def cmd_offline(args: argparse.Namespace) -> int:
 # never cold (G3c-2, D-60). LIVE_LOAD keeps all NPC slots but one busy ("slots - 1" streams), so a
 # real NPC call always finds a slot.
 LIVE_MODES = {"LIVE": ("LIVE", True, True, 0), "LIVE_COLD": ("LIVE", False, False, 0),
-              "LIVE_LOAD": ("LIVE", True, True, -1), "STEPPED": ("STEPPED", True, True, 0)}
+              "LIVE_LOAD": ("LIVE", True, True, -1), "STEPPED": ("STEPPED", True, True, 0),
+              "LIVE_RENDERED": ("LIVE", True, True, 0)}          # G3d: LIVE with the rendered client open
+RENDERED_MODES = {"LIVE_RENDERED"}
 
 
 def _p(values: list[float], q: float) -> float | None:
@@ -254,9 +263,16 @@ def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, obje
     prefill, generation, and how long Robot R's server was busy meanwhile), Robot R's action
     outcomes (accepted or stale), promotions, event-loop lag and VRAM apart."""
     robot, npc, promos, lags, accepted, stale, journals = [], [], [], [], 0, 0, []
+    frames, vram_peaks, minutes = [], [], 0.0
     ok = True
     s = None
     for out, r in runs:
+        render = r.summary.get("render") or {}
+        if (render.get("frames") or {}).get("available"):
+            frames.append(render["frames"])
+        if (render.get("vram") or {}).get("peak_mib") is not None:
+            vram_peaks.append(render["vram"]["peak_mib"])
+        minutes += (r.summary.get("ticks_run") or 0) / 3600
         for line in (out / "sidecar" / "decision_records.jsonl").read_text(encoding="utf-8").splitlines():
             rec = json.loads(line)
             (robot if rec["agent_id"] == "robot_r" else npc).extend(rec["model_calls"])
@@ -294,7 +310,19 @@ def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, obje
             "promotion_cold_call_p50_ms": pr["cold_first_call_p50_ms"],
             "vram_focal_mib": manifest.get("vram.focal_mib"), "vram_npc_mib": manifest.get("vram.npc_mib"),
             "vram_note": manifest.get("vram.note"), "journal": journals[0], "journals": journals,
-            "run_dir": str(runs[0][0])}
+            "run_dir": str(runs[0][0]),
+            # G3d (D-69): pulse, render, frame pacing (worst repeat) and peak VRAM sampled during the runs.
+            "pulse": bool(((runs[-1][1].summary.get("render") or {}).get("pulse"))),
+            "render": None if (runs[-1][1].summary.get("render") or {}).get("headless", True)
+            else f"{runs[-1][1].summary['render']['resolution']} {runs[-1][1].summary['render']['preset']}",
+            "npc_calls_per_min": round(len(npc) / minutes, 1) if minutes else None,
+            "frame_p50_ms": max((x["p50_ms"] for x in frames if x["p50_ms"] is not None), default=None),
+            "frame_p95_ms": max((x["p95_ms"] for x in frames if x["p95_ms"] is not None), default=None),
+            "frame_p99_ms": max((x["p99_ms"] for x in frames if x["p99_ms"] is not None), default=None),
+            "frame_spikes": sum(x["spikes"] for x in frames) if frames else None,
+            "frame_headless": all(x.get("display_server") == "headless" for x in frames) if frames else None,
+            "vram_peak_mib": max(vram_peaks) if vram_peaks else None,
+            "vram_peak_note": None if vram_peaks else ((runs[-1][1].summary.get("render") or {}).get("vram") or {}).get("reason")}
 
 
 def cmd_live(args: argparse.Namespace) -> int:
@@ -319,14 +347,17 @@ def cmd_live(args: argparse.Namespace) -> int:
             npc_spec = {"config": "auto", "none": "none"}.get(args.npc_model, f"llama:{args.npc_model}")
             runs = []
             for k in range(args.repeat):
-                out = RESULTS / f"run_{entry['label']}_{mode.lower()}_{k + 1}"
+                out = RESULTS / f"run_{entry['label']}_{mode.lower()}{'_nopulse' if args.no_pulse else ''}_{k + 1}"
                 print(f"SB-04 {mode} {k + 1}/{args.repeat} with {entry['label']} {entry['model']} {entry['quant']} "
                       f"(NPC model: {npc_label})...")
                 try:
                     r = asyncio.run(run_scenario(RunOptions(
                         "SB04_POLITE_BID", godot, mode=run_mode, model=f"llama:{entry['id']}", npc_model=npc_spec,
                         prewarm=prewarm, snapshots=snapshots, out_dir=out, timeout_s=1800,
-                        npc_load_streams=load, npc_load_prompts=npc_items)))
+                        npc_load_streams=load, npc_load_prompts=npc_items,
+                        headless=mode not in RENDERED_MODES, resolution=args.resolution,
+                        render_preset=args.render_preset, frame_stats=True,
+                        pulse="off" if args.no_pulse else "auto")))
                 except RunError as exc:
                     print(f"  FAILED: {exc}")
                     continue
@@ -336,8 +367,8 @@ def cmd_live(args: argparse.Namespace) -> int:
             row = live_row(entry, npc_label, mode, runs)
             if row["fallback"]:
                 print(f"  NOTE: Option B (one server): {row['fallback']}")
-            results["live"] = [x for x in results["live"] if (x["label"], x["mode"], x.get("npc_label")) !=
-                               (row["label"], mode, npc_label)] + [row]
+            results["live"] = [x for x in results["live"] if (x["label"], x["mode"], x.get("npc_label"), x.get("pulse", True)) !=
+                               (row["label"], mode, npc_label, row["pulse"])] + [row]
             _save(results)
     return 0
 
@@ -371,6 +402,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="runs per mode, pooled (one SB-04 is 90 s real time; G3c-2)")
     p_live.add_argument("--npc-model", default="config",
                         help="NPC server model: config (configs/inference.yaml), a catalog label such as N3, or none")
+    p_live.add_argument("--resolution", default="1920x1080", help="LIVE_RENDERED: the window size, WIDTHxHEIGHT")
+    p_live.add_argument("--render-preset", default="v0", help="LIVE_RENDERED: v0 or v0_compat (range_service/eval/runner.py)")
+    p_live.add_argument("--no-pulse", action="store_true",
+                        help="the pulse protocol off in every run (compare with the same command without it)")
     sub.add_parser("report")
     args = parser.parse_args(argv)
     try:

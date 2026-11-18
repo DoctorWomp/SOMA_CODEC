@@ -17,7 +17,7 @@ from range_service.agents.output_schema import answer_schema, mixes_alternatives
 from range_service.agents.pulse import IntentMonitor, Presence, Pulse, Survey, seeded_fraction, voice_key
 from range_service.agents.runtime import AgentRuntime
 from range_service.agents.working_set import Perceived, WorkingSet
-from tests.agent_helpers import CONFIGS, Scene
+from tests.agent_helpers import CONFIGS, Scene, accept
 
 CFG = CONFIGS.items["pulse"]["pulse"]
 P, Q = "anon_pppppppppp", "anon_qqqqqqqqqq"
@@ -34,11 +34,14 @@ def robot(gateway=None, task="Help visitors.", post_duty=True) -> AgentRuntime:
                         post={"x": 15.0, "z": 10.0}, post_duty=post_duty, survey_area=AREA)
 
 
-def run(rt: AgentRuntime, packet: dict):
+def run(rt: AgentRuntime, packet: dict, world_accepts: bool = True):
+    """One packet; the world accepts what the agent sends unless ``world_accepts`` is False."""
     job = rt.observe(packet)
     out = rt.take_presence()
     if job is not None:
         out += asyncio.run(rt.decide(job)) if job.proposals is None else rt.decide_now(job)
+    if world_accepts:
+        accept(rt, out)
     return job, out
 
 

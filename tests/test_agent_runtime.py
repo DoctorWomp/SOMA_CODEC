@@ -9,16 +9,18 @@ from range_service import contracts
 from range_service.agents.gateway import FakeModel, ModelGateway
 from range_service.agents.runtime import AgentRuntime
 
-from .agent_helpers import Scene, robot, scenario_runtimes
+from .agent_helpers import Scene, accept, robot, scenario_runtimes
 
 X, Y = "anon_visitorxx01", "anon_visitoryy02"
 
 
-def step(rt: AgentRuntime, packet: dict) -> list[dict]:
+def step(rt: AgentRuntime, packet: dict, world_accepts: bool = True) -> list[dict]:
+    """One packet; the world accepts what the agent sends unless ``world_accepts`` is False."""
     job = rt.observe(packet)
     if job is None:
         return []
-    return asyncio.run(rt.decide(job)) if job.proposals is None else rt.decide_now(job)
+    out = asyncio.run(rt.decide(job)) if job.proposals is None else rt.decide_now(job)
+    return accept(rt, out) if world_accepts else out
 
 
 def test_synthetic_packets_match_the_observation_contract():
@@ -131,7 +133,7 @@ def test_one_pending_request_per_agent_and_queued_triggers():
 def test_t27_stale_action_is_replanned_once_from_the_latest_observation():
     rt = robot()
     s = Scene()
-    out = step(rt, s.see(X, 15, 8.5).hear(X, "Where is the demo?").packet())
+    out = step(rt, s.see(X, 15, 8.5).hear(X, "Where is the demo?").packet(), world_accepts=False)
     for request in out:
         rt.on_result({"schema_version": "1.0", "action_request_id": request["action_request_id"], "agent_id": "robot_r",
                       "accepted": False, "executed": False, "reason_code": "STALE_OBSERVATION",
@@ -145,7 +147,7 @@ def test_a_rejected_promise_is_released():
     rt = robot()
     s = Scene()
     step(rt, s.see(X, 15, 8.5).hear(X, "Tell me about the demo?").packet())
-    out = step(rt, s.see(X, 15, 8.5).see(Y, 17, 8.3).hear(Y, "Excuse me?", x=17, z=8.3).packet())
+    out = step(rt, s.see(X, 15, 8.5).see(Y, 17, 8.3).hear(Y, "Excuse me?", x=17, z=8.3).packet(), world_accepts=False)
     rt.on_result({"schema_version": "1.0", "action_request_id": out[0]["action_request_id"], "agent_id": "robot_r",
                   "accepted": False, "executed": False, "reason_code": "TARGET_UNKNOWN", "resulting_event_ids": [],
                   "resolved_at_tick_id": s.tick})

@@ -24,7 +24,8 @@ def test_export_covers_the_map_and_every_body():
         "bodies/human_walker.json", "bodies/legged_humanoid.json", "bodies/quadruped.json",
         "bodies/quadruped_arm.json", "bodies/wheeled_humanoid.json", "maps/sandbox_flats.json",
         "scenarios/SB04_POLITE_BID.json", "scenarios/SB05_RAMP_VS_STAIRS.json",
-        "scenarios/SB06_LONG_WAIT.json", "scenarios/SB07_EMPTY_HALL.json", "scenarios/SB08_PERIPHERAL_SPEAKER.json"]
+        "scenarios/SB06_LONG_WAIT.json", "scenarios/SB07_EMPTY_HALL.json", "scenarios/SB08_PERIPHERAL_SPEAKER.json",
+        "scenarios/SB09_SOAK.json"]
     assert len([n for n in names if n.startswith("expressions/")]) == len(list((export_godot_data.REPO / "configs" / "expressions").glob("*.yaml")))
 
 

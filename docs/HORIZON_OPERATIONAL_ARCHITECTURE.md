@@ -1,6 +1,6 @@
 # HORIZON operational architecture for multiple avatars and a physical chassis
 
-**Status — Proposed for engineering review.** This document describes a deployment model and a first experiment for SOMA RANGE. The existing gate plan and approved decisions govern implementation. The multi-avatar scheduler, measurements, and acceptance tests below are proposals.
+**Status — Proposed for engineering review; recorded as D-62 (PROPOSED, G3d).** Its design constraints (one observer per avatar, observer-scoped state, observer-local track ids, separate sensing and model queues, labelled scheduler jobs) are adopted now; its experiment is the first step of G5. This document describes a deployment model and a first experiment for SOMA RANGE. The existing gate plan and approved decisions govern implementation. The multi-avatar scheduler, measurements, and acceptance tests below are proposals.
 
 ## One observer per body
 

@@ -8,7 +8,8 @@ extends Node3D
 ##      [--bodies=robot_r:quadruped,...] [--link-port=PORT --link-agents=a,b] [--quit-when-done]
 ##
 ## Either mode: -- --no-pose keeps every robot in its rest pose (D-54: posing is presentation and
-## the journal is the same with it on or off).
+## the journal is the same with it on or off). -- --frame-stats=PATH writes frame pacing and
+## Godot's video-memory peak to PATH when the scenario ends (G3d, D-69; never in the journal).
 
 const MAP_ID := "sandbox_flats"
 
@@ -35,6 +36,8 @@ var hud: Hud
 var sense_view: SenseView
 var link: LinkClient
 var scenario_player: ScenarioPlayer
+var frame_stats: FrameStats
+var frame_stats_path := ""
 var _seed_given := false
 
 
@@ -99,6 +102,8 @@ func _read_args() -> void:
 			quit_when_done = true
 		elif arg == "--no-pose":
 			posing = false
+		elif arg.begins_with("--frame-stats="):
+			frame_stats_path = arg.trim_prefix("--frame-stats=")
 
 
 ## Scenario mode: build the scenario's world and cast, link the agents, play the tape, end the run.
@@ -111,6 +116,9 @@ func _run_scenario() -> void:
 		_fail("main: run mode must be LIVE or STEPPED, not '%s'" % run_mode)
 		return
 	DisplayServer.window_set_title("SOMA RANGE — %s (%s)" % [scenario_id, run_mode.to_lower()])
+	if frame_stats_path != "":
+		frame_stats = FrameStats.new()
+		add_child(frame_stats)
 	world = RangeWorld.new()
 	world.posing_enabled = posing
 	add_child(world)
@@ -152,6 +160,8 @@ func _run_scenario() -> void:
 func _on_scenario_finished() -> void:
 	var digest := world.end_run()
 	print("SCENARIO DONE %s ticks=%d held=%d journal_sha256=%s" % [scenario_id, world.clock.tick, world.held_samples, digest])
+	if frame_stats != null:
+		frame_stats.write(frame_stats_path)
 	if quit_when_done:
 		get_tree().quit(0)
 

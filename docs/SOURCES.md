@@ -97,6 +97,16 @@ Use for ideas and vocabulary only. **Do not implement the listed superseded part
 | [PAE Part 8 — Covenant Ledger](https://doctorwomp.com/pae_part_8/) | Commitments + refusals + source trust hierarchy + compression policy → commitments survive memory compaction; trust attaches to evidence, not people (D-13); promise follow-through → S013. |
 | [PAE Part 10 — Sigil Protocol](https://doctorwomp.com/pae_part_10/) | One-line capability disclosure ("declare the spectrometer") → each avatar's **capability card** in the viewer and run manifest (RANGE_V0_SCOPE §2.4). |
 
+## Project design notes (written for this repository)
+
+Not source documents: they apply the sources to RANGE. Approved decisions override them like any other document.
+
+| Document | Date | Status | Covers |
+|---|---|---|---|
+| [HORIZON_OPERATIONAL_ARCHITECTURE](HORIZON_OPERATIONAL_ARCHITECTURE.md) | 2026-11-18 | PROPOSED (D-62) | One HORIZON observer per avatar, observer-local tracks, separate sensing and model queues, labelled scheduler jobs, resource accounting, and the three-body peripheral-speaker experiment (first step of G5) |
+| [PULSE_PROTOCOL](PULSE_PROTOCOL.md) | 2026-11-16 | built at G3c-2 (D-61, D-65 to D-67) | Continuous presence between model decisions |
+| [INFERENCE_STRATEGY](INFERENCE_STRATEGY.md), [CONTEXT_MEMORY_STRATEGY](CONTEXT_MEMORY_STRATEGY.md), [INTERACTION_MODES](INTERACTION_MODES.md), [ART_DIRECTION](ART_DIRECTION.md) | 2026-11 | see each | Model residency and scheduling; bounded context; modes; visual style and render tax |
+
 ## Concept art
 
 Illustrations only. **Numbers shown in the art (confidence scores, rates, percentages) are illustrative, not specifications.** Known disagreements with the written rules are listed in D-10 and D-14.

@@ -21,6 +21,11 @@ on a semaphore, so Robot R can wait behind a queue of NPC chatter. With this sch
   still be cached there); otherwise the least recently used free slot. Pre-warming (T6) uses
   ``try_acquire`` and never waits or takes a pinned slot.
 
+- **Job labels** (G3d, D-62): every queued job says whose it is and what it is for: observer,
+  layer (``DELIBERATION`` for model calls; HORIZON sensing layers get their own queues at G5),
+  evidence time, deadline and estimated cost (prompt tokens), so queues stay attributable per
+  observer. ``waiting_labels()`` lists them.
+
 Slot ids are real llama-server slot ids: the provider sends the granted id as ``id_slot``.
 In Option C (G3c-1) each server has its own scheduler; the NPC server's has no pinned slots.
 """
@@ -49,6 +54,7 @@ class _Waiter:
     agent_id: str = field(compare=False)
     deadline: float = field(compare=False)
     future: asyncio.Future = field(compare=False)
+    label: dict = field(default_factory=dict, compare=False)
 
     def __post_init__(self) -> None:
         self.sort_key = (self.priority, self.enqueued, self.seq)
@@ -85,7 +91,8 @@ class SlotScheduler:
             self.pins[agent_id] = len(self.pins)
         return self.pins.get(agent_id)
 
-    async def acquire(self, agent_id: str, tier: str, deadline_at: float, background: bool = False) -> int:
+    async def acquire(self, agent_id: str, tier: str, deadline_at: float, background: bool = False,
+                      label: dict | None = None) -> int:
         """Wait for a slot; returns its id. Raises Dropped if the call should not run any more.
         ``background`` (a pulse review, G3c-2) ranks after every real call."""
         for old in [w for w in self.waiting if w.agent_id == agent_id]:
@@ -105,7 +112,8 @@ class SlotScheduler:
         self._seq += 1
         waiter = _Waiter(BACKGROUND_PRIORITY if background else self.priorities.get(tier, 9), self.clock(), self._seq,
                          agent_id, deadline_at,
-                         asyncio.get_running_loop().create_future())
+                         asyncio.get_running_loop().create_future(),
+                         dict(label or {}, observer=agent_id, tier=tier, background=background))
         self.waiting.append(waiter)
         self._dispatch()
         try:
@@ -116,6 +124,10 @@ class SlotScheduler:
             elif waiter.future.done() and not waiter.future.cancelled() and waiter.future.exception() is None:
                 self.release(waiter.future.result())   # granted just as we were cancelled: give it back
             raise
+
+    def waiting_labels(self) -> list[dict]:
+        """The labels of the jobs waiting now (D-62): observer, layer, evidence time, deadline, cost."""
+        return [dict(w.label) for w in self.waiting]
 
     def try_acquire(self, agent_id: str, keep_free: int = 1) -> int | None:
         """A free shared slot right now, or None; never waits, never a pinned slot, only when

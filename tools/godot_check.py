@@ -34,6 +34,9 @@ Steps:
               (peripheral speaker) three times each (one with random sidecar delays): one journal
               per scenario; SB-06 again with the fake model and replayed. Their pulse metrics
               must show the expected behavior (FN-1, FN-2, few calls while waiting, no pacing).
+              G3d (D-68): the runs above are independent, so they run side by side, up to the
+              CPU count at a time (RANGE_CHECK_JOBS=N overrides; 1 = one after another); replays
+              start after the run they replay. The same runs and checks as before.
               Runs with --filter only if the filter is part of "scenario_determinism".
 
 For the link tests, two sidecars run on 127.0.0.1 with a fresh session token for the duration
@@ -431,8 +434,39 @@ def _scenario_run(godot: str, scenario_id: str, out: Path, jitter_ms: int = 0, p
     import asyncio
 
     from range_service.eval.runner import RunOptions, run_scenario
-    return asyncio.run(run_scenario(RunOptions(scenario_id, godot, out_dir=out, jitter_ms=jitter_ms, timeout_s=600,
+    return asyncio.run(run_scenario(RunOptions(scenario_id, godot, out_dir=out, jitter_ms=jitter_ms, timeout_s=900,
                                                posing=posing, model=model, configs=configs)))
+
+
+def scenario_jobs() -> int:
+    """How many scenario runs at once (G3d, D-68): RANGE_CHECK_JOBS, else the CPU count (at most 8).
+    Every run is its own Godot process and sidecar on its own port and folder; stepped runs hold
+    the world until the agents answer, so running them side by side cannot change a journal."""
+    env = os.environ.get("RANGE_CHECK_JOBS", "").strip()
+    if env:
+        return max(1, int(env))
+    return max(1, min(8, os.cpu_count() or 1))
+
+
+def run_many(godot: str, root: Path, specs: dict[str, dict], jobs: int) -> dict:
+    """Run independent scenario runs in parallel (threads; each run starts its own Godot process).
+    Returns name -> RunResult, or the RunError it raised."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from range_service.eval.runner import RunError
+
+    def one(name: str):
+        spec = specs[name]
+        try:
+            return _scenario_run(godot, spec["scenario"], root / name, spec.get("jitter", 0), spec.get("posing", True),
+                                 spec.get("model", "none"), spec.get("configs"))
+        except RunError as exc:
+            return exc
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        # Longest runs first, so the pool finishes together (SB-06 is ~4 min of simulated time).
+        order = sorted(specs, key=lambda n: (-specs[n].get("weight", 1), n))
+        futures = {name: pool.submit(one, name) for name in order}
+        return {name: futures[name].result() for name in specs}
 
 
 def _sent(run_dir: Path, agent: str) -> list[dict]:
@@ -444,12 +478,27 @@ def _sent(run_dir: Path, agent: str) -> list[dict]:
     return out
 
 
-def pulse_checks(godot: str, root: Path) -> tuple[list[str], str]:
+PULSE_SCENARIOS = ("SB06_LONG_WAIT", "SB07_EMPTY_HALL", "SB08_PERIPHERAL_SPEAKER")
+
+
+def pulse_specs() -> tuple[dict[str, dict], dict[str, dict]]:
+    """G3c-2 runs: each pulse scenario three times (one with random sidecar delays); SB-06 with the
+    fake model twice. Second phase: the fake-model SB-06 replayed from the first run's records."""
+    first = {f"{sid}_{k}": {"scenario": sid, "jitter": jitter, "weight": 3 if sid == "SB06_LONG_WAIT" else 1}
+             for sid in PULSE_SCENARIOS for k, jitter in enumerate((0, 25, 0))}
+    first.update({f"SB06_fake_{k}": {"scenario": "SB06_LONG_WAIT", "jitter": jitter, "model": "fake", "weight": 3}
+                  for k, jitter in enumerate((0, 25))})
+    second = {"SB06_fake_replay": {"scenario": "SB06_LONG_WAIT", "weight": 3,
+                                   "model": "replay:{root}/SB06_fake_0/sidecar/decision_records.jsonl"}}
+    return first, second
+
+
+def pulse_checks(results: dict) -> tuple[list[str], str]:
     """G3c-2: the pulse scenarios are deterministic and show what PULSE_PROTOCOL §10 asks for."""
     problems: list[str] = []
     notes = []
-    for scenario_id in ("SB06_LONG_WAIT", "SB07_EMPTY_HALL", "SB08_PERIPHERAL_SPEAKER"):
-        runs = [_scenario_run(godot, scenario_id, root / f"{scenario_id}_{k}", jitter) for k, jitter in enumerate((0, 25, 0))]
+    for scenario_id in PULSE_SCENARIOS:
+        runs = [results[f"{scenario_id}_{k}"] for k in range(3)]
         hashes = {r.journal_sha256 for r in runs}
         if len(hashes) != 1:
             problems.append(f"{scenario_id} is not deterministic with the pulse on: {sorted(h[:12] for h in hashes if h)}")
@@ -494,9 +543,7 @@ def pulse_checks(godot: str, root: Path) -> tuple[list[str], str]:
             if [a for a in speech if a["tick"] < 660 * 6]:
                 problems.append("SB-08: Robot R spoke before it was addressed (talk between visitors is not for it)")
         notes.append(f"{scenario_id} {r.journal_sha256[:12]}")
-    fake = [_scenario_run(godot, "SB06_LONG_WAIT", root / f"SB06_fake_{k}", jitter, model="fake") for k, jitter in enumerate((0, 25))]
-    records = root / "SB06_fake_0" / "sidecar" / "decision_records.jsonl"
-    fake.append(_scenario_run(godot, "SB06_LONG_WAIT", root / "SB06_fake_replay", model=f"replay:{records}"))
+    fake = [results["SB06_fake_0"], results["SB06_fake_1"], results["SB06_fake_replay"]]
     if len({r.journal_sha256 for r in fake}) != 1:
         problems.append("SB-06 with the fake model and the pulse is not deterministic or not replayable: "
                         f"{[(r.journal_sha256 or '')[:12] for r in fake]}")
@@ -506,20 +553,36 @@ def pulse_checks(godot: str, root: Path) -> tuple[list[str], str]:
     return problems, "; ".join(notes) + f"; SB06 fake model {(fake[0].journal_sha256 or '')[:12]} x2 and replayed"
 
 
-def npc_model_checks(godot: str, root: Path) -> tuple[list[str], str]:
+def npc_specs() -> tuple[dict[str, dict], dict[str, dict], tuple]:
+    """G3c-1 runs: SB-04 with fake-model NPCs three times (one with random sidecar delays), the
+    canary runs of SB-04 and SB-05; second phase: SB-04 replayed from the first run's records.
+    Also returns the canary's (marked configs, goals, labels): the scan must look for the very
+    markers the canary runs were given."""
+    from range_service.configs import load_and_check
+    from range_service.eval import canary
+
+    first = {name: {"scenario": "SB04_POLITE_BID", "jitter": jitter, "model": "fake"}
+             for name, jitter in (("SB04_npc_a", 0), ("SB04_npc_b", 25), ("SB04_npc_c", 0))}
+    cs, _ = load_and_check()
+    marking = canary.marked_configs(cs)
+    marked = marking[0]
+    for scenario_id in ("SB04_POLITE_BID", "SB05_RAMP_VS_STAIRS"):
+        first[f"canary_{scenario_id}"] = {"scenario": scenario_id, "model": "fake", "configs": marked}
+    second = {"SB04_npc_replay": {"scenario": "SB04_POLITE_BID",
+                                  "model": "replay:{root}/SB04_npc_a/sidecar/decision_records.jsonl"}}
+    return first, second, marking
+
+
+def npc_model_checks(results: dict, root: Path, marking: tuple) -> tuple[list[str], str]:
     """G3c-1: NPCs model-driven (fake model) are deterministic and replayable; the canary finds
     no private goal or evaluator label outside an NPC's own labelled prompt line."""
     from range_service import contracts
-    from range_service.configs import load_and_check
     from range_service.eval import canary
     from range_service.eval.runner import read_journal
 
     problems: list[str] = []
-    runs = {}
-    for name, jitter in (("SB04_npc_a", 0), ("SB04_npc_b", 25), ("SB04_npc_c", 0)):
-        runs[name] = _scenario_run(godot, "SB04_POLITE_BID", root / name, jitter, model="fake")
+    runs = {name: results[name] for name in ("SB04_npc_a", "SB04_npc_b", "SB04_npc_c", "SB04_npc_replay")}
     records = root / "SB04_npc_a" / "sidecar" / "decision_records.jsonl"
-    runs["SB04_npc_replay"] = _scenario_run(godot, "SB04_POLITE_BID", root / "SB04_npc_replay", model=f"replay:{records}")
     hashes = {name: r.journal_sha256 for name, r in runs.items()}
     if len(set(hashes.values())) != 1:
         problems.append(f"SB-04 with model-driven NPCs is not deterministic or not replayable: "
@@ -542,11 +605,12 @@ def npc_model_checks(godot: str, root: Path) -> tuple[list[str], str]:
                     if json.loads(line)["agent_id"] != "robot_r")
     if not npc_calls:
         problems.append("SB-04 with --model fake: no NPC made a model call (NPCs are not model-driven)")
-    cs, _ = load_and_check()
-    marked, goals, labels = canary.marked_configs(cs)
+    marked, goals, labels = marking
     for scenario_id in ("SB04_POLITE_BID", "SB05_RAMP_VS_STAIRS"):
         out = root / f"canary_{scenario_id}"
-        _scenario_run(godot, scenario_id, out, model="fake", configs=marked)
+        if isinstance(results[f"canary_{scenario_id}"], Exception):
+            problems.append(f"canary {scenario_id}: {results[f'canary_{scenario_id}']}")
+            continue
         cast = marked.items["scenarios"][scenario_id]["cast"]
         npcs = {a for a, e in cast.items() if not (e["persona"] == "robot_r" or e["controller"] == "LLM_AGENT")}
         found = canary.scan_run(out, {a: e["persona"] for a, e in cast.items()}, goals, labels, npcs)
@@ -560,18 +624,34 @@ def scenario_checks(godot: str) -> int:
     from range_service import contracts
     from range_service.eval.runner import RunError, read_journal
 
+    import time as _time
+
     root = Path(tempfile.mkdtemp(prefix="scenario_runs_"))
     problems: list[str] = []
     try:
         runs = {"SB04_a": ("SB04_POLITE_BID", 0, True), "SB04_b": ("SB04_POLITE_BID", 25, True),
                 "SB04_no_pose": ("SB04_POLITE_BID", 0, False), "SB05": ("SB05_RAMP_VS_STAIRS", 0, True)}
-        results = {}
-        for name, (scenario_id, jitter, posing) in runs.items():
-            try:
-                results[name] = _scenario_run(godot, scenario_id, root / name, jitter, posing)
-            except RunError as exc:
-                print(f"  FAIL  scenario {scenario_id}: {exc}")
-                return EXIT_FAILED
+        # G3d (D-68): every run below is independent, so they run side by side; replays wait for the
+        # run they replay. The same runs and the same checks as before, nothing skipped.
+        first = {name: {"scenario": sid, "jitter": jitter, "posing": posing} for name, (sid, jitter, posing) in runs.items()}
+        npc_first, npc_second, marking = npc_specs()
+        pulse_first, pulse_second = pulse_specs()
+        first.update(npc_first)
+        first.update(pulse_first)
+        second = dict(npc_second, **pulse_second)
+        for spec in second.values():
+            spec["model"] = spec["model"].replace("{root}", root.as_posix())
+        jobs = scenario_jobs()
+        started = _time.monotonic()
+        everything = run_many(godot, root, first, jobs)
+        everything.update(run_many(godot, root, second, jobs))
+        print(f"  {len(everything)} scenario runs, {jobs} at a time, in {_time.monotonic() - started:.0f} s")
+        failed_runs = {n: r for n, r in everything.items() if isinstance(r, RunError)}
+        for name, exc in failed_runs.items():
+            print(f"  FAIL  scenario run {name}: {exc}")
+        if failed_runs:
+            return EXIT_FAILED
+        results = {name: everything[name] for name in runs}
         for name, r in results.items():
             s = r.summary
             if r.exit_code != 0 or r.godot_errors or s["sidecar_problems"] or s["step_timeouts"]:
@@ -606,15 +686,9 @@ def scenario_checks(godot: str) -> int:
                 problems.append(f"SB-05: {robot} did not reach the platform ({states.get(robot)})")
         if "platform_stairs" in states.get("robot_wheeled", {}).get("links_used", ["platform_stairs"]):
             problems.append("SB-05: the wheeled humanoid used the stairs")
-        try:
-            npc_problems, npc_note = npc_model_checks(godot, root)
-        except RunError as exc:
-            npc_problems, npc_note = [f"model-driven NPC runs: {exc}"], ""
+        npc_problems, npc_note = npc_model_checks(everything, root, marking)
         problems += npc_problems
-        try:
-            pulse_problems, pulse_note = pulse_checks(godot, root)
-        except RunError as exc:
-            pulse_problems, pulse_note = [f"pulse scenario runs: {exc}"], ""
+        pulse_problems, pulse_note = pulse_checks(everything)
         problems += pulse_problems
         if problems:
             print(f"  FAIL  {len(problems)} problem(s) in the scenario runs:")
