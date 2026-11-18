@@ -28,6 +28,9 @@ const MAP_ID := "sandbox_flats"
 @export var link_port := 0
 ## Skeleton poses (gestures, gaze, wheels; D-54). Off with -- --no-pose.
 @export var posing := true
+## The presence dial for every robot (G3e, D-74): below 0 = each avatar's configured baseline.
+## -- --presence-amplitude=0.2 (subtle) ... 1.0 (performative). Presentation only.
+@export var presence_amplitude := -1.0
 
 var world: RangeWorld
 var demo: DemoRoutes
@@ -50,6 +53,7 @@ func _ready() -> void:
 	DisplayServer.window_set_title("SOMA RANGE — Sandbox Flats (G1)")
 	world = RangeWorld.new()
 	world.posing_enabled = posing
+	world.presence_override = presence_amplitude
 	add_child(world)
 	if not world.build(MAP_ID, DemoRoutes.body_ids()):
 		push_error("main: could not build %s; see the errors above" % MAP_ID)
@@ -104,6 +108,8 @@ func _read_args() -> void:
 			posing = false
 		elif arg.begins_with("--frame-stats="):
 			frame_stats_path = arg.trim_prefix("--frame-stats=")
+		elif arg.begins_with("--presence-amplitude="):
+			presence_amplitude = clampf(float(arg.trim_prefix("--presence-amplitude=")), 0.0, 1.0)
 
 
 ## Scenario mode: build the scenario's world and cast, link the agents, play the tape, end the run.
@@ -121,6 +127,7 @@ func _run_scenario() -> void:
 		add_child(frame_stats)
 	world = RangeWorld.new()
 	world.posing_enabled = posing
+	world.presence_override = presence_amplitude
 	add_child(world)
 	world.sensing_enabled = false
 	if not world.build(String(scen["map"]), ScenarioPlayer.body_ids(scen, body_overrides)):

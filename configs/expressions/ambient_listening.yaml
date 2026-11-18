@@ -1,0 +1,14 @@
+# Ambient state display (G3e, D-73): in a conversation, not speaking. Blinks come from presence
+# motion (D-74). See ambient_waiting.yaml.
+schema_version: "1.0"
+expression_id: ambient_listening
+meaning: "Listening (status)."
+glyph: {glyph_id: listening_face, visor: "o_o", strip: "o o"}
+light: CALM
+light_pattern: STEADY
+hold_ms: 10000
+ambient:
+  state: LISTENING
+  frame_hz: 1
+  visor_frames: ["o_o"]
+  strip_frames: ["o o"]

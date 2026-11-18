@@ -14,5 +14,6 @@
   "unknown_field": "additionalProperties",
   "unknown_gesture": "enum",
   "rig_unknown_skeleton": "enum",
-  "rig_unknown_axis": "enum"
+  "rig_unknown_axis": "enum",
+  "head_yaw_beyond_85": "maximum"
 }

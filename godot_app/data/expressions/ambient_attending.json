@@ -1,0 +1,28 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/ambient_attending.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "ambient_attending",
+    "meaning": "Present and attentive (status).",
+    "glyph": {
+      "glyph_id": "attending_face",
+      "visor": "._.",
+      "strip": ". ."
+    },
+    "light": "OFF",
+    "light_pattern": "STEADY",
+    "hold_ms": 10000,
+    "ambient": {
+      "state": "ATTENDING",
+      "frame_hz": 1,
+      "visor_frames": [
+        "._."
+      ],
+      "strip_frames": [
+        ". ."
+      ]
+    }
+  }
+}

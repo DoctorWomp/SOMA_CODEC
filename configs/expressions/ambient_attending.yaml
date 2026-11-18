@@ -1,0 +1,15 @@
+# Ambient state display (G3e, D-73): at its post or on its way, nobody in particular to attend to.
+# A face with no light: present, not signalling. Blinks and eye shifts come from presence motion
+# (D-74). See ambient_waiting.yaml.
+schema_version: "1.0"
+expression_id: ambient_attending
+meaning: "Present and attentive (status)."
+glyph: {glyph_id: attending_face, visor: "._.", strip: ". ."}
+light: "OFF"
+light_pattern: STEADY
+hold_ms: 10000
+ambient:
+  state: ATTENDING
+  frame_hz: 1
+  visor_frames: ["._."]
+  strip_frames: [". ."]

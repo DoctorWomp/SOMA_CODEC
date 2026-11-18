@@ -39,13 +39,21 @@ SCENARIO_WORLD_FIELDS = ("schema_version", "scenario_id", "title", "map", "defau
 CAST_WORLD_FIELDS = ("body", "controller", "spawn")
 
 
-def world_view(kind: str, data: dict[str, Any]) -> dict[str, Any]:
-    """The part of a config Godot may see."""
+def world_view(kind: str, data: dict[str, Any], config_set: Any = None) -> dict[str, Any]:
+    """The part of a config Godot may see. A scenario's cast also gets each avatar's presence dial
+    baseline (G3e, D-74), resolved here from its persona and directive: a number, never the persona."""
     if kind != "scenarios":
         return data
     view = {k: data[k] for k in SCENARIO_WORLD_FIELDS if k in data}
     view["cast"] = {avatar_id: {k: entry[k] for k in CAST_WORLD_FIELDS}
                     for avatar_id, entry in data["cast"].items()}
+    if config_set is not None:
+        from range_service.agents.presence_dial import baseline   # noqa: PLC0415
+
+        for avatar_id, entry in data["cast"].items():
+            view["cast"][avatar_id]["presence_amplitude"] = baseline(
+                entry, config_set.items["personas"][entry["persona"]], config_set.items["directives"],
+                config_set.items["pulse"]["pulse"])
     return view
 
 
@@ -69,7 +77,7 @@ def expected_files(config_dir: Path = CONFIGS_DIR) -> tuple[dict[Path, str], lis
     for kind in EXPORTED_KINDS:
         for config_id, data in sorted(config_set.items[kind].items()):
             source_rel = config_set.files[(kind, config_id)]
-            out[GODOT_DATA_DIR / kind / f"{config_id}.json"] = render(kind, source_rel, world_view(kind, data))
+            out[GODOT_DATA_DIR / kind / f"{config_id}.json"] = render(kind, source_rel, world_view(kind, data, config_set))
     return out, []
 
 

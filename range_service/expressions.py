@@ -67,9 +67,15 @@ def can_show(body: dict[str, Any], expression: dict[str, Any]) -> bool:
     return refusal(body, expression) is None
 
 
-def available(body: dict[str, Any], catalog: dict[str, dict[str, Any]]) -> list[str]:
-    """Expression ids this body can show, sorted."""
-    return sorted(eid for eid, e in catalog.items() if can_show(body, e))
+def available(body: dict[str, Any], catalog: dict[str, dict[str, Any]], include_ambient: bool = False) -> list[str]:
+    """Expression ids this body can show, sorted. Ambient state displays (G3e, D-73) are left out
+    unless asked for: the runtime shows them from the agent's own state; models never choose them."""
+    return sorted(eid for eid, e in catalog.items() if can_show(body, e) and (include_ambient or "ambient" not in e))
+
+
+def ambient_for(body: dict[str, Any], catalog: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """Ambient state -> the expression id this body shows for it (G3e, D-73); {} without a Beacon."""
+    return {e["ambient"]["state"]: eid for eid, e in sorted(catalog.items()) if "ambient" in e and can_show(body, e)}
 
 
 def catalog_problems(catalog: dict[str, dict[str, Any]], all_bodies: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
@@ -90,6 +96,29 @@ def catalog_problems(catalog: dict[str, dict[str, Any]], all_bodies: dict[str, d
                             "shown on its own (D-14)")
         if all_bodies and not any(can_show(b, e) for b in all_bodies.values()):
             problems.append("no body in configs/bodies/ can show this expression")
+        problems += _ambient_problems(eid, e, catalog)
         if problems:
             found[eid] = problems
+    return found
+
+
+def _ambient_problems(eid: str, e: dict[str, Any], catalog: dict[str, dict[str, Any]]) -> list[str]:
+    """G3e (D-73): an ambient display shows a status with no gesture (it may last minutes), has a
+    frame loop for every glyph form it has, and each state has one entry. Frame rate <= 3 Hz is in
+    the contract (D-14)."""
+    amb = e.get("ambient")
+    if amb is None:
+        return []
+    found = []
+    if "gesture" in e:
+        found.append("an ambient display has no gesture: it is a status shown for as long as the state lasts")
+    glyph = e.get("glyph") or {}
+    for form, key in (("visor", "visor_frames"), ("strip", "strip_frames")):
+        if form in glyph and key not in amb:
+            found.append(f"ambient.{key} is missing for the glyph's {form} form")
+        if form not in glyph and key in amb:
+            found.append(f"ambient.{key} given but the glyph has no {form} form")
+    same = sorted(other for other, o in catalog.items() if other != eid and o.get("ambient", {}).get("state") == amb["state"])
+    if same:
+        found.append(f"ambient state {amb['state']} is also shown by {', '.join(same)}: one entry per state")
     return found

@@ -62,6 +62,19 @@ static func refusal(body: Dictionary, expression: Dictionary) -> String:
 	return ""
 
 
+## The glyph loop this body plays for an ambient expression (G3e, D-73): rendering only; observers
+## perceive the glyph id. Empty for a static glyph.
+static func glyph_frames(body: Dictionary, expression: Dictionary) -> PackedStringArray:
+	var amb: Dictionary = expression.get("ambient", {})
+	var key := "visor_frames" if glyph_display(body) == "VISOR" else "strip_frames"
+	return PackedStringArray(amb.get(key, []))
+
+
+## Frames per second of a glyph loop, at most MAX_FLASH_HZ (D-14; the contract already caps it).
+static func frame_hz(expression: Dictionary) -> float:
+	return minf(float(expression.get("ambient", {}).get("frame_hz", 0.0)), MAX_FLASH_HZ)
+
+
 ## The glyph text this body shows for an expression ("" if none).
 static func glyph_text(body: Dictionary, expression: Dictionary) -> String:
 	if not expression.has("glyph"):

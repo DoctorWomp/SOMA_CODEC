@@ -236,17 +236,20 @@
       "robot_r": {
         "body": "wheeled_humanoid",
         "controller": "LLM_AGENT",
-        "spawn": "spawn_robot"
+        "spawn": "spawn_robot",
+        "presence_amplitude": 0.5
       },
       "visitor_y": {
         "body": "human_walker",
         "controller": "SCRIPTED",
-        "spawn": "spawn_talker"
+        "spawn": "spawn_talker",
+        "presence_amplitude": 0.5
       },
       "visitor_z": {
         "body": "human_walker",
         "controller": "SCRIPTED",
-        "spawn": "spawn_edge"
+        "spawn": "spawn_edge",
+        "presence_amplitude": 0.5
       }
     }
   }

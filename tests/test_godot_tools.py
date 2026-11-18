@@ -40,7 +40,9 @@ def test_scenario_exports_are_world_only():
         data = json.loads(text)["data"]
         assert "evaluator_only" not in data and "measure" not in data
         for entry in data["cast"].values():
-            assert set(entry) == {"body", "controller", "spawn"}
+            # G3e (D-74): plus the presence dial's resolved number, never the persona or directive.
+            assert set(entry) == {"body", "controller", "spawn", "presence_amplitude"}
+            assert isinstance(entry["presence_amplitude"], float) and 0.0 <= entry["presence_amplitude"] <= 1.0
         for value in scenario["evaluator_only"].values():
             if isinstance(value, str):
                 assert value not in text

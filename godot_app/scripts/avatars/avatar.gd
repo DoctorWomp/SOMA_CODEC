@@ -6,6 +6,12 @@ extends CharacterBody3D
 ##
 ## Movement happens only in the fixed physics step (60 Hz). Avatars move along their
 ## facing direction and turn at a limited rate, turning on the spot when facing away.
+##
+## The head (G3e, D-72): a body with a neck (the legged and wheeled humanoids, config `head`) has
+## a head yaw and pitch that are world state, like position: they turn toward the gaze target at
+## the neck's speed, within its limits, every physics tick, and the sight cone, the direction of a
+## gesture and the visor's visibility follow them. A body without a neck (the quadrupeds, people
+## until rig step C) keeps its head fixed to the body (head_yaw = head_pitch = 0).
 
 signal goal_reached(avatar: Avatar)
 
@@ -17,6 +23,7 @@ const STUCK_WINDOW_TICKS := 180
 const STUCK_MIN_PROGRESS_M := 0.05
 const GESTURE_DURATION_TICKS := RigSpec.GESTURE_BASE_TICKS   # 1.5 s at tempo 1; tempo divides it (D-56)
 const GAZE_HOLD_TICKS := 180              # a LOOK_AT holds the head on its target for 3 s
+const AMBIENT_HOLD_TICKS := 1 << 40        # an ambient display is held until replaced (D-73)
 ## Local avoidance (D-42): RVO on the world's shared avoidance map, so bodies of every size
 ## steer around each other even though each size plans paths on its own navigation map.
 const AVOID_MARGIN_M := 0.15
@@ -57,7 +64,11 @@ var _direct_velocity := Vector3.ZERO
 var _turn_yaw := 0.0
 var _gesture := {}                   # {"gesture", "event_id", "start_tick", "duration", "until_tick", "amplitude", "tempo"}
 var _previous_gesture := {}          # the gesture the current one replaced, while it fades out
-var _gaze := {}                      # {"target_id" or "point", "until_tick"}: where the head looks (presentation)
+var _gaze := {}                      # {"target_id" or "point", "until_tick"}: the head's target (world state with a neck, D-72)
+var head_yaw := 0.0                  # host-owned head yaw relative to the body, radians, positive left (D-29, D-72)
+var head_pitch := 0.0                # host-owned head pitch, radians, positive up
+var neck := {}                       # {} = no neck; else {"yaw", "pitch_min", "pitch_max", "speed"} in radians
+var presence_baseline := 0.5         # the presence dial's configured baseline (G3e, D-74), 0 subtle ... 1 performative
 var _expression := {}                # {"expression_id", "event_id", "until_tick", "glyph_id", "light", ...}
 var _last_expression_tick := -1000
 var _avoid_rid: RID
@@ -83,6 +94,12 @@ func setup(id: String, body_config: Dictionary, appearance := {}) -> void:
 	max_accel = float(motion["max_accel_m_s2"])
 	max_turn_rate = float(motion["max_turn_rate_rad_s"])
 	nav_mask = Layers.nav_mask_for(body_config)
+	var head: Dictionary = body_config.get("head", {})
+	if bool(head.get("neck", false)):
+		neck = {"yaw": deg_to_rad(float(head["yaw_limit_deg"])),
+			"pitch_min": deg_to_rad(float(head["pitch_limit_deg"]["min"])),
+			"pitch_max": deg_to_rad(float(head["pitch_limit_deg"]["max"])),
+			"speed": deg_to_rad(float(head["turn_speed_deg_s"]))}
 
 	collision_layer = Layers.AVATARS
 	collision_mask = Layers.collision_mask_for(body_config)
@@ -280,8 +297,9 @@ func gesture_layers(tick: int) -> Array:
 	return out
 
 
-## Turn the head toward another avatar (an id) or a point, for `hold_ticks`. Presentation only
-## (D-54): it changes the pose, never what anyone perceives, and nothing is journaled.
+## Turn the head toward another avatar (an id) or a point, for `hold_ticks`. With a neck this is
+## world state (D-72): the head turns in the physics step and the sight cone follows it. Without
+## one it only poses the body (D-54); LOOK_AT turns such a body itself (action gate).
 func look_toward(target, hold_ticks := GAZE_HOLD_TICKS) -> void:
 	if world == null:
 		return
@@ -304,8 +322,66 @@ func gaze_point(tick: int):
 	return SenseModel.sample_points(other)["HEAD"]
 
 
+func has_neck() -> bool:
+	return not neck.is_empty()
+
+
+## The yaw the head (and its sight cone) faces, in world terms (D-29).
+func head_world_yaw() -> float:
+	return wrapf(rotation.y + head_yaw, -PI, PI)
+
+
+## The head's yaw relative to the body that would face `point` (unclamped), radians.
+func head_yaw_toward(point: Vector3) -> float:
+	var v := point - global_position
+	return wrapf(atan2(-v.x, -v.z) - rotation.y, -PI, PI)
+
+
+## The head turns toward the gaze target (or back to the front) at the neck's speed, clamped to its
+## limits: deterministic world state, updated after the body moved (D-72).
+func _update_head(delta: float) -> void:
+	if neck.is_empty() or world == null:
+		return
+	var want := Vector2.ZERO
+	var point = gaze_point(world.clock.tick)
+	if point != null:
+		var eye := SenseModel.sensor_origin(self)
+		var v: Vector3 = point - eye
+		var flat := Vector2(v.x, v.z).length()
+		if flat > 0.05:
+			want.x = clampf(wrapf(atan2(-v.x, -v.z) - rotation.y, -PI, PI), -float(neck["yaw"]), float(neck["yaw"]))
+			want.y = clampf(atan2(v.y, flat), float(neck["pitch_min"]), float(neck["pitch_max"]))
+	var step := float(neck["speed"]) * delta
+	head_yaw = move_toward(head_yaw, want.x, step)
+	head_pitch = move_toward(head_pitch, want.y, step)
+
+
+## The presence dial now (G3e, D-74), 0 subtle ... 1 performative: the command-line override, else
+## the zone's override, else the configured baseline. G5 hook: HORIZON adapts it here (EXPRESSION_
+## PRINCIPLES §5; range_service/agents/presence_dial.py adapt()). Presentation only: it scales the
+## ambient display and presence motion and never changes what the world simulates.
+func presence_amplitude() -> float:
+	if world == null:
+		return presence_baseline
+	if world.presence_override >= 0.0:
+		return world.presence_override
+	var zone := world.zone_at(global_position)
+	if zone.has("presence_amplitude"):
+		return float(zone["presence_amplitude"])
+	return presence_baseline
+
+
+## Whether the Beacon shows an ambient state display now (G3e, D-73): presence motion lives with it.
+func showing_ambient(tick: int) -> bool:
+	return bool(active_expression(tick).get("ambient", false))
+
+
 ## Pose the skeleton for `tick` (called by the world after every avatar moved, if posing is on).
 func update_pose(tick: int) -> void:
+	var b := beacon()
+	if b != null:
+		b.amplitude = presence_amplitude()
+		b.seed_value = hash([avatar_id, world.seed_value if world != null else 0])
 	if model != null and "poser" in model and model.poser != null:
 		(model.poser as Poser).update(self, tick)
 
@@ -335,14 +411,18 @@ func show_expression(expression: Dictionary, event_id: String, amplitude := -1.0
 	_last_expression_tick = tick
 	current_expression = String(expression["expression_id"])
 	var glyph_text := BeaconRules.glyph_text(body, expression)
+	# An ambient state display (G3e, D-73) stays until the next expression replaces it.
+	var hold_ticks := AMBIENT_HOLD_TICKS if expression.has("ambient") \
+		else int(roundf(float(expression["hold_ms"]) * SimClock.TICK_HZ / 1000.0))
 	_expression = {"expression_id": current_expression, "event_id": event_id,
-		"until_tick": tick + int(roundf(float(expression["hold_ms"]) * SimClock.TICK_HZ / 1000.0)),
+		"until_tick": tick + hold_ticks, "ambient": expression.has("ambient"),
 		"glyph_id": String(expression["glyph"]["glyph_id"]) if expression.has("glyph") else "",
 		"glyph_text": glyph_text, "light": String(expression["light"]),
 		"light_pattern": String(expression["light_pattern"])}
 	var b := beacon()
 	if b != null:
-		b.show_expression(glyph_text, String(expression["light"]), String(expression["light_pattern"]))
+		b.show_expression(glyph_text, String(expression["light"]), String(expression["light_pattern"]),
+			BeaconRules.glyph_frames(body, expression), BeaconRules.frame_hz(expression))
 	return "OK"
 
 
@@ -419,6 +499,7 @@ func _physics_process(delta: float) -> void:
 				dir = _safe_velocity.normalized()
 			wanted_speed = minf(_safe_velocity.length(), wanted_speed)
 	_steer(dir, wanted_speed, delta)
+	_update_head(delta)
 	_track_progress()
 
 

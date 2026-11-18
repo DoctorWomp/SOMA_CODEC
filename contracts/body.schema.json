@@ -347,6 +347,52 @@
           }
         }
       }
+    },
+    "head": {
+      "description": "G3e (D-72): head-anchored sensing. neck true: the head's yaw and pitch are host-owned world state that turn within these limits at this speed, and the sight cone, the direction of a gesture and the visor's visibility follow the head (hearing stays omnidirectional). neck false: the sensor head is fixed to the body, which turns instead (the quadrupeds, D-56). Without the block: no neck.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "neck"
+      ],
+      "properties": {
+        "neck": {
+          "type": "boolean"
+        },
+        "yaw_limit_deg": {
+          "description": "Head yaw either way from the body's facing; at most 85 (D-54).",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 85
+        },
+        "pitch_limit_deg": {
+          "description": "Head pitch: min looks down (negative), max looks up.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "min",
+            "max"
+          ],
+          "properties": {
+            "min": {
+              "type": "number",
+              "minimum": -60,
+              "maximum": 0
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 40
+            }
+          }
+        },
+        "turn_speed_deg_s": {
+          "description": "How fast the head turns (also the rig's gaze speed).",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 720
+        }
+      }
     }
   }
 }

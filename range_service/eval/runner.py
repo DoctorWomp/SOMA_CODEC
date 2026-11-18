@@ -87,6 +87,8 @@ class RunOptions:
     render_preset: str = "v0"          # rendered runs: a RENDER_PRESETS name (G3d)
     frame_stats: bool | None = None    # None = on for rendered runs; True also records headless frames
     sample_vram: bool | None = None    # None = for LIVE, rendered or llama runs (nvidia-smi once a second)
+    presence: str | None = None        # G3e (D-74): the presence dial for every robot (subtle/default/performative/0..1)
+    presence_value: float | None = None   # resolved from `presence` by check_options
 
 
 @dataclass
@@ -117,6 +119,13 @@ def check_options(opts: RunOptions, cs: ConfigSet) -> dict[str, Any]:
         raise RunError(f"unknown scenario {opts.scenario_id!r}; see configs/scenarios/")
     if opts.mode not in ("STEPPED", "LIVE"):
         raise RunError("mode must be STEPPED or LIVE")
+    if opts.presence is not None:
+        from range_service.agents.presence_dial import resolve   # noqa: PLC0415
+
+        try:
+            opts.presence_value = resolve(opts.presence, cs.items["pulse"]["pulse"])
+        except ValueError as exc:
+            raise RunError(str(exc)) from exc
     if opts.render_preset not in RENDER_PRESETS:
         raise RunError(f"unknown render preset {opts.render_preset!r}; use one of {', '.join(RENDER_PRESETS)}")
     if opts.resolution is not None and not re.fullmatch(r"\d{3,5}x\d{3,5}", opts.resolution):
@@ -151,6 +160,8 @@ def godot_command(opts: RunOptions, scenario: dict[str, Any], run_dir: Path, por
         cmd.append("--no-pose")
     if _frame_stats_on(opts):
         cmd.append(f"--frame-stats={(run_dir / 'frames.json').as_posix()}")
+    if opts.presence_value is not None:
+        cmd.append(f"--presence-amplitude={opts.presence_value:g}")
     return cmd
 
 
@@ -245,6 +256,8 @@ def manifest(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: in
         })
     settings: dict[str, Any] = {"run_mode": opts.mode, "model": opts.model[-200:], "tokenizer": "approx_chars_v1",
                                 "jitter_ms": opts.jitter_ms, "headless": opts.headless}
+    if opts.presence is not None:
+        settings["presence_amplitude"] = opts.presence_value
     if not opts.headless:
         settings["render_preset"] = opts.render_preset
         settings["resolution"] = opts.resolution or DEFAULT_RESOLUTION

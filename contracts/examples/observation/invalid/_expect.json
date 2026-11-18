@@ -14,5 +14,7 @@
   "unknown_validity_reason": "enum",
   "unknown_visible_part": "enum",
   "wrong_frame": "const",
-  "wrong_value_for_kind": "additionalProperties"
+  "wrong_value_for_kind": "additionalProperties",
+  "head_yaw_without_pitch": "dependentRequired",
+  "head_turned_round": "maximum"
 }

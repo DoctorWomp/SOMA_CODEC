@@ -238,21 +238,36 @@ func _execute(agent: Avatar, action: String, args: Dictionary) -> Dictionary:
 			agent.navigate_to(dest)
 			return ok
 		"TURN_TO", "LOOK_AT":
+			if args.has("yaw_rad"):
+				agent.turn_to(float(args["yaw_rad"]))
+				return ok
+			var who: Avatar = null
+			var at: Vector3
 			if args.has("target_id"):
-				var who := resolve(agent, args["target_id"])
+				who = resolve(agent, args["target_id"])
 				if who == null:
 					return {"reason_code": "TARGET_UNKNOWN"}
-				var v := who.global_position - agent.global_position
-				agent.turn_to(atan2(-v.x, -v.z))
-				if action == "LOOK_AT":
-					agent.look_toward(who.avatar_id)
-			elif args.has("yaw_rad"):
-				agent.turn_to(float(args["yaw_rad"]))
+				at = who.global_position
 			else:
 				var p: Dictionary = args["point"]
-				agent.turn_to(atan2(-(float(p["x"]) - agent.global_position.x), -(float(p["z"]) - agent.global_position.z)))
-				if action == "LOOK_AT":
-					agent.look_toward(Vector3(float(p["x"]), float(p.get("y", agent.sensor_mount_height)), float(p["z"])))
+				at = Vector3(float(p["x"]), float(p.get("y", agent.sensor_mount_height)), float(p["z"]))
+			var face_yaw := atan2(-(at.x - agent.global_position.x), -(at.z - agent.global_position.z))
+			if action == "TURN_TO":
+				agent.turn_to(face_yaw)   # TURN_TO turns the body
+				return ok
+			# LOOK_AT (G3e, D-72): a body with a neck turns its head first, and its body only when the
+			# target is beyond the neck's range and the body is not moving: MOVE_TO keeps its own
+			# heading while the head looks elsewhere (the head then stops at its limit). A body
+			# without a neck turns itself, as before.
+			if who != null:
+				agent.look_toward(who.avatar_id)
+			else:
+				agent.look_toward(at)
+			if not agent.has_neck():
+				agent.turn_to(face_yaw)
+			elif absf(agent.head_yaw_toward(at)) > float(agent.neck["yaw"]) \
+					and (agent.mode == Avatar.Mode.IDLE or agent.mode == Avatar.Mode.TURN):
+				agent.turn_to(face_yaw)
 			return ok
 		"EXPRESS":
 			var addressee = null

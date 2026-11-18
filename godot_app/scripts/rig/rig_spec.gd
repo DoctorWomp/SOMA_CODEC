@@ -134,7 +134,9 @@ static func for_body(body: Dictionary) -> Dictionary:
 		"base": "LEGS" if kind == "LEGGED_HUMANOID" else ("WHEELS" if kind == "WHEELED_HUMANOID" else "QUADRUPED"),
 		"arm_module": arm_module,
 		"joints": joints,
-		"head_turn_speed": deg_to_rad(float(rig.get("head_turn_speed_deg_s", default_speed))),
+		# With a neck the head is world state and turns at the head block's speed (G3e, D-72).
+		"head_turn_speed": deg_to_rad(float(body.get("head", {}).get("turn_speed_deg_s",
+			rig.get("head_turn_speed_deg_s", default_speed)))),
 		"amplitude": _range(rig.get("gesture_amplitude", {})),
 		"tempo": _range(rig.get("gesture_tempo", {})),
 	}

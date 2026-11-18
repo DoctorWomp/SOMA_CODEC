@@ -67,10 +67,11 @@
       "$ref": "common.schema.json#/$defs/light_state"
     },
     "light_pattern": {
-      "description": "SLOW_PULSE is 0.5 Hz; nothing flashes faster than 3 Hz (D-14).",
+      "description": "SLOW_PULSE is 0.5 Hz; SWEEP moves the light across the display at 0.5 Hz (G3e); nothing flashes faster than 3 Hz (D-14).",
       "enum": [
         "STEADY",
-        "SLOW_PULSE"
+        "SLOW_PULSE",
+        "SWEEP"
       ]
     },
     "hold_ms": {
@@ -78,6 +79,49 @@
       "type": "integer",
       "minimum": 500,
       "maximum": 10000
+    },
+    "ambient": {
+      "description": "G3e (D-73): an ambient state display, chosen by the runtime from the agent's own state (never by a model), shown until replaced. The world sees one expression change; the frames are rendering only. At most 3 frames per second (D-14). Not offered to models.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "frame_hz"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "WAITING",
+            "THINKING",
+            "CONSIDERING",
+            "LISTENING",
+            "ATTENDING"
+          ]
+        },
+        "frame_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 3
+        },
+        "visor_frames": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "pattern": "^[\\x20-\\x7E]{1,8}$"
+          }
+        },
+        "strip_frames": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "pattern": "^[\\x20-\\x7E]{1,5}$"
+          }
+        }
+      }
     }
   },
   "dependentRequired": {

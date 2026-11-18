@@ -1,0 +1,30 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/expressions/ambient_considering.yaml",
+  "kind": "expressions",
+  "data": {
+    "schema_version": "1.0",
+    "expression_id": "ambient_considering",
+    "meaning": "Considering (status).",
+    "glyph": {
+      "glyph_id": "considering_loop",
+      "visor": "(o_ )",
+      "strip": "o  "
+    },
+    "light": "CONSIDERED",
+    "light_pattern": "SLOW_PULSE",
+    "hold_ms": 10000,
+    "ambient": {
+      "state": "CONSIDERING",
+      "frame_hz": 1,
+      "visor_frames": [
+        "(o_ )",
+        "( _o)"
+      ],
+      "strip_frames": [
+        "o  ",
+        "  o"
+      ]
+    }
+  }
+}

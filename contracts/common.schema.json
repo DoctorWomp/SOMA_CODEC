@@ -91,10 +91,11 @@
           "$ref": "#/$defs/light_state"
         },
         "light_pattern": {
-          "description": "Steady or slow pulse; never faster than 3 Hz (D-14).",
+          "description": "Steady, slow pulse or slow sweep (0.5 Hz); never faster than 3 Hz (D-14).",
           "enum": [
             "STEADY",
-            "SLOW_PULSE"
+            "SLOW_PULSE",
+            "SWEEP"
           ]
         },
         "display": {
@@ -423,6 +424,51 @@
             "HAZE_RISES_ON_TARGET"
           ]
         }
+      }
+    },
+    "observer_pose": {
+      "description": "An observer's own pose. yaw_rad is the body's facing (D-29). For a body with a neck (G3e, D-72) head_yaw_rad is the head's yaw relative to the body (positive turns left, like yaw_rad) and head_pitch_rad its pitch (positive looks up); the sight cone follows the head. Bearings in the packet stay relative to the body's facing. Absent for bodies whose sensor head is fixed to the body.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "z",
+        "yaw_rad"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        },
+        "yaw_rad": {
+          "type": "number",
+          "minimum": -6.283185307179586,
+          "maximum": 6.283185307179586
+        },
+        "head_yaw_rad": {
+          "type": "number",
+          "minimum": -1.5,
+          "maximum": 1.5
+        },
+        "head_pitch_rad": {
+          "type": "number",
+          "minimum": -1.1,
+          "maximum": 0.75
+        }
+      },
+      "dependentRequired": {
+        "head_yaw_rad": [
+          "head_pitch_rad"
+        ],
+        "head_pitch_rad": [
+          "head_yaw_rad"
+        ]
       }
     }
   }

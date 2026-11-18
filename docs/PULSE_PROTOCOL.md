@@ -154,4 +154,6 @@ Each body gets a simple battery resource, with a cost per activity and per model
 - No energy model and no idle posture variant yet.
 - Survey cells come from the agent's own position history, not Halo coverage age.
 
+**G3e (D-72, D-73):** glances are `LOOK_AT`s, which now turn a humanoid's head (world state; the sight cone follows it), so a robot glances while it walks; the idle `waiting` breathing is replaced by the ambient state display (waiting, thinking, considering, listening, attending).
+
 **G3d (D-65 to D-67):** zombie time counts only responses linked to the source and accepted by the host, with gaze intervals of the world's 3 s hold (it had counted any decision and "the last gaze target"); the presence loop re-glances once that hold has ended; FN-1 needs a closing line the partner could hear, before the departure, and the departure waits until the host accepts it; the idle budget is debited when a review is admitted, so cancelled and pre-empted reviews count.

@@ -22,7 +22,14 @@ def test_who_can_show_what():
     quad = rules.available(BODIES["quadruped"], CATALOG)
     assert "greeting" not in quad and "acknowledge" not in quad and "stop" not in quad      # no arm, no nod
     assert {"greeting_light", "acknowledge_tilt", "listening", "stop_light", "waiting"} <= set(quad)
-    assert set(rules.available(BODIES["wheeled_humanoid"], CATALOG)) == set(CATALOG)
+    # Ambient displays (G3e, D-73) are never offered to a model; the runtime shows them.
+    assert set(rules.available(BODIES["wheeled_humanoid"], CATALOG)) == {e for e in CATALOG if "ambient" not in CATALOG[e]}
+    assert set(rules.available(BODIES["wheeled_humanoid"], CATALOG, include_ambient=True)) == set(CATALOG)
+    assert set(rules.ambient_for(BODIES["wheeled_humanoid"], CATALOG)) == {"WAITING", "THINKING", "CONSIDERING",
+                                                                          "LISTENING", "ATTENDING"}
+    assert set(rules.ambient_for(BODIES["quadruped"], CATALOG)) == {"WAITING", "THINKING", "CONSIDERING", "LISTENING",
+                                                                   "ATTENDING"}
+    assert rules.ambient_for(BODIES["human_walker"], CATALOG) == {}
     arm = rules.available(BODIES["quadruped_arm"], CATALOG)
     assert {"greeting", "stop"} <= set(arm)        # gripper wave and raised gripper (owner, 2026-11-16)
     assert "acknowledge" not in arm                 # still no nod: no neck on a quadruped
@@ -43,7 +50,9 @@ def test_displays_per_body():
 
 def test_catalog_has_no_strobe_and_no_green_light():
     for e in CATALOG.values():
-        assert e["light_pattern"] in ("STEADY", "SLOW_PULSE") and e["light"] != "GREEN"
+        # SWEEP (G3e, D-73) moves the light at 0.5 Hz; glyph loops run at most 3 frames per second (D-14).
+        assert e["light_pattern"] in ("STEADY", "SLOW_PULSE", "SWEEP") and e["light"] != "GREEN"
+        assert e.get("ambient", {}).get("frame_hz", 0) <= 3
 
 
 def test_catalog_rules_catch_mismatched_glyphs_and_bare_lights():

@@ -12,6 +12,7 @@
         # rendered client at a declared resolution and preset: frame times and peak VRAM in summary.json (G3d)
     uv run python tools/run_scenario.py SB06_LONG_WAIT --no-pulse    # the same run with the pulse off (G3d)
     uv run python tools/compare_runs.py runs/<run A> runs/<run B>      # side by side, from the summaries
+    uv run python tools/run_scenario.py SB06_LONG_WAIT --watch --presence subtle   # the presence dial (G3e)
 
 Modes: STEPPED (default) holds the world at each sample until every agent has answered, so a
 run is exactly repeatable; LIVE never waits (use it to watch responsiveness). No model is ever
@@ -50,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-pulse", action="store_true", help="the pulse protocol off (same as --pulse off)")
     parser.add_argument("--resolution", default=None, help="rendered runs (--watch): WIDTHxHEIGHT, default 1920x1080")
     parser.add_argument("--render-preset", default="v0", help="rendered runs (--watch): v0 or v0_compat")
+    parser.add_argument("--presence", default=None, metavar="LEVEL",
+                        help="the presence dial for every robot (G3e): subtle, default, performative, or 0..1")
     parser.add_argument("--frame-stats", action="store_true",
                         help="record frame times in a headless run too (always on with --watch)")
     parser.add_argument("--no-prewarm", action="store_true",
@@ -78,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
                       godot_args=args.godot_arg, posing=not args.no_pose, npc_model=args.npc_model,
                       prewarm=False if args.no_prewarm else None, pulse="off" if args.no_pulse else args.pulse,
                       resolution=args.resolution, render_preset=args.render_preset,
-                      frame_stats=True if args.frame_stats else None)
+                      frame_stats=True if args.frame_stats else None, presence=args.presence)
     try:
         result = asyncio.run(run_scenario(opts))
     except RunError as exc:

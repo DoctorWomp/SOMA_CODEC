@@ -15,8 +15,10 @@ extends RefCounted
 ##    two-bone IK so the hand reaches the sense model's HAND point (SenseModel.gesture_point) at
 ##    the gesture's peak, halfway through. Amplitude scales the swing; tempo is already in the
 ##    duration. A gesture that replaces one still showing cross-fades from it.
-## 4. Gaze: the head turns toward the avatar's gaze target at the body's head speed, within its
-##    joint limits (head yaw at most ±85°).
+## 4. Gaze: with a neck (G3e, D-72) the head is world state: the Neck joint shows the avatar's
+##    simulated head yaw and pitch (Avatar.head_yaw / head_pitch) and never drives it. Without one
+##    the head turns toward the gaze target at the body's head speed, within its joint limits
+##    (head yaw at most ±85°).
 ##
 ## The quadruped has no neck, like current robot dogs (owner, 2026-11-16). Its gaze and HEAD_TILT
 ## are whole-body poses: the Body joint turns, pitches and rolls the body over planted feet, and
@@ -497,6 +499,17 @@ func _look_joint() -> String:
 
 func _gaze(avatar: Avatar, tick: int, dt: float, pose: Dictionary) -> void:
 	var joint := _look_joint()
+	if family == "HUMANOID" and avatar.has_neck():
+		# Follow the simulated head (D-72): the rig's Neck pitch is positive looking down. While the
+		# ambient display shows, small seeded head adjustments ride on top (G3e, D-74): presentation
+		# only, so they never move the sight cone (a world-side jitter could flicker tracks at its edge).
+		head = Vector2(avatar.head_yaw, -avatar.head_pitch)
+		if avatar.showing_ambient(tick):
+			head += presence_head_offset(float(tick) / SimClock.TICK_HZ, hash([avatar.avatar_id, avatar.world.seed_value]),
+				avatar.presence_amplitude())
+		_add(pose, joint, "yaw", head.x)
+		_add(pose, joint, "pitch", head.y)
+		return
 	var want := Vector2.ZERO
 	var point = avatar.gaze_point(tick)
 	if point != null:
@@ -518,6 +531,35 @@ func _gaze(avatar: Avatar, tick: int, dt: float, pose: Dictionary) -> void:
 	head = Vector2(move_toward(head.x, want.x, turn), move_toward(head.y, want.y, turn))
 	_add(pose, joint, "yaw", head.x)
 	_add(pose, joint, "pitch", head.y)
+
+
+const HEAD_ADJUST_MAX := Vector2(3.0, 2.0)     # degrees of yaw and pitch at amplitude 1 (D-74)
+const HEAD_ADJUST_EVERY_S := Vector2(3.0, 6.0)
+const HEAD_ADJUST_EASE_S := 0.8
+
+
+## A slight head adjustment at time `t_s` (G3e, D-74): a new small offset every 3-6 s (seeded),
+## eased over 0.8 s, at most 3° yaw and 2° pitch times the amplitude. Far below 3 Hz. Radians,
+## (yaw, rig pitch). The neck has room for it: the world's head stops 5° short of the rig's limit.
+static func presence_head_offset(t_s: float, avatar_seed: int, amp: float) -> Vector2:
+	var a := clampf(amp, 0.0, 1.0)
+	var start := 0.0
+	var prev := Vector2.ZERO
+	var cur := Vector2.ZERO
+	for j in 100000:
+		var length := lerpf(HEAD_ADJUST_EVERY_S.x, HEAD_ADJUST_EVERY_S.y, _unit(avatar_seed, 4, j))
+		prev = cur
+		cur = Vector2(_unit(avatar_seed, 5, j) * 2.0 - 1.0, _unit(avatar_seed, 6, j) * 2.0 - 1.0)
+		if t_s < start + length:
+			var w := smoothstep(0.0, HEAD_ADJUST_EASE_S, t_s - start)
+			var v := prev.lerp(cur, w)
+			return Vector2(deg_to_rad(v.x * HEAD_ADJUST_MAX.x * a), deg_to_rad(v.y * HEAD_ADJUST_MAX.y * a))
+		start += length
+	return Vector2.ZERO
+
+
+static func _unit(avatar_seed: int, stream: int, k: int) -> float:
+	return float(hash([avatar_seed, stream, k]) & 0xFFFFFF) / float(0x1000000)
 
 
 ## Gaze plus head gestures stay inside the looking joint's limits (head yaw at most ±85°).

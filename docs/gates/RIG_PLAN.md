@@ -128,6 +128,8 @@ This is the motion half of EXPRESSION_PRINCIPLES §3 ("expression is in motion")
 
 A gaze target and a facing direction are world state. A later observation may report "head oriented toward me" as an observable fact, with no inference (D-13). That would be computed from world state, never by reading bones, and is not part of this plan.
 
+**G3e (D-72):** for the legged and wheeled humanoids the head's yaw and pitch are now world state (body config `head` block): the sight cone, gesture direction and visor follow it, and the rig's Neck shows the simulated head instead of driving it. Small presence adjustments (D-74) stay presentation on top of it. The quadrupeds keep a fixed sensor head.
+
 ## Data and contracts
 
 - A **body config `rig` block** (optional; backward-compatible under D-29's conventions):

@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 COMPLETE (merged 2026-11-17; D-59 APPROVED 2026-11-17) · G3c-2 built 2026-11-18 (D-60, D-61 PROPOSED) · **G3d built 2026-11-18 (draft PR; D-62 to D-70 PROPOSED): G3 complete pending the owner's PC results** · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md), [G3c-2](G3c2_OWNER_CHECKLIST.md), [G3d](G3d_OWNER_CHECKLIST.md)
+**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 COMPLETE (merged 2026-11-17; D-59 APPROVED 2026-11-17) · G3c-2 built 2026-11-18 (D-60, D-61 PROPOSED) · G3d built 2026-11-18 (D-62 to D-70 PROPOSED): G3 complete pending the owner's PC results · **G3e (presence and expression) built 2026-11-18, draft PR; D-71 APPROVED, D-72 to D-74 PROPOSED** · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md), [G3c-2](G3c2_OWNER_CHECKLIST.md), [G3d](G3d_OWNER_CHECKLIST.md), [G3e](G3e_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -303,6 +303,36 @@ What these showed, diagnosed in G3c-2 (D-60): NPC answers failed because MOVE_TO
 **G3 is complete pending the owner's PC results** (the checklist): the rendered SB-04 with F3 + N3 and its frame times and peak VRAM, the pulse on/off comparison, the live bake-off rerun with the render tax, and approval of D-60 to D-70.
 
 **Not in G3d:** a memory retention rule for raw heard speech (D-70 proposes one for the owner); HORIZON layers and the three-body experiment (G5, after G4); lowering C2's deadline (needs the owner's real-time numbers).
+
+## G3e — Presence and expression (built 2026-11-18, draft PR; D-71 APPROVED, D-72 to D-74 PROPOSED)
+
+**Owner direction (2026-11-18):** FIELD_NOTES FN-5 to FN-7 from the G3c-2 watched runs. Color shifting: option (a), intensity through pattern, a playful color tease only as a brief, resolved phrase (D-71). Not in G3e: gaits and foot IK (rig step B), HORIZON layers, adaptive amplitude (G5). Owner steps: [G3e_OWNER_CHECKLIST.md](G3e_OWNER_CHECKLIST.md).
+
+### Plan
+
+| Part | What | Proof |
+|---|---|---|
+| 1 Head (FN-6, D-72) | Head yaw and pitch become host-owned world state: neck limits and turn speed per body config (`head` block; legged and wheeled humanoids have a neck, the quadrupeds keep a fixed sensor head and turn the body). The sight cone, gesture direction and visor visibility follow the head; hearing stays omnidirectional. `LOOK_AT` turns the head first and the body only beyond the neck's range (never while navigating); `TURN_TO` turns the body; `MOVE_TO` keeps its heading. The rig's gaze follows the simulated head. Head pose in the observation packet's own pose (and so in the journal) | Godot tests: a glance while walking (head only, heading kept, speaker enters the sight cone); beyond the neck range the body turns; the quadruped turns its body; behind the head is no longer seen; stepped runs byte-exact; canary and observer filter clean. SB-04 to SB-08 re-run and every journal change explained |
+| 2 Ambient display (FN-5, D-73) | Ambient expressions as catalog data with glyph loops (visor and strip frames, ≤ 3 frames/s); a deterministic map from the agent's own state (activity, model call in flight, an open question, listening) to one ambient expression; one gated EXPRESS per state change; a model-chosen EXPRESS overrides it for its hold time; the frames are rendering only | SB-06: an observer perceives the waiting state from the Beacon alone; the display changes with the activity; no pattern over 3 Hz; gated changes within the rate limit |
+| 3 Presence motion and dial (FN-7, D-74) | Seeded idle signals (blinks, eye shifts, small head adjustments, light breathing), presentation only; one amplitude dial (subtle ↔ performative) from persona, directive and an optional zone override, validated; a documented hook for G5 adaptation | The dial measurably changes amplitude; nothing over 3 Hz at any setting; presence motion never changes the journal |
+| 4 Docs | D-71 to D-74; owner checklist (SB-04, SB-06, SB-07, SB-08 with F3 + N3 at three dial settings); FIELD_NOTES, EXPRESSION_PRINCIPLES §9, CLAUDE.md, README | `tools/check.py --require-godot`; each scenario three times for its journal hash |
+
+### Result
+
+- **Built:** all four parts as planned (D-72 head, D-73 ambient display, D-74 presence motion and dial; color shifting recorded as the owner's decision, D-71).
+- **Journals** (each scenario three times, one with random sidecar delays; one journal each), and why each moved, checked line by line against main and against the head-only commit:
+
+| Scenario | main | G3e | Why |
+|---|---|---|---|
+| SB-04 scripted (Demo, no pulse) | `d9401c3edd17` | `50048b7e3d42` | Only the head pose now in Robot R's packets (`head_yaw_rad`, `head_pitch_rad`): byte-identical once those two fields are removed. Necessary: the packet's own pose carries the head, as asked |
+| SB-05 | `6fe0100bc36b` | `3ef2e2e0e63c` | The same: only the head fields in the three robots' packets |
+| SB-07 | `93d6edb9767c` | `a486ddb7a471` | Head fields; then the ambient display replaces the idle `waiting` breathing (identical once both are removed) |
+| SB-06 | `4269273ce181` | `b5b29006cad4` | Head: the pulse's glances (`LOOK_AT`) now turn the head, not the body, so Robot R's body keeps facing forward and body-relative bearings in its packets shift; some visibility follows the head. Then the ambient display (its EXPRESS changes, what visitors perceive of them, request and observation numbering) |
+| SB-08 | `8aa856e4442c` | `f1f631e031c1` | As SB-06; and Robot R sees the peripheral speaker one sample earlier (its head turns toward the voice) |
+| SB-04 fake model (pulse on) | `e7c3b45e04ab` | `a7854d66f268` | As SB-06 |
+
+- **Pulse metrics unchanged in kind:** zero zombie events and zero FN-1 violations in SB-06 to SB-08; SB-08's glance follows the voice in the same sample.
+- **Needs the owner's PC:** the watched runs ([G3e_OWNER_CHECKLIST.md](G3e_OWNER_CHECKLIST.md)): four scenarios at three dial settings with F3 + N3, with frame times and peak VRAM. None of those scenarios has Robot R walking while someone speaks; glancing while walking is covered by a headless test.
 
 ## Out of scope for G3
 

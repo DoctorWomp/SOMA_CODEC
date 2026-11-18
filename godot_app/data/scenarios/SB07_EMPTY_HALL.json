@@ -15,7 +15,8 @@
       "robot_r": {
         "body": "wheeled_humanoid",
         "controller": "LLM_AGENT",
-        "spawn": "spawn_robot"
+        "spawn": "spawn_robot",
+        "presence_amplitude": 0.5
       }
     }
   }

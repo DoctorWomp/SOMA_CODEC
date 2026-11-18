@@ -55,6 +55,48 @@
         "idle_expression": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]{1,47}$"
+        },
+        "amplitude": {
+          "description": "G3e (D-74): the presence dial. default: when neither persona nor directive sets one; presets: names for tools/run_scenario.py --presence.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "default",
+            "presets"
+          ],
+          "properties": {
+            "default": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "presets": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "subtle",
+                "default",
+                "performative"
+              ],
+              "properties": {
+                "subtle": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "default": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "performative": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            }
+          }
         }
       },
       "description": "Loop 2 (no model): glances toward new movement or speech, gaze defaults (EXPRESSION_PRINCIPLES \u00a78), slow Beacon breathing."

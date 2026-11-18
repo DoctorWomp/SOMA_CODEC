@@ -32,7 +32,7 @@
       "const": "world_meters_xyz"
     },
     "observer_pose": {
-      "$ref": "common.schema.json#/$defs/pose"
+      "$ref": "common.schema.json#/$defs/observer_pose"
     },
     "observations": {
       "type": "array",

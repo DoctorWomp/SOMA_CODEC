@@ -15,17 +15,20 @@
       "robot_quadruped": {
         "body": "quadruped",
         "controller": "SCRIPTED",
-        "spawn": "spawn_stairs_side_1"
+        "spawn": "spawn_stairs_side_1",
+        "presence_amplitude": 0.5
       },
       "robot_legged": {
         "body": "legged_humanoid",
         "controller": "SCRIPTED",
-        "spawn": "spawn_stairs_side_2"
+        "spawn": "spawn_stairs_side_2",
+        "presence_amplitude": 0.5
       },
       "robot_wheeled": {
         "body": "wheeled_humanoid",
         "controller": "SCRIPTED",
-        "spawn": "spawn_stairs_side_3"
+        "spawn": "spawn_stairs_side_3",
+        "presence_amplitude": 0.5
       }
     }
   }

@@ -55,6 +55,9 @@
       "SPEECH",
       "LIGHT"
     ],
+    "head": {
+      "neck": false
+    },
     "rig": {
       "skeleton": "QUADRUPED",
       "arm_module": true,
