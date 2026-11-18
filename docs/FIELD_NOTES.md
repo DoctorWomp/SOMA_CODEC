@@ -53,3 +53,36 @@ Visitors are scripted until G3c-1 makes C1/C2 NPCs model-driven. Robot R's socia
   - In SB-08 it came in the same sample (0 ms, the 0.5 s target met).
   - A wake only for speech that could be to it.
   - Echo and Focus (G5) will tie sounds to sources and rank them.
+
+## 2026-11-18 — G3c-2 watched runs (SB-04, SB-06, SB-07, SB-08) with F3 and N3
+
+**Setup:** G3c-2 on the owner's PC, rendered (`--watch`). The pulse protocol was on: activities, the intent monitor, presence glances and survey. No HORIZON layers.
+
+### Good signs
+
+- **SB-06 (long wait):** Robot R did not interrupt the visitors it was waiting for.
+- **SB-07 (empty hall):** the roaming pace was good: purposeful, no pacing.
+
+### Gaps
+
+| # | What happened | Why | Fixed by | Test that closes it |
+|---|---|---|---|---|
+| FN-5 | **Blank staring while waiting.** Robot R held still with a blank face, so nobody could tell at a glance that it was waiting for someone, or that it was considering something. A person who started a conversation in front of it got no gentle reminder that it was waiting on one of them. | Expressions appear only when a model answer picks `EXPRESS`. Between decisions, nothing shows what the robot is doing. The presence loop drives gaze but not the Beacon. | **G3e (proposed):** an **ambient state display** driven by the current activity and the agent's own state, with no model call: an animated glyph loop and a light pattern per state (EXPRESSION_PRINCIPLES §9). For example, `WAIT_FOR` shows a slow "waiting" loop; a model call in flight shows a "thinking" loop. | In SB-06, an observer can tell from the Beacon alone, without the robot speaking, that it is waiting (glyph and light visible within their sight rules), and the display changes when the activity changes. |
+| FN-6 | **Stiff scanning: the whole body turns to look.** While surveying, and when glancing at a sound, Robot R turns its body instead of its head, and it cannot keep walking one way while looking another. | In today's code a `LOOK_AT` turns the whole body; the head turn is animation only, and the sight cone follows the body (`action_gate.gd`, `observer_filter.gd`). Real humanoid robots usually carry their cameras in the head. | **G3e (proposed):** **head-anchored sensing.** Head yaw and pitch become host-owned world state, with per-body neck limits and turn speeds. The sight cone and the visor's visibility follow the head. `LOOK_AT` turns the head first and the body only beyond the neck's range, so the robot can glance while walking. Bodies without a neck (the quadruped's fixed sensor head) keep turning the body. A decision, since the rig is presentation-only today (D-54, D-56). | While walking a straight line, the legged and wheeled humanoids glance at a voice off to the side with the head only: the body keeps its heading and the speaker enters the sight cone. The quadruped turns its body. Stepped runs stay deterministic. |
+| FN-7 | **Too little expression overall.** In SB-04 and SB-08 Robot R is stiff and its face is often blank. People read others' state through small, constant signals: eyes shifting, blinking, small adjustments. The robot has no face or muscles, but its posture, glyphs and lights can stand in for those cues, alone or alongside speech. | No idle motion layer and no ambient expression yet (FN-5). | **G3e (proposed):** small, low-amplitude **presence motion**: glyph "blinks" and eye shifts, slight head and posture adjustments, light breathing, with an **amplitude dial** from subtle to performative. **G5:** the dial adapts to the person and the situation (EXPRESSION_PRINCIPLES §5). | Watched runs read as alive but not busy. The dial has a configured baseline per persona or directive, and changing it visibly changes amplitude. At no setting does it flash faster than 3 Hz or touch the world (the pose never changes what the world simulates). |
+
+### FN-7: the subtle ↔ performative balance
+
+Owner's direction: too subtle and nobody notices; too performative and it becomes patronizing or overstimulating, especially for observant people. So the amplitude can't be fixed: it has to be dialed per situation. Until HORIZON can read the situation (G5), the baseline comes from configuration (persona, directive, zone), and the adaptation rules of EXPRESSION_PRINCIPLES §5 apply: start small, gauge the response, back off fast, warm up slowly.
+
+### Owner's idea that needs a decision: color shifting
+
+The owner suggested slow color shifting to show uncertainty, with the rate showing intensity (slow is calm, fast is urgent), and color shifts used playfully to disguise intent for humor. Two existing approved rules constrain this:
+- **D-14** gives each public color a meaning, and it retired random-hue "mischievous mode". A hue that drifts between states blurs those meanings: red must keep meaning "stop".
+- **EXPRESSION_PRINCIPLES §6:** expressions show the robot's honest stance, and playful contrast is allowed only in benign, mutual, resolved phrases.
+
+**Proposal:**
+- Show uncertainty and intensity with **pattern, not hue:** pulse rate, a sweep along the strip, brightness. Keep the hue within the current state's palette color, and keep every pattern ≤ 3 Hz.
+- A playful color tease is allowed only as a brief phrase inside an established, mutual, playful exchange, resolved at once (establish → tension → resolve). It never hides a real intent, a safety state or a refusal.
+
+This amends how D-14 is applied, so it needs the owner's decision.
