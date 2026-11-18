@@ -57,7 +57,8 @@ Full details: [docs/BUILD_AND_RUN.md](docs/BUILD_AND_RUN.md).
 - `uv run python tools/run_link_demo.py`: open the Godot demo connected to the Python sidecar.
 - `uv run python tools/run_scenario.py SB04_POLITE_BID [--watch] [--no-pose] [--model llama]`: run a scenario end to end (stepped, Demo policy unless a model is given); writes a run folder under `runs/`. `--no-pose` keeps robots in their rest pose (the journal is the same).
 - `uv run python tools/install_llama.py --check` / `uv run python tools/models.py plan`: the pinned llama-server and the model files on this machine (G3b, D-57).
-- `uv run python tools/bakeoff.py offline` / `live --models F1 F3`: the model bake-off (D-58); results in `results/bakeoff/results.md`.
+- `uv run python tools/bakeoff.py offline` / `live --models F3 --npc-model N3`: the model bake-off (D-58 to D-60); results in `results/bakeoff/results.md`. LIVE runs are real time.
+- `uv run python tools/run_scenario.py SB06_LONG_WAIT [--pulse on|off]`: the pulse protocol scenarios SB-06 to SB-08 (D-61).
 
 Layout: contracts in `contracts/` (see [contracts/README.md](contracts/README.md)), Python in `range_service/`, Godot in `godot_app/` (see [godot_app/README.md](godot_app/README.md)), content in `configs/`, tests in `tests/` and `godot_app/tests/`, scripts in `tools/`.
 

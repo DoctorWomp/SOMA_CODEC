@@ -21,3 +21,12 @@ set's SHA-256, so numbers from different sets are never mixed.
 - **NPC** (40): the visitors' own C1 and C2 decisions from the same SB-04 runs, with NPCs model-driven by the fake model. Each NPC prompt holds **its own** private goal, on its labelled line (D-51); nothing else private (tested). SB-05 adds no NPC prompts: its cast is Robot R in three bodies.
 
 Set hashes are taken over LF line endings, so a Windows checkout (CRLF) gives the same hash: prompts_v1 is `ee2b7c03be96` (the first bake-off printed `93e215698db0`, the same file with CRLF).
+
+## prompts_v3.jsonl (G3c-2, D-60)
+
+The same composition as v2 (96 prompts: 56 Robot R, 40 NPC), rebuilt after the NPC fixes:
+- C1 prompts show argument formats and a minimal OBSERVATIONS section;
+- every item carries the **answer choices** of its decision (`choices`: perceived tracks, channels, gestures, expressions), so the constrained answer sent offline is the one the run would send;
+- `max_tokens` follows the new output caps (C1 170, C2 220).
+
+v1 and v2 are unchanged: the owner's results name them (`ee2b7c03be96` and `476703d7d4a5`).

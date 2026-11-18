@@ -161,9 +161,11 @@ uv run python tools/models.py download F3 N1            # only what you name; SH
 uv run python tools/run_scenario.py SB04_POLITE_BID --model llama          # configs/inference.yaml
 uv run python tools/run_scenario.py SB04_POLITE_BID --model llama:F3       # another catalog model
 uv run python tools/run_scenario.py SB04_POLITE_BID --model llama --npc-model none   # NPCs on templates (Option B)
-uv run python tools/bakeoff.py offline                  # bake-off on bakeoff/prompts_v2.jsonl (D-58, D-59)
+uv run python tools/bakeoff.py offline                  # bake-off on bakeoff/prompts_v3.jsonl (D-58 to D-60)
 uv run python tools/bakeoff.py live --models F3 F1 --npc-model N3   # Option C: Robot R under NPC load, promotions, VRAM
 ```
+
+**The pulse (G3c-2, D-61):** SB-06, SB-07 and SB-08 run the pulse protocol (robots that stay visibly present between decisions): `uv run python tools/run_scenario.py SB06_LONG_WAIT --watch`. It is on whenever a scenario asks for it or a model drives Robot R; `--pulse on|off` overrides. A run folder adds `pulse.jsonl` and a `pulse` section in `summary.json`; settings are in `configs/pulse.yaml`. LIVE runs now run in real time (one SB-04 is 90 s).
 
 **Two servers (G3c-1, D-59):** `--model llama` starts Robot R's server and the NPC server from `configs/inference.yaml` (Option C). Visitors promoted to C1/C2 decide through the NPC model; `--npc-model` chooses it (`auto` follows `--model`; `none` keeps the templates; `fake` and `replay:` drive NPCs without a model). If the NPC server cannot start or would not fit the VRAM budget, the run uses one server (Option B) and says why. A run folder adds `inference_events.jsonl`, `promotions.jsonl` and `slot_snapshots/`.
 

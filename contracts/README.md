@@ -20,6 +20,7 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 | `journal_entry` | evaluator | One line of the JSONL event journal |
 | `decision_record` | evaluator | One agent decision: triggers, context sizes per section, model calls with responses (record and replay), the requests it made (G3a, D-49–D-51) |
 | `map`, `persona`, `body`, `scenario`, `preset`, `expression`, `directive` | config | The YAML content files in `configs/` |
+| `pulse` | config | The pulse protocol settings, configs/pulse.yaml (G3c-2, D-61) |
 | `model_catalog`, `inference`, `model_registry` | config | The pinned model files, the real-model settings and the local (git-ignored) list of model files on this machine (G3b, D-57) |
 
 `x-audience` in each file records its audience. **Agent-facing contracts can never carry evaluator-only fields** (private goals, scenario labels, delivery lists; the list is `common.schema.json#/$defs/evaluator_only_field`). Tests insert every one of those names at every level of every agent-facing example and check that each is rejected.
@@ -38,6 +39,7 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 - Rig step A (D-56): optional `amplitude` and `tempo` (`prosody_factor`, 0.5–1.5) on `GESTURE` and `EXPRESS` actions, on catalog entries and on the `GESTURE_PERFORMED` journal payload (only when given); an optional `rig` block in `body`. All backward-compatible, versions unchanged.
 - G3b (D-57): new config contracts `model_catalog` (configs/models/catalog.yaml), `model_registry` (the git-ignored models/registry.local.yaml) and `inference` (configs/inference.yaml). No message contract changed.
 - G3c-1 (D-59): `inference` gains optional `vram` (budget, reserve, compute buffer, FALLBACK/WARN) and `personas` (snapshots, prewarm, system_prefix); `decision_record` model calls gain optional `server`, `slot` and `prefix_state`, and `activity` is reserved (null only) for G3c-2. All backward-compatible, versions unchanged.
+- G3c-2 (D-60, D-61): `decision_record.activity` now holds an activity (`common` `activity_kind`, `wake_condition`, with `horizon` reserved for G5); new trigger values `WAKE_CONDITION` and `PULSE_REVIEW`; optional model-call field `other_server_busy_ms`; scenario fields `pulse` and `post_duty`; new config contract `pulse`. All backward-compatible, versions unchanged.
 - Gestures come from one shared vocabulary, `common.schema.json#/$defs/gesture`, used by `body`, `action_request` and `observation` (D-36). Expression channels likewise (`SPEECH`, `FACE`, `LIGHT`).
 
 ## Examples

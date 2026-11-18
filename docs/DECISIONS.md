@@ -68,6 +68,7 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-58 | G3b-2 as built: priority scheduler (Option B) and the bake-off tool | APPROVED (owner, 2026-11-16) |
 | D-59 | G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming | APPROVED (owner, 2026-11-17) |
 | D-60 | Usable model-driven NPCs and real-time LIVE runs (G3c-2 part A) | PROPOSED (2026-11-17) |
+| D-61 | The pulse protocol as built: activities, intent monitor, presence loop, pulse triage, survey (G3c-2 part B) | PROPOSED (2026-11-18) |
 
 ---
 
@@ -862,4 +863,84 @@ No answer failed for an unknown target or a disallowed action. The causes:
   - per-layer KV heads and separate SWA head sizes are used where the header has them.
   - Example: T1's NPC server, 255 → 64 MiB of KV.
 - **Measured values are kept per model file and settings** in `models/vram.local.yaml` (git-ignored) and replace the estimate next time, so an estimate can no longer send a run to Option B when the measured use fits.
+
+## D-61 — The pulse protocol as built (G3c-2 part B)
+**Status:** PROPOSED (2026-11-18), G3c-2 part B. Builds [PULSE_PROTOCOL.md](PULSE_PROTOCOL.md) §2–§7 and §10 (the G3c row of §11); FIELD_NOTES FN-1 and FN-2 are its acceptance tests. Settings in `configs/pulse.yaml` (contract `pulse`). Owner checklist: [gates/G3c2_OWNER_CHECKLIST.md](gates/G3c2_OWNER_CHECKLIST.md).
+
+- **When it runs.** For agents that decide for themselves: Robot R as an `LLM_AGENT`, and model-driven NPCs. It runs when the scenario says `pulse: true` (SB-06, SB-07, SB-08), or when a model drives Robot R (`--model fake`, `replay:`, `llama…`). `tools/run_scenario.py --pulse on|off|auto` overrides this. Scripted NPCs and the SB-05 robots never run it.
+  - **The scripted default path is unchanged:** SB-04 with the Demo policy and no model keeps journal `d9401c3edd17` (checked on every run of `tools/check.py`).
+  - Runs with a model now include the pulse, so the fake-model SB-04 journal changed from `29998045c3f9` to `ef0b5b36891d` (intended; deterministic and replayable).
+- **Activities (§3).**
+  - The answer may carry an optional `"activity": {"kind", "target_id", "commitment_id", "review_after_s", "wake_if"}`. Kinds are the palette (`CONVERSE`, `WAIT_FOR`, `ATTEND`, `SURVEY`, `TRAVEL_TO`, `ASSIST`, `OBSERVE`, `RETURN_TO_POST`, `RECHARGE`, `REST`).
+  - **Wake conditions are only those today's senses can check:** `target_within_m`, `target_lost`, `addressed`, `speech_heard`, `new_track`, `commitment_due`; the review time works as its own alarm.
+  - **`horizon` (Focus, Prism, Haze) is a reserved, documented slot** in `common.schema.json#/$defs/wake_condition` for G5. The runtime refuses it, and no answer schema offers it.
+  - An answer without an activity works exactly as before. The runtime then derives one from the actions, recorded `DERIVED`, never passed off as chosen:
+    - a promise → `WAIT_FOR` that person;
+    - speech to someone → `CONVERSE`;
+    - `MOVE_TO` a point → `TRAVEL_TO`; to a person → `ASSIST`;
+    - otherwise the current activity is `CONTINUED`, unless the conversation is over or the promise is kept;
+    - with nothing at all: `ATTEND` if the agent has a task or post duty, `SURVEY` if it has neither.
+  - `decision_record.activity` (reserved in G3c-1) now holds it, with `source` `CHOSEN`, `DERIVED` or `CONTINUED`.
+  - **Contract changes, all backward-compatible:** decision-record triggers `WAKE_CONDITION` and `PULSE_REVIEW`; scenario fields `pulse` and `post_duty`; config contract `pulse`. Versions are unchanged.
+  - The extra output is short, and the activity's target ids are limited to perceived tracks like every other id (D-60).
+- **Loop 3, the intent monitor** (`agents/pulse.py`). On every packet it checks the current activity's wake conditions (near-zero cost), each with its own cooldown (`cooldowns_s`).
+  - A firing condition becomes a `WAKE_CONDITION` trigger in the existing event-driven runtime; otherwise nothing happens.
+  - `target_within_m` fires when the person comes within range, not if they already were.
+  - Promises: in pulse mode `COMMITMENT_DUE` is no longer raised on every packet. It is rate-limited, and **a promised person is "busy" while they, or anyone within 2 m of them, spoke to someone else in the last 20 s.** That is observable only, never a judgment about them; Robot R does not interrupt a conversation it is not part of (SB-06).
+- **FN-1, holding a conversation (agent policy, not the host's action gate).**
+  - A conversation is open when the partner is perceived within `conversation.range_m` (3.5 m), there was no goodbye, and the silence is shorter than `silence_limit_s` (20 s).
+  - During it, an answer that moves away (a `MOVE_TO` farther from the partner or to someone else, or an activity of `TRAVEL_TO`, `SURVEY`, `RETURN_TO_POST` or `REST`) needs a closing or excuse line in the same answer.
+  - Otherwise it gets the same single repair as invalid output (the error is quoted). If the repair also walks away, the runtime stays engaged: `LOOK_AT` the partner and `WAIT`, logged `FN1_HELD`. Rule-based policies have such moves dropped.
+  - The host's safety stops always win; this is the agent's choice, not a world rule.
+  - Every run counts `FN1_VIOLATION` (must be 0).
+- **Loop 2, presence (no model):**
+  - **a glance** (`LOOK_AT`, through the normal action path, journaled and gated) toward a new person or new speech within `glance_range_m` (12 m), even while moving;
+  - for a voice it cannot see, a glance toward a point 3 m along the voice's bearing;
+  - rate-limited per source (8 s); never while the agent itself is speaking;
+  - gaze defaults from EXPRESSION_PRINCIPLES §8: the gaze rests on the conversation partner while listening; a hold is renewed every `gaze_hold_s` (4 s), and the world holds a `LOOK_AT` 3 s; after a glance away during a conversation the gaze returns within `return_to_partner_s` (1 s);
+  - while idle, the `waiting` expression once: a slow 0.5 Hz Beacon pulse, well under 3 Hz (D-14);
+  - own senses only.
+  - Not built: an idle *posture* change. The rig's posture layer has no idle variant yet (rig step B).
+- **Loop 4, the pulse (§4–§7).**
+  - At review time, a deterministic triage compares a digest of the agent's own senses with the last review: people newly in or out of view; speech that could be to it (talk it only overhears does not count, D-12); a promise due; the person it is with out of view; no progress toward a destination; the conversation over.
+  - **Nothing changed → `CONTINUE`** (no model call, logged in `pulse.jsonl`), and the next review backs off **15 → 30 → 60 s, never later than the activity's own review time**. Any meaningful change resets it.
+  - Seeded jitter (±10%, from the run seed, so stepped runs stay exact).
+  - An idle budget of 2 model reviews per minute.
+  - NPCs skip reviews while their recent calls already use ≥70% of their deadline (`npc_busy_share`), so the pulse adds no load to a busy NPC server.
+  - **A change → a `PULSE_REVIEW` decision** with a sitrep in the decision section (§6), one line each:
+    - the activity and how long it has run;
+    - the last interaction;
+    - the last review and the number of quiet checks since;
+    - open promises and when they were made;
+    - what changed.
+  - Repeated CONTINUEs are that one line and never accumulate (§7).
+  - **Pulse calls are background calls:** in the scheduler they rank after every real call (and after C1). In live runs a real event pre-empts a pending pulse review: the sidecar cancels it and decides the real event.
+- **SURVEY and RETURN_TO_POST, no HORIZON.**
+  - With no task and no post duty, the agent roams cell by cell (5 m cells of the main floor) toward the one it has observed least recently. "Observed" means its own position was within 6 m of the cell.
+  - It skips cells observed in the last 90 s (no pacing), and cells within 3 m of a perceived person (it never approaches people to look busy).
+  - It never starts a move while someone is close enough to talk to, pauses 10 s at each cell, and goes back to post after 120 s away.
+  - The moves are deterministic `MOVE_TO`s, no model. Haze-guided survey is G5.
+- **New scenarios** (from the agent's senses only; evaluator labels stay evaluator-only):
+  - **SB-06 Long wait:** Visitor Y asks for help, then "one moment", and talks with Visitor Z for about three minutes. The Demo policy gained one rule for this: "one moment" → "Of course, take your time. I'll be here." plus a promise.
+  - **SB-07 Empty hall:** Robot R alone, with no task and no post duty.
+  - **SB-08 Peripheral speaker:** two visitors talk behind Robot R, then one asks it a question.
+- **Metrics per run** (`summary.json` `pulse`, from `pulse.jsonl`; simulated time):
+  - wake latency;
+  - **zombie time:** something relevant within sensing range that got no glance (and wasn't already being looked at) and no decision within 1 s, capped at 10 s per event;
+  - glance latency (FN-2);
+  - model reviews per minute;
+  - CONTINUE versus review counts;
+  - review context size (first, last, max);
+  - survey moves and returns to post;
+  - FN-1 held and violations.
+- **Measured in the cloud (Demo policy unless stated; stepped; plumbing for anything model-related).**
+  - **SB-06:** promise at 5 s, no interruption for about three minutes, Y helped at 186 s, 0 promises left open; 7 decisions, 5 CONTINUEs, 19 glances, 0 zombie time.
+  - **SB-07:** survey moves to unseen cells, back to post at 126 s, no cell revisited within 90 s, no speech.
+  - **SB-08:** a glance toward the unseen voice in the same sample (0 ms, the 0.5 s target met); no wake for talk between the visitors; a wake, CONVERSE and an answer for the question.
+  - **SB-04 with the pulse:** a glance at the approaching Y with the gaze back on X 1 s later, WAIT_FOR Y after the promise, then keeping it.
+  - **Determinism:** each pulse scenario three times (one with random sidecar delays) gives one journal; SB-06 with the fake model twice and replayed gives one journal.
+  - **Long idle (unit test, 30 simulated minutes):** model calls fall to 0 per minute while quiet, recover when someone passes, and the context stays flat.
+  - **Live with a 2.3 s fake model:** no stale actions, 0 FN-1 violations.
+  - **BLOCKED on the owner's PC:** how it looks and feels with F3 and N3 (watched runs), and real model reviews per minute.
+- **Not in G3c-2:** the energy model (G5–G6); HORIZON-informed wake conditions and Focus-driven glances (G5); an idle posture variant (rig step B); CDC-mode scaling of the pulse interval (D-09, G5); FN-3 and FN-4 (G5).
 

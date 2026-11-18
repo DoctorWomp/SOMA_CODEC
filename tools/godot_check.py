@@ -30,6 +30,10 @@ Steps:
               every private goal and evaluator label: an NPC's own marker only in its own
               labelled prompt line, no marker anywhere else; every agent's contexts only mention
               tracks from its own observation packets.
+              G3c-2 (D-61): the pulse scenarios SB-06 (long wait), SB-07 (empty hall) and SB-08
+              (peripheral speaker) three times each (one with random sidecar delays): one journal
+              per scenario; SB-06 again with the fake model and replayed. Their pulse metrics
+              must show the expected behavior (FN-1, FN-2, few calls while waiting, no pacing).
               Runs with --filter only if the filter is part of "scenario_determinism".
 
 For the link tests, two sidecars run on 127.0.0.1 with a fresh session token for the duration
@@ -431,6 +435,77 @@ def _scenario_run(godot: str, scenario_id: str, out: Path, jitter_ms: int = 0, p
                                                posing=posing, model=model, configs=configs)))
 
 
+def _sent(run_dir: Path, agent: str) -> list[dict]:
+    out = []
+    for line in (run_dir / "sidecar" / "sidecar_sent.jsonl").read_text(encoding="utf-8").splitlines():
+        env = json.loads(line)
+        if env["type"] == "agent.action_request" and env["payload"]["agent_id"] == agent:
+            out.append(dict(env["payload"], tick=env["tick_id"]))
+    return out
+
+
+def pulse_checks(godot: str, root: Path) -> tuple[list[str], str]:
+    """G3c-2: the pulse scenarios are deterministic and show what PULSE_PROTOCOL §10 asks for."""
+    problems: list[str] = []
+    notes = []
+    for scenario_id in ("SB06_LONG_WAIT", "SB07_EMPTY_HALL", "SB08_PERIPHERAL_SPEAKER"):
+        runs = [_scenario_run(godot, scenario_id, root / f"{scenario_id}_{k}", jitter) for k, jitter in enumerate((0, 25, 0))]
+        hashes = {r.journal_sha256 for r in runs}
+        if len(hashes) != 1:
+            problems.append(f"{scenario_id} is not deterministic with the pulse on: {sorted(h[:12] for h in hashes if h)}")
+        r = runs[0]
+        s = r.summary
+        if r.exit_code != 0 or r.godot_errors or s["sidecar_problems"] or s["step_timeouts"] or s["tape"]["refused"]:
+            problems.append(f"{scenario_id}: exit {r.exit_code}, errors {r.godot_errors[:2]}, sidecar {s['sidecar_problems'][:2]}, "
+                            f"refused tape {s['tape']['refused'][:1]}")
+        _, found = check_agent_records(r.run_dir)
+        problems += [f"{scenario_id}: {p}" for p in found]
+        m = s.get("pulse", {}).get("robot_r")
+        if m is None:
+            problems.append(f"{scenario_id}: no pulse metrics (is the pulse on?)")
+            continue
+        if m["fn1_violations"]:
+            problems.append(f"{scenario_id}: Robot R left an open conversation without closing it (FN-1)")
+        if m["zombie"]["ms"] > 0:
+            problems.append(f"{scenario_id}: zombie time {m['zombie']['ms']} ms (something relevant got no response)")
+        speech = [a for a in _sent(r.run_dir, "robot_r") if a["action"] == "SPEAK"]
+        if scenario_id == "SB06_LONG_WAIT":
+            waiting = [a for a in speech if 6 * 10 * 6 < a["tick"] < 1840 * 6]      # after the promise, before Y returns
+            if s["agents"]["robot_r"]["open_commitments"] != 0 or len(speech) < 2:
+                problems.append("SB-06: Robot R should promise to wait and then help Y")
+            if waiting:
+                problems.append(f"SB-06: Robot R interrupted Y while Y was busy: {waiting[0]['args'].get('text')!r}")
+            if m["decisions"] > 10 or m["continues"] < 3 or m["glances"] < 3:
+                problems.append(f"SB-06: expected few decisions, quiet CONTINUEs and glances while waiting: {m}")
+        if scenario_id == "SB07_EMPTY_HALL":
+            moves = [json.loads(line) for line in (r.run_dir / "pulse.jsonl").read_text(encoding="utf-8").splitlines()]
+            cells = [(e["at_ms"], (e["destination"]["x"], e["destination"]["z"])) for e in moves if e["event"] == "SURVEY"]
+            paced = [c for i, (t0, c) in enumerate(cells) for t1, c2 in cells[:i] if c2 == c and t0 - t1 < 90_000]
+            if m["survey_moves"] < 5 or m["returns_to_post"] < 1 or paced or speech:
+                problems.append(f"SB-07: expected a survey without pacing, a return to post and no speech "
+                                f"(moves {m['survey_moves']}, returns {m['returns_to_post']}, paced {paced[:2]})")
+        if scenario_id == "SB08_PERIPHERAL_SPEAKER":
+            lat = m["glance_latency_ms"]["max"]
+            answered = [a for a in speech if a["tick"] >= 660 * 6]
+            if lat is None or lat > 500 or m["glances"] < 1:
+                problems.append(f"SB-08: a glance toward a new speaker should follow within 0.5 s (max {lat})")
+            if not answered:
+                problems.append("SB-08: Robot R should answer the question addressed to it")
+            if [a for a in speech if a["tick"] < 660 * 6]:
+                problems.append("SB-08: Robot R spoke before it was addressed (talk between visitors is not for it)")
+        notes.append(f"{scenario_id} {r.journal_sha256[:12]}")
+    fake = [_scenario_run(godot, "SB06_LONG_WAIT", root / f"SB06_fake_{k}", jitter, model="fake") for k, jitter in enumerate((0, 25))]
+    records = root / "SB06_fake_0" / "sidecar" / "decision_records.jsonl"
+    fake.append(_scenario_run(godot, "SB06_LONG_WAIT", root / "SB06_fake_replay", model=f"replay:{records}"))
+    if len({r.journal_sha256 for r in fake}) != 1:
+        problems.append("SB-06 with the fake model and the pulse is not deterministic or not replayable: "
+                        f"{[(r.journal_sha256 or '')[:12] for r in fake]}")
+    for r in fake:
+        _, found = check_agent_records(r.run_dir)
+        problems += [f"SB06 fake: {p}" for p in found]
+    return problems, "; ".join(notes) + f"; SB06 fake model {(fake[0].journal_sha256 or '')[:12]} x2 and replayed"
+
+
 def npc_model_checks(godot: str, root: Path) -> tuple[list[str], str]:
     """G3c-1: NPCs model-driven (fake model) are deterministic and replayable; the canary finds
     no private goal or evaluator label outside an NPC's own labelled prompt line."""
@@ -455,6 +530,9 @@ def npc_model_checks(godot: str, root: Path) -> tuple[list[str], str]:
             problems.append(f"{name}: exit {r.exit_code}, errors {r.godot_errors[:2]}, sidecar {s['sidecar_problems'][:2]}")
         if any(st["fallbacks"] for st in s["agents"].values()):
             problems.append(f"{name}: model fallbacks {[(a, st['fallbacks']) for a, st in s['agents'].items()]}")
+        fn1 = (s.get("pulse") or {}).get("robot_r", {}).get("fn1_violations")
+        if fn1:
+            problems.append(f"{name}: Robot R left an open conversation without a closing line {fn1} time(s) (FN-1)")
         _, found = check_agent_records(r.run_dir)
         problems += [f"{name}: {p}" for p in found]
         for number, entry in enumerate(read_journal(r.run_dir / "journal.jsonl"), start=1):
@@ -533,6 +611,11 @@ def scenario_checks(godot: str) -> int:
         except RunError as exc:
             npc_problems, npc_note = [f"model-driven NPC runs: {exc}"], ""
         problems += npc_problems
+        try:
+            pulse_problems, pulse_note = pulse_checks(godot, root)
+        except RunError as exc:
+            pulse_problems, pulse_note = [f"pulse scenario runs: {exc}"], ""
+        problems += pulse_problems
         if problems:
             print(f"  FAIL  {len(problems)} problem(s) in the scenario runs:")
             for line in problems[:20]:
@@ -542,6 +625,7 @@ def scenario_checks(godot: str) -> int:
               f"sidecar delays, one with posing off); SB-05 robots on the platform by the links their bodies allow")
         print(f"  PASS  model-driven NPCs (fake model): {npc_note}; canary clean in SB-04 and SB-05; "
               f"NPCs and Robot R perceive only through the observer filter")
+        print(f"  PASS  pulse (D-61): {pulse_note}; FN-1 held, FN-2 glances within 0.5 s, no zombie time, no pacing")
         return EXIT_PASSED
     finally:
         shutil.rmtree(root, ignore_errors=True)

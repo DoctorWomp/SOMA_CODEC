@@ -2,6 +2,40 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
+## G3c-2 — Usable NPCs, real-time live runs, the pulse protocol (2026-11-17 to 2026-11-18; draft PR)
+
+`docs/gates/G3_PLAN.md` (G3c-2), D-60 and D-61 PROPOSED, `docs/gates/G3c2_OWNER_CHECKLIST.md`. D-59 APPROVED (owner, 2026-11-17); the owner's G3c-1 results recorded in G3_PLAN and D-59.
+
+### Fixed (part A, D-60; each reproduced first, with a regression test)
+- MOVE_TO and LOOK_AT arguments were not constrained: llama.cpp ignores `properties` beside a `oneOf`. The answer schema is flattened.
+- NPC answers were cut off at the output caps: shorter text for NPC tiers in the answer schema; caps C1 170 and C2 220 tokens.
+- C1 prompts now show argument formats and who is near (C1 budget 500 → 780 tokens). Answers can only name perceived tracks, allowed channels and the body's gestures and expressions.
+- Headless LIVE runs ran about 15× faster than real time (`--fixed-fps`): LIVE now runs in real time.
+- The world refused every answer slower than 1 s as stale: the stale window is now 6.5 s.
+- The VRAM estimate follows llama.cpp's cache layout (sliding-window, shared-KV and hybrid layers); measured values are kept per model file.
+
+### Added (part A)
+- `bakeoff/prompts_v3.jsonl` (v1 and v2 unchanged).
+- Live bake-off:
+  - `--repeat`;
+  - Robot R actions accepted vs stale;
+  - NPC queue, prefill and generation;
+  - share of NPC call time with Robot R's server busy;
+  - event-loop lag;
+  - promotion latency split into to-call, call and to-action;
+  - LIVE_COLD without snapshots;
+  - LIVE_LOAD leaves an NPC slot free.
+- A pre-warm never takes the last free slot.
+
+### Added (part B, D-61: the pulse protocol)
+- Optional `activity` with wake conditions in model answers (backward-compatible), derived when absent, recorded in `decision_record.activity`. A reserved `horizon` wake condition for G5.
+- The intent monitor, the pulse with triage, backoff, seeded jitter, idle budget and a time-explicit sitrep. Pulse reviews are background calls and give way to real events.
+- FN-1: no walking away from an open conversation without a closing line (one repair, then stay engaged).
+- The presence loop: glances toward new speech or movement (and unseen voices), gaze defaults, slow Beacon breathing.
+- SURVEY and RETURN_TO_POST from the agent's own observation history.
+- `configs/pulse.yaml` (contract `pulse`); scenario fields `pulse` and `post_duty`; `tools/run_scenario.py --pulse`.
+- Scenarios SB-06 (long wait), SB-07 (empty hall) and SB-08 (peripheral speaker); per-run pulse metrics (`pulse.jsonl`, `summary.json`); checks in `tools/godot_check.py` step 6.
+
 ## G3c-1 — Two model servers, model-driven NPCs (2026-11-17; draft PR)
 
 Owner approvals and the first bake-off results come first; then the bake-off fixes; then G3c-1 (`docs/gates/G3_PLAN.md`, D-59 PROPOSED, `docs/gates/G3c_OWNER_CHECKLIST.md`).
