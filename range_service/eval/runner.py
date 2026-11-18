@@ -65,6 +65,8 @@ class RunOptions:
     prewarm: bool | None = None   # None = configs/inference.yaml personas.prewarm
     configs: ConfigSet | None = None   # tests: a checked config set to use instead of configs/
     npc_load_streams: int = 0          # bake-off: synthetic NPC calls kept running on the NPC server
+    snapshots: bool | None = None      # None = configs/inference.yaml personas.snapshots (bake-off LIVE_COLD: False)
+    pulse: str = "auto"                # G3c-2: on, off, or auto (on if the scenario asks or a model drives Robot R)
     npc_load_prompts: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -108,7 +110,12 @@ def godot_command(opts: RunOptions, scenario: dict[str, Any], run_dir: Path, por
     # RANGE plays no sound yet: the dummy audio driver avoids audio-device errors on machines without one.
     cmd = [opts.godot, "--path", str(GODOT_PROJECT), "--audio-driver", "Dummy", *opts.godot_args]
     if opts.headless:
-        cmd += ["--headless", "--fixed-fps", "60"]
+        cmd.append("--headless")
+        # STEPPED: simulate as fast as the agents allow (the world waits for them anyway). LIVE must
+        # run in real time: with --fixed-fps a headless world ran ~15x faster than the clock, so
+        # every model answer arrived "stale" and NPC calls starved the sidecar (G3c-2, D-60).
+        if opts.mode == "STEPPED":
+            cmd += ["--fixed-fps", "60"]
     cmd += ["res://scenes/main.tscn", "--", f"--scenario={opts.scenario_id}", f"--run-mode={opts.mode}",
             f"--seed={seed}", f"--journal={(run_dir / 'journal.jsonl').as_posix()}", f"--link-port={port}",
             f"--link-agents={','.join(sorted(scenario['cast']))}", "--quit-when-done"]
@@ -261,26 +268,36 @@ async def _npc_load(models: RunModels, stream: int, prompts: list[dict[str, Any]
         i += 1
         result = await gw.decide(agent_id=f"npc_load_{stream}", tier=LOAD_TIER, prompt=item["prompt"],
                                  prompt_sha256=item["prompt_sha256"], max_tokens=item["max_tokens"],
-                                 allowed_actions=item["allowed_actions"], tick=item["based_on_tick_id"])
+                                 allowed_actions=item["allowed_actions"], tick=item["based_on_tick_id"],
+                                 choices=item.get("choices"))
         for call in result.model_calls:
             out.append({"stream": stream, "item_id": item["item_id"], "outcome": call["outcome"], **call["timings"]})
         await asyncio.sleep(0)
 
 
 def promotion_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Promotion latency (promotion event -> first validated action), cold vs warm (G3c-1).
-    Warm = the first model call found the persona prefix in its slot (WARM or RESTORED)."""
-    def p50(values: list[int]) -> float | None:
-        vals = sorted(values)
+    """Promotion latency, cold vs warm (G3c-1), split at G3c-2 (D-60) into: promotion -> first model
+    call starts (decisions are event-driven, so this includes waiting for a trigger), the first
+    call itself, and promotion -> first action the world accepted. Warm = the first model call
+    found the persona prefix in its slot (WARM or RESTORED)."""
+    def p50(values: list[float]) -> float | None:
+        vals = sorted(v for v in values if v is not None)
         return float(vals[len(vals) // 2]) if vals else None
-    done = [r for r in records if r["status"] == "VALIDATED" and r["first_validated_action_ms"] is not None]
-    warm = [r["first_validated_action_ms"] for r in done
-            if (r["first_model_call"] or {}).get("prefix_state") in ("WARM", "RESTORED")]
-    cold = [r["first_validated_action_ms"] for r in done
-            if (r["first_model_call"] or {}).get("prefix_state") not in ("WARM", "RESTORED")]
-    return {"count": len(records), "validated": len(done), "warm_n": len(warm), "warm_p50_ms": p50(warm),
-            "cold_n": len(cold), "cold_p50_ms": p50(cold),
-            "note": "cold includes calls whose slot state is unknown (fake or replay models have no slots)"}
+
+    def warmth(r: dict[str, Any]) -> str:
+        return "warm" if (r["first_model_call"] or {}).get("prefix_state") in ("WARM", "RESTORED") else "cold"
+    out: dict[str, Any] = {"count": len(records),
+                           "validated": sum(r["status"] == "VALIDATED" for r in records),
+                           "note": "cold includes calls whose slot state is unknown (fake or replay models have no slots)"}
+    for kind in ("warm", "cold"):
+        rows = [r for r in records if r["first_model_call"] is not None and warmth(r) == kind]
+        done = [r for r in rows if r["status"] == "VALIDATED"]
+        out[f"{kind}_n"] = len(done)
+        out[f"{kind}_p50_ms"] = p50([r["first_validated_action_ms"] for r in done])
+        out[f"{kind}_calls_n"] = len(rows)
+        out[f"{kind}_to_first_call_p50_ms"] = p50([r.get("to_first_model_call_ms") for r in rows])
+        out[f"{kind}_first_call_p50_ms"] = p50([(r["first_model_call"] or {}).get("total_ms") for r in rows])
+    return out
 
 
 async def run_scenario(opts: RunOptions) -> RunResult:
@@ -300,7 +317,8 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     details: dict[str, Any] = {}
     tokenizer = None
     try:
-        models = models_from_specs(opts.model, opts.npc_model, run_dir=run_dir, seed=seed, prewarm=opts.prewarm)
+        models = models_from_specs(opts.model, opts.npc_model, run_dir=run_dir, seed=seed, prewarm=opts.prewarm,
+                                   snapshots=opts.snapshots)
     except (ValueError, ProviderError) as exc:
         raise RunError(str(exc)) from exc
     try:
@@ -316,9 +334,12 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     try:
         tokenizer = tokenizer_for(models.focal)
         npc_tokenizer = tokenizer if models.npc is models.focal else tokenizer_for(models.npc)
+        pulse_on = opts.pulse == "on" or (opts.pulse == "auto" and (bool(scenario.get("pulse")) or opts.model != "none"))
+        details["pulse"] = pulse_on
         runtimes = build_runtimes(scenario, cs, gateway=models.focal, body_overrides=opts.body_overrides,
                                   tokenizer=tokenizer, npc_gateway=models.npc, npc_tokenizer=npc_tokenizer,
-                                  prewarm=models.prewarm)
+                                  prewarm=models.prewarm, pulse=cs.items["pulse"]["pulse"] if pulse_on else None,
+                                  seed=seed)
         await snapshot_personas(runtimes, models)            # T5: at scene load, before the world starts
         token = secrets.token_hex(24)
         sidecar = Sidecar(token, {}, record_dir=run_dir / "sidecar", runtimes=runtimes, jitter_ms=opts.jitter_ms)
@@ -347,6 +368,9 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     _write_jsonl(run_dir / "promotions.jsonl", [dict(r, run_mode=opts.mode) for r in promotions])
     if load_records:
         _write_jsonl(run_dir / "npc_load.jsonl", load_records)
+    pulse_rows = [dict(e, agent_id=aid) for aid in sorted(runtimes) for e in runtimes[aid].pulse_log]
+    if pulse_rows:
+        _write_jsonl(run_dir / "pulse.jsonl", pulse_rows)
 
     journal_path = run_dir / "journal.jsonl"
     if not journal_path.is_file():
@@ -359,6 +383,11 @@ async def run_scenario(opts: RunOptions) -> RunResult:
                             "fallback": next((e["reason"] for e in models.events if e["event"] == "OPTION_C_FALLBACK"), None)}
     summary["promotions"] = promotion_summary(promotions)
     summary["npc_load_calls"] = len(load_records)
+    summary["event_loop_lag_ms"] = sidecar.loop_lag_summary()
+    if details.get("pulse"):
+        from range_service.eval.pulse_metrics import pulse_summary   # noqa: PLC0415
+
+        summary["pulse"] = pulse_summary(runtimes, journal, scenario)
     errors = [line for line in lines if line.startswith(("ERROR", "SCRIPT ERROR"))]
     taint = []
     if summary["step_timeouts"]:

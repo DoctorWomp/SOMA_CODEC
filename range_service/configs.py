@@ -41,6 +41,7 @@ KINDS: dict[str, tuple[str, str]] = {
 # Single files directly in configs/: file stem -> (contract, id field). Loaded as kind "<stem>".
 SINGLE_FILES: dict[str, tuple[str, str]] = {
     "inference": ("inference", "inference_id"),
+    "pulse": ("pulse", "pulse_id"),
 }
 
 

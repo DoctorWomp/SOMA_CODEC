@@ -18,7 +18,10 @@ extends Node
 ## to through a group); the gate resolves those on the host side and never tells the agent who
 ## a track really is.
 
-const STALE_AFTER_TICKS := 60
+## 6.5 s: the longest model deadline (C2, 6 s; D-50) plus 0.5 s for the link. It was 60 ticks (1 s),
+## which refused every answer from a model slower than 1 s in a live run, although the gateway
+## allows Robot R 4 s; the gateway itself discards anything later than its deadline (G3c-2, D-60).
+const STALE_AFTER_TICKS := 390
 const RATE_LIMIT := 10
 const ID_PATTERN := "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
 const ACTIONS := ["MOVE_TO", "LOOK_AT", "TURN_TO", "SPEAK", "GESTURE", "WAIT", "YIELD", "INTERACT", "JOIN_QUEUE",

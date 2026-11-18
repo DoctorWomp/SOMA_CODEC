@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 DEFAULT_PRIORITIES = {"FOCAL": 0, "C2": 1, "C1": 2}
+BACKGROUND_PRIORITY = 9          # pulse reviews and synthetic load: after every real call (G3c-2)
 
 
 class Dropped(Exception):
@@ -84,8 +85,9 @@ class SlotScheduler:
             self.pins[agent_id] = len(self.pins)
         return self.pins.get(agent_id)
 
-    async def acquire(self, agent_id: str, tier: str, deadline_at: float) -> int:
-        """Wait for a slot; returns its id. Raises Dropped if the call should not run any more."""
+    async def acquire(self, agent_id: str, tier: str, deadline_at: float, background: bool = False) -> int:
+        """Wait for a slot; returns its id. Raises Dropped if the call should not run any more.
+        ``background`` (a pulse review, G3c-2) ranks after every real call."""
         for old in [w for w in self.waiting if w.agent_id == agent_id]:
             self.waiting.remove(old)
             self.stats["dropped_superseded"] += 1
@@ -101,7 +103,8 @@ class SlotScheduler:
             self.stats["granted"] += 1
             return pinned
         self._seq += 1
-        waiter = _Waiter(self.priorities.get(tier, 9), self.clock(), self._seq, agent_id, deadline_at,
+        waiter = _Waiter(BACKGROUND_PRIORITY if background else self.priorities.get(tier, 9), self.clock(), self._seq,
+                         agent_id, deadline_at,
                          asyncio.get_running_loop().create_future())
         self.waiting.append(waiter)
         self._dispatch()
@@ -114,13 +117,15 @@ class SlotScheduler:
                 self.release(waiter.future.result())   # granted just as we were cancelled: give it back
             raise
 
-    def try_acquire(self, agent_id: str) -> int | None:
-        """A free shared slot right now, or None; never waits, never a pinned slot, and only when
-        nobody is queued (pre-warming must not delay a real call). Prefers the agent's own slot."""
+    def try_acquire(self, agent_id: str, keep_free: int = 1) -> int | None:
+        """A free shared slot right now, or None; never waits, never a pinned slot, only when
+        nobody is queued, and only if ``keep_free`` other shared slots stay free for a real call
+        that may arrive meanwhile (G3c-2: pre-warming must never delay a real call). Prefers the
+        agent's own slot."""
         if self.waiting:
             return None
         free = self._shared_free()
-        if not free:
+        if len(free) <= keep_free:
             return None
         slot = self._pick(agent_id, free)
         self.busy.add(slot)

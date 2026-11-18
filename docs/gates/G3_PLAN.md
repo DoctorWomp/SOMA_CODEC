@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 built 2026-11-17 (draft PR, D-59 PROPOSED) · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md)
+**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 COMPLETE (merged 2026-11-17; D-59 APPROVED 2026-11-17) · G3c-2 built 2026-11-18 (draft PR; D-60, D-61 PROPOSED) · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md), [G3c-2](G3c2_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -216,7 +216,7 @@ VRAM was not measured (the tool said "CPU build": wrong, see below). *Promises k
 - **NPC server:** N3 (Qwen3.5-4B Q4_K_M), KV q8_0. Alternative N1. S1 for background crowd NPCs later.
 - **F2 dropped from the core set** (catalog `EXTRA`). **KV cache default: q8_0.** Recorded in D-58; `configs/inference.yaml` follows.
 
-## G3c-1 — Two servers and model-driven NPCs (built 2026-11-17, draft PR; D-59 PROPOSED)
+## G3c-1 — Two servers and model-driven NPCs (merged 2026-11-17; D-59 APPROVED)
 
 **Owner direction (2026-11-17):** Option C with F3 for Robot R and N3 for NPCs, KV q8_0; fix the four bake-off measurement bugs first; NPC prompts in a new prompt set (v1 unchanged); the pulse protocol is G3c-2, but leave room for it. Owner steps: [G3c_OWNER_CHECKLIST.md](G3c_OWNER_CHECKLIST.md).
 
@@ -237,6 +237,52 @@ VRAM was not measured (the tool said "CPU build": wrong, see below). *Promises k
 **Needs the owner's PC:** Robot R's p50/p95 with and without NPC load, promotion latency warm vs cold, VRAM per server, NPC candidates scored on NPC prompts, and how the model-driven visitors look.
 
 **Next (G3c-2):** the pulse protocol ([PULSE_PROTOCOL.md](../PULSE_PROTOCOL.md) §11): activities with wake conditions (FN-1), the presence loop's glance (FN-2), the triage pulse. `decision_record.activity` is reserved for it.
+
+### G3c-1 result (owner's PC, 2026-11-17)
+
+RTX 4070 Ti SUPER, llama.cpp b12443, prompts_v2 (`476703d7d4a5`).
+
+| Measure | Result |
+|---|---|
+| VRAM measured | F3 7625 MiB, N3 3271 MiB, F1 5461 MiB. F3 + N3 + 2048 reserve = 12944 of 16376 MiB. Header estimate: 22779 (too high) |
+| Robot R prompts (56) | F3 98% final valid; promises 60% flag / 95% behavior. N3 100% valid, 0% / 70% |
+| NPC prompts (40), final valid | N3 40%, N1 30%, S1 10%, F3 85% (F3 75% valid actions) |
+| SB-04 LIVE, Option C, F3 + N3 | Robot R p50 2352 / p95 3495 ms; LIVE_LOAD 3502 (n=1); no deadline misses. NPC calls p50 ≈ 3005 ms in every LIVE mode (C1 deadline 3000), 1007–1163 ms in STEPPED. Robot R 1–3 decisions per LIVE run (8–22 STEPPED). Warm promotion latency only in STEPPED (10218 and 28121 ms, n=2); cold n=0 |
+
+What these showed, diagnosed in G3c-2 (D-60): NPC answers failed because MOVE_TO/LOOK_AT arguments were not actually constrained and answers were cut off at the output caps; the headless LIVE runs ran ~15× faster than real time and refused every answer slower than 1 s as stale, so the LIVE numbers must be measured again.
+
+## G3c-2 — Usable model-driven NPCs, real-time LIVE runs, and the pulse protocol (built 2026-11-18, draft PR; D-60, D-61 PROPOSED)
+
+**Owner direction (2026-11-17):** Part A first: make model-driven NPCs usable and the LIVE runs measure something, each fix with a regression test, reproduced first. Then Part B: the pulse protocol (PULSE_PROTOCOL §11, G3c row), with FN-1 and FN-2 as acceptance tests. Owner steps: [G3c2_OWNER_CHECKLIST.md](G3c2_OWNER_CHECKLIST.md).
+
+### Plan
+
+| Part | What | Proof |
+|---|---|---|
+| A1 NPC validity | Diagnose the owner's `invalid_answers` by tier; fix what they show; prompts_v3 | Breakdown in D-60; regression tests; T1 offline on v3 |
+| A2 NPC timing | Find where the LIVE time goes; fix; per-call evidence in the live table | Reproduction in the cloud; tests; new columns |
+| A3 LIVE runs | Why Robot R made 1–3 decisions; enough samples; promotion latency split | Real-time LIVE check; `--repeat`; tests |
+| A4 VRAM | Estimate that follows the cache layout; measured values kept | Tests on header layouts and the store |
+| B1–B2 Activities, intent monitor | Optional activity in the answer (backward-compatible); derived default; wake conditions from today's senses only; reserved `horizon` slot | Contract examples; unit tests |
+| B3 FN-1 | Closing line before moving away from an open conversation; one repair; stay engaged | Unit tests with a fake model; `FN1_VIOLATION` = 0 in every pulse run |
+| B4 Presence | Glances (`LOOK_AT`) to new speech or movement, rate-limited; gaze defaults (§8); slow Beacon breathing | SB-08 glance latency; unit tests |
+| B5 Pulse | Triage first; CONTINUE without a model call; backoff, seeded jitter, idle budget; sitrep with time; lowest priority | 30-minute idle unit test; SB-06 |
+| B6 Survey | SURVEY toward least recently observed cells; return to post; no pacing | SB-07 |
+| B7–B8 Scenarios, determinism | SB-06, SB-07, SB-08; metrics per run; 3 runs and a replay | `tools/godot_check.py` step 6 |
+
+### Result
+
+- **Part A (D-60):**
+  - **NPC answers:** MOVE_TO/LOOK_AT arguments were never constrained (a llama.cpp `oneOf` quirk), and answers were cut off at the caps. Fixed; T1 on prompts_v3 NPC prompts: 40/40 valid.
+  - **LIVE runs:** headless LIVE ran ~15× faster than real time, and the world refused every answer slower than 1 s as stale. Both fixed: real time, and a 6.5 s stale window (a host rule for the owner to approve). Robot R in a real-time LIVE run with a 2.3 s model: 11 decisions, all 21 actions accepted.
+  - **Live bake-off:** repeats, per-call evidence, promotion latency split.
+  - **VRAM:** the estimate now follows the cache layout layer by layer, and measured values are kept per model file.
+- **Part B (D-61):** activities, intent monitor, FN-1, presence loop, pulse triage, survey; SB-06 to SB-08 deterministic, with the expected behavior checked on every `tools/check.py` run (numbers in D-61).
+- **Needs the owner's PC:**
+  - the NPC bake-off on prompts_v3 (N3, N1, S1);
+  - the live bake-off in real time with F3 + N3;
+  - watched runs of SB-04, SB-06 and SB-08 to judge FN-1 and FN-2 by eye;
+  - approval of the stale-window change (D-60).
 
 ## Out of scope for G3
 

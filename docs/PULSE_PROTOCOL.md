@@ -1,6 +1,6 @@
 # Pulse Protocol — continuous behavior without continuous prompting
 
-**Status:** design proposal from owner discussion, 2026-11-16. Built at **G3** (activity contract, wake conditions, the deterministic pulse) and **G5** (HORIZON-informed triggers); decisions recorded then.
+**Status:** design proposal from owner discussion, 2026-11-16. **G3c-2 built 2026-11-18** (activities, intent monitor, presence loop, pulse triage, simple survey; D-61 PROPOSED). **G5** adds HORIZON-informed triggers.
 **Related:** [INFERENCE_STRATEGY.md](INFERENCE_STRATEGY.md) (scheduler, tiers) · [CONTEXT_MEMORY_STRATEGY.md](CONTEXT_MEMORY_STRATEGY.md) (fresh assembly, budgets) · [EXPRESSION_PRINCIPLES.md](EXPRESSION_PRINCIPLES.md) · CDC v0.1 (the five assessment questions) · Blueprint §10.4 (schedules and interrupts) · D-09 (CDC modes)
 
 How a robot behaves continuously over time, the way people do, when its language model only "thinks" in discrete steps.
@@ -145,6 +145,11 @@ Each body gets a simple battery resource, with a cost per activity and per model
 
 | Step | Work |
 |---|---|
-| **G3c, or its own step after G3c** | Owner field notes FN-1 and FN-2 ([FIELD_NOTES.md](FIELD_NOTES.md)) are acceptance tests for this step. Activity + wake-condition contract (backward-compatible addition to the action/decision result); the deterministic intent monitor; presence-loop basics using rig step A's gaze and posture (glance at a new sound or movement, idle posture, slow light "breathing"); the pulse with triage, per-trigger cooldowns, backoff, jitter and an idle budget; time fields in the sitrep; lowest-priority scheduling |
-| **G5** | Wake conditions and SURVEY guided by Focus, Prism, Haze and Trail; presence glances driven by Focus |
+| **G3c-2 (built 2026-11-18, D-61)** | Owner field notes FN-1 and FN-2 ([FIELD_NOTES.md](FIELD_NOTES.md)) are acceptance tests for this step. Activity + wake-condition contract (backward-compatible addition to the action/decision result); the deterministic intent monitor; presence-loop basics using rig step A's gaze and posture (glance at a new sound or movement, idle posture, slow light "breathing"); the pulse with triage, per-trigger cooldowns, backoff, jitter and an idle budget; time fields in the sitrep; lowest-priority scheduling |
+| **G5** | Wake conditions and SURVEY guided by Focus, Prism, Haze and Trail (the `horizon` wake condition is reserved in the contract); presence glances driven by Focus; CDC-mode scaling of the pulse interval |
 | **G5–G6** | Energy model; the metrics and scenarios above |
+
+**As built at G3c-2 (D-61):** `configs/pulse.yaml`, `range_service/agents/activity.py` and `pulse.py`, scenarios SB-06 (long wait), SB-07 (empty hall) and SB-08 (peripheral speaker), metrics in each run's `summary.json` and `pulse.jsonl`. Differences from this design:
+- The pulse runs on the agent's own senses only: "Trail difference" is a digest of people in view, speech that could be to it, promises due and progress.
+- No energy model and no idle posture variant yet.
+- Survey cells come from the agent's own position history, not Halo coverage age.

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.soma-range.invalid/v1/scenario.schema.json",
   "title": "Scenario config",
-  "description": "configs/scenarios/*.yaml. Map + cast + exogenous events + what is measured + evaluator-only labels (RANGE_V0_SCOPE §2.6). evaluator_only never reaches any agent prompt.",
+  "description": "configs/scenarios/*.yaml. Map + cast + exogenous events + what is measured + evaluator-only labels (RANGE_V0_SCOPE \u00a72.6). evaluator_only never reaches any agent prompt.",
   "x-audience": "config",
   "type": "object",
   "additionalProperties": false,
@@ -63,7 +63,7 @@
       }
     },
     "events": {
-      "description": "Authored exogenous event tape (Blueprint §13.1).",
+      "description": "Authored exogenous event tape (Blueprint \u00a713.1).",
       "type": "array",
       "maxItems": 256,
       "items": {
@@ -109,6 +109,10 @@
       "items": {
         "$ref": "common.schema.json#/$defs/id"
       }
+    },
+    "pulse": {
+      "description": "G3c-2 (D-61): run the pulse protocol (presence loop, intent monitor, pulse triage, survey) for the agents that decide for themselves, even with the Demo policy. Absent or false: only when a model drives Robot R (tools/run_scenario.py --pulse auto).",
+      "type": "boolean"
     }
   },
   "$defs": {
@@ -172,7 +176,7 @@
           "$ref": "common.schema.json#/$defs/id"
         },
         "pin_cognition": {
-          "description": "Keep this avatar at its persona's cognition level for the whole run (INFERENCE_STRATEGY §3.2).",
+          "description": "Keep this avatar at its persona's cognition level for the whole run (INFERENCE_STRATEGY \u00a73.2).",
           "type": "boolean"
         },
         "task_goal": {
@@ -189,6 +193,10 @@
               "$ref": "common.schema.json#/$defs/point2"
             }
           }
+        },
+        "post_duty": {
+          "description": "G3c-2 (D-61): this agent's job is to attend at its spawn point (ATTEND); without it, and with no task_goal, an idle agent surveys the hall and returns to post on a schedule.",
+          "type": "boolean"
         }
       },
       "allOf": [

@@ -170,10 +170,22 @@ class GatewayResult:
     reason_summary: str | None
     model_calls: list[dict[str, Any]] = field(default_factory=list)
     fallback: dict[str, str] | None = None
+    activity: dict[str, Any] | None = None        # the answer's optional activity, as given (G3c-2)
+    fallback_error: str | None = None             # why the last answer could not be used
 
 
-def parse_output(text: str, allowed_actions: list[str], agent_id: str, tick: int) -> tuple[list[dict[str, Any]] | None, str | None, str | None]:
-    """Parse model text into actions. Returns (actions, reason_summary, error)."""
+def answer_activity(text: str) -> dict[str, Any] | None:
+    """The optional ``activity`` of an answer that parse_output accepted (G3c-2)."""
+    body = text.strip()
+    fenced = _FENCE.match(body)
+    data = json.loads(fenced.group(1) if fenced else body)
+    return data.get("activity") if isinstance(data, dict) else None
+
+
+def parse_output(text: str, allowed_actions: list[str], agent_id: str, tick: int,
+                 allow_activity: bool = False) -> tuple[list[dict[str, Any]] | None, str | None, str | None]:
+    """Parse model text into actions. Returns (actions, reason_summary, error). With
+    ``allow_activity`` (G3c-2) the answer may also carry an ``activity``, checked by the runtime."""
     body = text.strip()
     fenced = _FENCE.match(body)
     if fenced:
@@ -182,7 +194,8 @@ def parse_output(text: str, allowed_actions: list[str], agent_id: str, tick: int
         data = json.loads(body)
     except ValueError:
         return None, None, "the answer is not valid JSON"
-    if not isinstance(data, dict) or set(data) - {"actions", "reason_summary"} or "actions" not in data:
+    keys = {"actions", "reason_summary"} | ({"activity"} if allow_activity else set())
+    if not isinstance(data, dict) or set(data) - keys or "actions" not in data:
         return None, None, 'the answer must be an object with "actions" and optionally "reason_summary"'
     actions = data["actions"]
     if not isinstance(actions, list) or not 1 <= len(actions) <= MAX_ACTIONS:
@@ -213,6 +226,48 @@ def parse_output(text: str, allowed_actions: list[str], agent_id: str, tick: int
     return out, reason, None
 
 
+class ServerActivity:
+    """When each model server is computing (G3c-2, D-60). Two llama-server processes share one GPU
+    in Option C, so a call's time can depend on the other server's work: each model call records
+    how long the other server was busy during it (``other_server_busy_ms``)."""
+
+    KEEP = 400
+
+    def __init__(self) -> None:
+        self.intervals: dict[str, list[list[float | None]]] = {}
+
+    def begin(self, server: str) -> list[float | None]:
+        iv: list[float | None] = [time.perf_counter(), None]
+        rows = self.intervals.setdefault(server, [])
+        rows.append(iv)
+        if len(rows) > self.KEEP:
+            del rows[: len(rows) - self.KEEP]
+        return iv
+
+    @staticmethod
+    def end(iv: list[float | None]) -> None:
+        iv[1] = time.perf_counter()
+
+    def other_busy_ms(self, server: str, start: float, end: float) -> int:
+        """Milliseconds of [start, end] during which any other server had a call in flight."""
+        spans = sorted((max(s, start), min(e if e is not None else end, end))
+                       for other, rows in self.intervals.items() if other != server
+                       for s, e in rows if (e is None or e > start) and s < end)
+        total, cur_s, cur_e = 0.0, None, None
+        for s, e in spans:
+            if e <= s:
+                continue
+            if cur_e is None or s > cur_e:
+                if cur_e is not None:
+                    total += cur_e - cur_s
+                cur_s, cur_e = s, e
+            else:
+                cur_e = max(cur_e, e)
+        if cur_e is not None:
+            total += cur_e - cur_s
+        return round(total * 1000)
+
+
 class ModelGateway:
     def __init__(self, provider: Provider, deadlines_ms: dict[str, int] | None = None, max_concurrent: int = 1,
                  scheduler: Any = None, server: str | None = None) -> None:
@@ -222,7 +277,9 @@ class ModelGateway:
         self.scheduler = scheduler
         self.server = server              # which server this gateway talks to (focal / npc), for records
         self.refuse_tiers: frozenset[str] = frozenset()   # Option C: the NPC server never serves FOCAL
+        self.activity: ServerActivity | None = None       # shared by both servers in Option C (G3c-2)
         self.persona_events: list[dict[str, Any]] = []
+        self.recent_totals: dict[str, list[int]] = {}      # tier -> last call times (pulse: is this server busy?)
         self._calls = 0
 
     async def start(self) -> None:
@@ -262,9 +319,12 @@ class ModelGateway:
         elif self.scheduler is None:
             entry = dict(base, method="SKIPPED", note="no slot scheduler (FIFO): the slot cannot be chosen")
         else:
-            slot = self.scheduler.try_acquire(agent_id)
+            # Snapshots run at scene load, before any real call; a pre-warm during the run must
+            # leave a slot free for a real call that may arrive meanwhile (G3c-2, D-60).
+            slot = self.scheduler.try_acquire(agent_id, keep_free=0 if op == "snapshot" else 1)
             if slot is None:
-                entry = dict(base, method="SKIPPED", note="no free slot")
+                entry = dict(base, method="SKIPPED", note="no free slot" if op == "snapshot" else
+                             "would leave no free slot for a real call")
             else:
                 try:
                     result = await getattr(self.provider, op)(key, prefix, slot)
@@ -276,7 +336,8 @@ class ModelGateway:
         self.persona_events.append(entry)
         return entry
 
-    async def _one(self, request: ModelRequest, deadline_ms: int) -> tuple[ModelResponse | None, dict[str, Any]]:
+    async def _one(self, request: ModelRequest, deadline_ms: int,
+                   background: bool = False) -> tuple[ModelResponse | None, dict[str, Any]]:
         started = time.perf_counter()
         response: ModelResponse | None = None
         outcome, error = "VALID", None
@@ -287,12 +348,15 @@ class ModelGateway:
             async with asyncio.timeout(deadline_ms / 1000):
                 if self.scheduler is not None:
                     slot = await self.scheduler.acquire(request.agent_id, request.tier,
-                                                        time.monotonic() + deadline_ms / 1000)
+                                                        time.monotonic() + deadline_ms / 1000, background=background)
                     queue_ms = round((time.perf_counter() - started) * 1000)
                     request.slot = slot
+                    busy = self.activity.begin(self.server or "?") if self.activity is not None else None
                     try:
                         response = await self.provider.complete(request)
                     finally:
+                        if busy is not None:
+                            self.activity.end(busy)
                         self.scheduler.release(slot)
                 else:
                     async with self._slots:
@@ -327,29 +391,59 @@ class ModelGateway:
             call["slot"] = response.slot
         if response is not None and response.prefix_state is not None:
             call["prefix_state"] = response.prefix_state
+        if self.activity is not None:
+            call["other_server_busy_ms"] = self.activity.other_busy_ms(self.server or "?", started, time.perf_counter())
+        recent = self.recent_totals.setdefault(request.tier, [])
+        recent.append(total_ms)
+        del recent[:-8]
         return response, call
+
+    def busy_share(self, tier: str) -> float:
+        """Median of the last calls' time as a share of the tier deadline (G3c-2: pulse reviews
+        are skipped for NPCs while their calls are already near the deadline)."""
+        recent = sorted(self.recent_totals.get(tier, []))
+        if not recent:
+            return 0.0
+        return recent[len(recent) // 2] / self.deadlines_ms.get(tier, 1)
 
     async def decide(self, *, agent_id: str, tier: str, prompt: str, prompt_sha256: str, max_tokens: int,
                      allowed_actions: list[str], tick: int, demo_hint: str | None = None,
-                     prefix_key: str | None = None, prefix: str | None = None) -> GatewayResult:
-        from .output_schema import answer_schema   # noqa: PLC0415 (it imports this module)
+                     prefix_key: str | None = None, prefix: str | None = None,
+                     choices: dict[str, Any] | None = None, background: bool = False,
+                     check: Callable[[list[dict[str, Any]], dict[str, Any] | None], str | None] | None = None) -> GatewayResult:
+        """``choices`` (G3c-2, D-60): what the agent may name now, for the constrained answer:
+        ``targets`` (perceived track ids), ``channels``, ``gestures``, ``expressions``, and
+        ``activity`` (G3c-2: the answer may carry an activity; its value is the longest review time).
+        Absent keys keep the contract's full range. ``background``: a pulse review, scheduled after
+        every real call. ``check(actions, activity)`` is the runtime's policy check (activity rules,
+        FN-1): an error gets the same one repair as invalid output."""
+        from .output_schema import ALL_CHANNELS, answer_schema   # noqa: PLC0415 (it imports this module)
 
         if tier in self.refuse_tiers:
             raise ValueError(f"the {self.server} server does not serve {tier} calls (Option C routing)")
         deadline_ms = self.deadlines_ms[tier]
         calls: list[dict[str, Any]] = []
-        schema = answer_schema(tuple(allowed_actions))
+        c = choices or {}
+        schema = answer_schema(tuple(allowed_actions), tuple(c["targets"]) if c.get("targets") is not None else None,
+                               tuple(c.get("channels", ALL_CHANNELS)), tier if tier in ("FOCAL", "C2", "C1") else "C1",
+                               tuple(c["gestures"]) if c.get("gestures") is not None else None,
+                               tuple(c["expressions"]) if c.get("expressions") is not None else None,
+                               int(c["activity"]) if c.get("activity") else 0)
+        allow_activity = bool(c.get("activity"))
         request = ModelRequest(agent_id, self._call_id(agent_id), tier, prompt, prompt_sha256, max_tokens, 0, demo_hint,
                                schema, prefix_key=prefix_key, prefix=prefix)
         for attempt in (0, 1):
-            response, call = await self._one(request, deadline_ms)
+            response, call = await self._one(request, deadline_ms, background)
             calls.append(call)
             if response is None:
                 reason = {"TIMEOUT": "TIMEOUT", "REPLAY_DIVERGED": "REPLAY_DIVERGED"}.get(call["outcome"], "PROVIDER_ERROR")
                 return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": reason})
-            actions, reason_summary, error = parse_output(response.text, allowed_actions, agent_id, tick)
+            actions, reason_summary, error = parse_output(response.text, allowed_actions, agent_id, tick, allow_activity)
+            activity = answer_activity(response.text) if error is None and allow_activity else None
+            if error is None and check is not None:
+                error = check(actions or [], activity)
             if error is None:
-                return GatewayResult(actions or [], reason_summary, calls)
+                return GatewayResult(actions or [], reason_summary, calls, activity=activity)
             if response.truncated:
                 error = f"the answer was cut off at the {max_tokens}-token limit ({error})"
             call["outcome"], call["error"] = "INVALID_OUTPUT", error[:300]
@@ -358,7 +452,8 @@ class ModelGateway:
                 request = ModelRequest(agent_id, self._call_id(agent_id), tier, repaired,
                                        hashlib.sha256(repaired.encode("utf-8")).hexdigest(), max_tokens, 1, demo_hint,
                                        schema, prefix_key=prefix_key, prefix=prefix)
-        return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": "INVALID_OUTPUT"})
+        return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": "INVALID_OUTPUT"},
+                             fallback_error=calls[-1]["error"])
 
 
 def tokenizer_for(gateway: ModelGateway | None):

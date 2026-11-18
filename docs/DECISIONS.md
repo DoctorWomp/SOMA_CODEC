@@ -66,7 +66,9 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-56 | Rig step A as built: skeletons, layers, prosody and their tests | APPROVED (owner, 2026-11-16) |
 | D-57 | G3b-1 as built: llama-server, model catalog and registry, provider | APPROVED (owner, 2026-11-16) |
 | D-58 | G3b-2 as built: priority scheduler (Option B) and the bake-off tool | APPROVED (owner, 2026-11-16) |
-| D-59 | G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming | PROPOSED (2026-11-17) |
+| D-59 | G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming | APPROVED (owner, 2026-11-17) |
+| D-60 | Usable model-driven NPCs and real-time LIVE runs (G3c-2 part A) | PROPOSED (2026-11-17) |
+| D-61 | The pulse protocol as built: activities, intent monitor, presence loop, pulse triage, survey (G3c-2 part B) | PROPOSED (2026-11-18) |
 
 ---
 
@@ -779,7 +781,7 @@ Choices made while building step A that D-54 and the plan left open:
 - **Owner verdict (2026-11-17):** Robot R default **F3** (Gemma 4 12B QAT Q4_0), KV q8_0; backup F1 (Qwen3.5-9B Q4_K_M). The live runs show no deadline misses for either, so F3 stands. NPC server default **N3** (Qwen3.5-4B Q4_K_M), KV q8_0; alternative N1; S1 for background crowd NPCs later. **F2 is dropped from the core set** (catalog `set: EXTRA`, kept for diagnosis). **KV cache default q8_0.** `configs/inference.yaml` follows.
 
 ## D-59 — G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming
-**Status:** PROPOSED (2026-11-17), G3c-1. Builds INFERENCE_STRATEGY Option C (T2) and §3.2, T5, T6; D-08, D-49, D-51 (own goal), D-55, D-57, D-58. Owner checklist: [gates/G3c_OWNER_CHECKLIST.md](gates/G3c_OWNER_CHECKLIST.md).
+**Status:** APPROVED (owner, 2026-11-17); proposed 2026-11-17, G3c-1 (merged). Builds INFERENCE_STRATEGY Option C (T2) and §3.2, T5, T6; D-08, D-49, D-51 (own goal), D-55, D-57, D-58. Owner checklist: [gates/G3c_OWNER_CHECKLIST.md](gates/G3c_OWNER_CHECKLIST.md).
 
 - **Two servers (Option C).** `configs/inference.yaml` holds a `focal` server (Robot R; F3, 2 slots × 6144, KV q8_0) and an `npc` server (N3, 4 slots × 2560, KV q8_0). Tiers C2 and C1 route to `npc`; `validate_configs.py` requires C2 and C1 on one server and no pinned slot on the NPC server.
   - Each is a 127.0.0.1-only child on its own free port with its own 32-byte API key (environment only, never logged). `InferenceSet` (`agents/inference.py`) starts the focal server, then the NPC server, and always stops both.
@@ -811,5 +813,134 @@ Choices made while building step A that D-54 and the plan left open:
   - SB-04 stepped with `--model fake` (NPCs model-driven): 10 NPC model calls; three runs (one with random sidecar delays) and a replay of the decision records give one journal (`29998045c3f9`). SB-04 with the Demo policy (no model, the default) still deterministic (`d9401c3edd17`, three runs) and byte-identical to main's journal: the default path is unchanged.
   - SB-04 stepped with `--model llama:T1 --npc-model llama:T1` (pinned b12443 built from source, Qwen3.5-0.8B on both servers): Option C started, four persona snapshots saved, one pre-warm restored a snapshot, run OK; every call missed its deadline on the CPU, as expected. `bakeoff.py offline --models T1 --limit 3` and `live --models T1 --npc-model T1 --modes STEPPED LIVE_LOAD` filled both offline tables and the new live columns (VRAM: `nvidia-smi not found`).
   - **BLOCKED on the owner's GPU:** Robot R's latency under NPC load, real promotion latency cold vs warm, VRAM per server, NPC candidates on NPC prompts.
+- **Owner's results (RTX 4070 Ti SUPER, 2026-11-17; prompts_v2 `476703d7d4a5`):**
+  - **VRAM measured:** F3 7625 MiB, N3 3271 MiB, F1 5461 MiB. F3 + N3 + the 2048 MiB reserve = 12944 of 16376 MiB. The header estimate said 22779: it counted every layer at full context (fixed in G3c-2, D-60).
+  - **Robot R prompts (56):** F3 98% final valid, promises 60% flag / 95% behavior; N3 100% valid, 0% / 70%.
+  - **NPC prompts (40), final valid:** N3 40%, N1 30%, S1 10%, F3 85% (F3 75% valid actions). Diagnosed in G3c-2 (D-60): MOVE_TO and LOOK_AT arguments were never constrained (llama.cpp's converter ignores `properties` beside a `oneOf`), and most answers were cut off at the 100/120-token output caps.
+  - **SB-04 live, Option C, F3 + N3:** Robot R p50 2352 / p95 3495 ms (LIVE); LIVE_LOAD 3502 ms (n=1); no deadline misses. NPC calls p50 about 3005 ms in LIVE, LIVE_COLD and LIVE_LOAD (the C1 deadline is 3000), but 1007–1163 ms in STEPPED. Robot R made only 1–3 decisions per LIVE run (8–22 STEPPED). Warm promotion latency only in STEPPED (10218 and 28121 ms, n=2 each); cold n=0 everywhere. **Diagnosed in G3c-2 (D-60):** headless LIVE runs simulated ~15× faster than real time (`--fixed-fps`), and every answer slower than 1 s was refused as stale, so these LIVE numbers do not measure live behavior; the live bake-off must be run again.
 - **Not in G3c-1:** the pulse protocol (activities, wake conditions, presence loop, triage pulse: G3c-2; FIELD_NOTES FN-1, FN-2), Echo/Focus/Contour (FN-2 to FN-4, G5), Focus/Trail-driven pre-warming (G5), the system-message layout for Robot R, CPU-tier models (T16), response cache (T15), batching measurements (T13).
+
+## D-60 — Usable model-driven NPCs and real-time LIVE runs (G3c-2 part A)
+**Status:** PROPOSED (2026-11-17), G3c-2 part A. Fixes what the owner's G3c-1 results showed (recorded in D-59). Owner checklist: [gates/G3c2_OWNER_CHECKLIST.md](gates/G3c2_OWNER_CHECKLIST.md).
+
+**1. Why NPC answers failed (diagnosed from the owner's `invalid_answers`, prompts_v2, NPC prompts, q8_0):**
+
+| Model | C1 (20): first try / repair | C1 final invalid | C2 (20): first try / repair | C2 final invalid |
+|---|---|---|---|---|
+| N3 | 20 cut off / 20 cut off | 20 | 13 cut off / 4 cut off | 4 |
+| N1 | 16 bad args / 16 bad args | 16 | 16 cut off / 12 cut off | 12 |
+| S1 | 16 cut off / 13 cut off + 3 bad args | 16 | 20 cut off / 20 cut off | 20 |
+| F3 | 3 bad args + 3 cut off / 6 bad args | 6 | none | 0 (+4 GROUP messages the gate would refuse) |
+
+No answer failed for an unknown target or a disallowed action. The causes:
+
+- **Arguments were never constrained for MOVE_TO and LOOK_AT** (and TURN_TO's target alternative). llama.cpp b12443's converter (`common/json-schema.cpp`) reads `oneOf`/`anyOf` before anything else and ignores `properties` and `additionalProperties` next to them; our args schemas had exactly that shape, so the grammar allowed any object. Hence `"destination": "platform"`, `"target": "person_near"`, `"point": [0.5, 1.2, 2.0]`. Reproduced on the pinned llama-server with T1: asked for those arguments it produced them; with the fix it cannot. **Fix:** `output_schema._flatten_alternatives` rewrites such nodes as full alternatives; a test checks that no node mixes them again.
+- **Cut off at the output cap.** Answers ran into the 100 (C1) / 120 (C2) token caps, mostly in a long `reason_summary` or a long line of speech. **Fix:** NPC tiers get shorter text in the constrained answer (`TIER_LIMITS`: C1 at most 2 actions, speech ≤160 characters, reason ≤80; C2 speech ≤200, reason ≤120; Robot R unchanged) and caps that fit a full answer with indentation (C1 170, C2 220 tokens; tested on the longest answer the C1 schema allows).
+- **C1 prompts named actions without argument formats, and 12 of 20 C1 prompts showed no perceived track**, so a model had to invent ids. **Fix:** C1's section 1 now lists the argument formats, and C1 gets a minimal OBSERVATIONS section (its own position and who it perceives nearby, from its own packets). **C1 budget 500 → 780 tokens** (guardrails 150 → 360, observations 0 → 70); CONTEXT_MEMORY_STRATEGY §4.1 amended.
+- **Context-aware choices in the constrained answer (all tiers):** person ids (`target_id`, `addressee_id`, `to_id`) can only be the tracks the agent perceives when the decision is made; speech channels only those it may use (LOCAL; PA for a PA operator; GROUP only in a group, which no scenario has yet); gestures and expressions only its body's. An action that needs a person is not offered when nobody is perceived. The choices are fixed when the decision job is made and kept with the prompt (`prompts.jsonl`, prompt-set items), so the bake-off sends exactly what the run would.
+- **prompts_v3.jsonl** (96 prompts, same composition as v2; every item carries its answer choices; v1 and v2 unchanged). **Measured on T1 in the cloud (CPU; plumbing, a much weaker model than N3):** NPC prompts 40/40 valid before repair, 40/40 final valid, 40/40 valid actions; Robot R prompts 40/40. The owner's N3 had 40% final valid on v2. N3, N1 and S1 on v3: owner's PC.
+
+**2. Why NPC calls hit the 3 s deadline in LIVE, and why Robot R made 1–3 decisions:**
+
+- **Headless LIVE runs were not real time.** `tools/run_scenario.py` and the live bake-off passed `--fixed-fps 60` to every headless run. With it Godot simulates each frame as 1/60 s however long it takes, so SB-04's 90 s ran in about 6 s of wall clock in the cloud (~15× faster than real time). A 2.3 s model call then spanned ~35 s of the scenario: Robot R missed most of what happened while its call was pending, made few decisions, and every NPC call competed with a world flooding the sidecar with ~15× more packets. **Fix:** `--fixed-fps 60` only for STEPPED runs; LIVE runs in real time (SB-04 now takes 90.8 s for 90 s; regression test on the Godot command line). **Every LIVE number in the owner's G3b and G3c-1 tables was measured this way and has to be measured again.**
+- **Every answer slower than 1 s was refused as stale.** The world's action gate refused an action based on an observation older than 60 ticks (1 s), while the gateway gives Robot R 4 s and C2 NPCs 6 s. Reproduced in the cloud with a 2.3 s fake model in a real-time LIVE run: 16 decisions, all 22 actions `STALE_OBSERVATION`. **Decision (host rule, needs the owner's approval): `STALE_AFTER_TICKS` 60 → 390 (6.5 s = the longest tier deadline, 6 s, + 0.5 s for the link).** The gateway already discards anything later than its deadline (T25); the gate still refuses anything older (T27) and still checks targets (`TARGET_UNKNOWN`). The Godot tests that relied on 1 s now use ages beyond 390 ticks (the gate test, the probe agent, a slow sidecar 7 s late); the T25 live test now checks that each late answer is judged by the window. STEPPED runs are unaffected (answers land on the tick they were asked), so the Demo journal stays `d9401c3edd17`.
+- **What could not be settled without the owner's GPU:** how much of the NPC time is GPU contention with Robot R's server. Measured from now on, per call: queue, prefill, generation, and `other_server_busy_ms` (how long the other server had a call in flight during it; both servers share one GPU). Also the sidecar's event-loop lag (`summary.json`). The `/tokenize` calls during context assembly were checked: ~3.5 per decision, ~2 ms on loopback; not a cause.
+- **Pre-warming never delays a real call:** a pre-warm only takes a slot if another shared slot stays free (snapshots at scene load may use the last one; Option B therefore never pre-warms during a run). **LIVE_LOAD** keeps all NPC slots but one busy, so a real NPC call always finds a slot, and the synthetic load runs in its own tier, ranked after every real agent.
+- **The C1 deadline stays 3000 ms** until real-time LIVE runs measure NPC calls: STEPPED NPC calls took 1007–1163 ms on the owner's GPU, so it holds about 2.6× margin.
+
+**3. LIVE runs that measure something:**
+- `bakeoff.py live --repeat N` (default 3) pools N runs per mode; one SB-04 is now 90 s of real time.
+- New columns: Robot R's actions accepted vs stale; NPC calls and timeouts; NPC p50 of total, queue, prefill and generation; share of NPC call time with Robot R's server busy; event-loop lag p95.
+- Promotion latency is split into: promotion → first model call (decisions are event-driven, so this includes waiting for a trigger); the call itself; and promotion → first accepted action, warm and cold.
+- `LIVE_COLD` switches off snapshots as well as pre-warming: with snapshots on, a promotion's first call restored its prefix and was never cold, which is why cold n was 0 everywhere.
+
+**4. VRAM:**
+- The fit check (already fixed after the owner's first run) uses Robot R's measured server.
+- **The estimate now follows llama.cpp b12443's cache layout layer by layer:**
+  - sliding-window layers (`attention.sliding_window_pattern`) hold `min(context, window × slots + 512)` cells, rounded to 256;
+  - shared-KV layers hold none;
+  - hybrid models (`full_attention_interval`) have a KV cache only in every k-th layer;
+  - per-layer KV heads and separate SWA head sizes are used where the header has them.
+  - Example: T1's NPC server, 255 → 64 MiB of KV.
+- **Measured values are kept per model file and settings** in `models/vram.local.yaml` (git-ignored) and replace the estimate next time, so an estimate can no longer send a run to Option B when the measured use fits.
+
+## D-61 — The pulse protocol as built (G3c-2 part B)
+**Status:** PROPOSED (2026-11-18), G3c-2 part B. Builds [PULSE_PROTOCOL.md](PULSE_PROTOCOL.md) §2–§7 and §10 (the G3c row of §11); FIELD_NOTES FN-1 and FN-2 are its acceptance tests. Settings in `configs/pulse.yaml` (contract `pulse`). Owner checklist: [gates/G3c2_OWNER_CHECKLIST.md](gates/G3c2_OWNER_CHECKLIST.md).
+
+- **When it runs.** For agents that decide for themselves: Robot R as an `LLM_AGENT`, and model-driven NPCs. It runs when the scenario says `pulse: true` (SB-06, SB-07, SB-08), or when a model drives Robot R (`--model fake`, `replay:`, `llama…`). `tools/run_scenario.py --pulse on|off|auto` overrides this. Scripted NPCs and the SB-05 robots never run it.
+  - **The scripted default path is unchanged:** SB-04 with the Demo policy and no model keeps journal `d9401c3edd17` (checked on every run of `tools/check.py`).
+  - Runs with a model now include the pulse, so the fake-model SB-04 journal changed from `29998045c3f9` to `ef0b5b36891d` (intended; deterministic and replayable).
+- **Activities (§3).**
+  - The answer may carry an optional `"activity": {"kind", "target_id", "commitment_id", "review_after_s", "wake_if"}`. Kinds are the palette (`CONVERSE`, `WAIT_FOR`, `ATTEND`, `SURVEY`, `TRAVEL_TO`, `ASSIST`, `OBSERVE`, `RETURN_TO_POST`, `RECHARGE`, `REST`).
+  - **Wake conditions are only those today's senses can check:** `target_within_m`, `target_lost`, `addressed`, `speech_heard`, `new_track`, `commitment_due`; the review time works as its own alarm.
+  - **`horizon` (Focus, Prism, Haze) is a reserved, documented slot** in `common.schema.json#/$defs/wake_condition` for G5. The runtime refuses it, and no answer schema offers it.
+  - An answer without an activity works exactly as before. The runtime then derives one from the actions, recorded `DERIVED`, never passed off as chosen:
+    - a promise → `WAIT_FOR` that person;
+    - speech to someone → `CONVERSE`;
+    - `MOVE_TO` a point → `TRAVEL_TO`; to a person → `ASSIST`;
+    - otherwise the current activity is `CONTINUED`, unless the conversation is over or the promise is kept;
+    - with nothing at all: `ATTEND` if the agent has a task or post duty, `SURVEY` if it has neither.
+  - `decision_record.activity` (reserved in G3c-1) now holds it, with `source` `CHOSEN`, `DERIVED` or `CONTINUED`.
+  - **Contract changes, all backward-compatible:** decision-record triggers `WAKE_CONDITION` and `PULSE_REVIEW`; scenario fields `pulse` and `post_duty`; config contract `pulse`. Versions are unchanged.
+  - The extra output is short, and the activity's target ids are limited to perceived tracks like every other id (D-60).
+- **Loop 3, the intent monitor** (`agents/pulse.py`). On every packet it checks the current activity's wake conditions (near-zero cost), each with its own cooldown (`cooldowns_s`).
+  - A firing condition becomes a `WAKE_CONDITION` trigger in the existing event-driven runtime; otherwise nothing happens.
+  - `target_within_m` fires when the person comes within range, not if they already were.
+  - Promises: in pulse mode `COMMITMENT_DUE` is no longer raised on every packet. It is rate-limited, and **a promised person is "busy" while they, or anyone within 2 m of them, spoke to someone else in the last 20 s.** That is observable only, never a judgment about them; Robot R does not interrupt a conversation it is not part of (SB-06).
+- **FN-1, holding a conversation (agent policy, not the host's action gate).**
+  - A conversation is open when the partner is perceived within `conversation.range_m` (3.5 m), there was no goodbye, and the silence is shorter than `silence_limit_s` (20 s).
+  - During it, an answer that moves away (a `MOVE_TO` farther from the partner or to someone else, or an activity of `TRAVEL_TO`, `SURVEY`, `RETURN_TO_POST` or `REST`) needs a closing or excuse line in the same answer.
+  - Otherwise it gets the same single repair as invalid output (the error is quoted). If the repair also walks away, the runtime stays engaged: `LOOK_AT` the partner and `WAIT`, logged `FN1_HELD`. Rule-based policies have such moves dropped.
+  - The host's safety stops always win; this is the agent's choice, not a world rule.
+  - Every run counts `FN1_VIOLATION` (must be 0).
+- **Loop 2, presence (no model):**
+  - **a glance** (`LOOK_AT`, through the normal action path, journaled and gated) toward a new person or new speech within `glance_range_m` (12 m), even while moving;
+  - for a voice it cannot see, a glance toward a point 3 m along the voice's bearing;
+  - rate-limited per source (8 s); never while the agent itself is speaking;
+  - gaze defaults from EXPRESSION_PRINCIPLES §8: the gaze rests on the conversation partner while listening; a hold is renewed every `gaze_hold_s` (4 s), and the world holds a `LOOK_AT` 3 s; after a glance away during a conversation the gaze returns within `return_to_partner_s` (1 s);
+  - while idle, the `waiting` expression once: a slow 0.5 Hz Beacon pulse, well under 3 Hz (D-14);
+  - own senses only.
+  - Not built: an idle *posture* change. The rig's posture layer has no idle variant yet (rig step B).
+- **Loop 4, the pulse (§4–§7).**
+  - At review time, a deterministic triage compares a digest of the agent's own senses with the last review: people newly in or out of view; speech that could be to it (talk it only overhears does not count, D-12); a promise due; the person it is with out of view; no progress toward a destination; the conversation over.
+  - **Nothing changed → `CONTINUE`** (no model call, logged in `pulse.jsonl`), and the next review backs off **15 → 30 → 60 s, never later than the activity's own review time**. Any meaningful change resets it.
+  - Seeded jitter (±10%, from the run seed, so stepped runs stay exact).
+  - An idle budget of 2 model reviews per minute.
+  - NPCs skip reviews while their recent calls already use ≥70% of their deadline (`npc_busy_share`), so the pulse adds no load to a busy NPC server.
+  - **A change → a `PULSE_REVIEW` decision** with a sitrep in the decision section (§6), one line each:
+    - the activity and how long it has run;
+    - the last interaction;
+    - the last review and the number of quiet checks since;
+    - open promises and when they were made;
+    - what changed.
+  - Repeated CONTINUEs are that one line and never accumulate (§7).
+  - **Pulse calls are background calls:** in the scheduler they rank after every real call (and after C1). In live runs a real event pre-empts a pending pulse review: the sidecar cancels it and decides the real event.
+- **SURVEY and RETURN_TO_POST, no HORIZON.**
+  - With no task and no post duty, the agent roams cell by cell (5 m cells of the main floor) toward the one it has observed least recently. "Observed" means its own position was within 6 m of the cell.
+  - It skips cells observed in the last 90 s (no pacing), and cells within 3 m of a perceived person (it never approaches people to look busy).
+  - It never starts a move while someone is close enough to talk to, pauses 10 s at each cell, and goes back to post after 120 s away.
+  - The moves are deterministic `MOVE_TO`s, no model. Haze-guided survey is G5.
+- **New scenarios** (from the agent's senses only; evaluator labels stay evaluator-only):
+  - **SB-06 Long wait:** Visitor Y asks for help, then "one moment", and talks with Visitor Z for about three minutes. The Demo policy gained one rule for this: "one moment" → "Of course, take your time. I'll be here." plus a promise.
+  - **SB-07 Empty hall:** Robot R alone, with no task and no post duty.
+  - **SB-08 Peripheral speaker:** two visitors talk behind Robot R, then one asks it a question.
+- **Metrics per run** (`summary.json` `pulse`, from `pulse.jsonl`; simulated time):
+  - wake latency;
+  - **zombie time:** something relevant within sensing range that got no glance (and wasn't already being looked at) and no decision within 1 s, capped at 10 s per event;
+  - glance latency (FN-2);
+  - model reviews per minute;
+  - CONTINUE versus review counts;
+  - review context size (first, last, max);
+  - survey moves and returns to post;
+  - FN-1 held and violations.
+- **Measured in the cloud (Demo policy unless stated; stepped; plumbing for anything model-related).**
+  - **SB-06:** promise at 5 s, no interruption for about three minutes, Y helped at 186 s, 0 promises left open; 7 decisions, 5 CONTINUEs, 19 glances, 0 zombie time.
+  - **SB-07:** survey moves to unseen cells, back to post at 126 s, no cell revisited within 90 s, no speech.
+  - **SB-08:** a glance toward the unseen voice in the same sample (0 ms, the 0.5 s target met); no wake for talk between the visitors; a wake, CONVERSE and an answer for the question.
+  - **SB-04 with the pulse:** a glance at the approaching Y with the gaze back on X 1 s later, WAIT_FOR Y after the promise, then keeping it.
+  - **Determinism:** each pulse scenario three times (one with random sidecar delays) gives one journal; SB-06 with the fake model twice and replayed gives one journal.
+  - **Long idle (unit test, 30 simulated minutes):** model calls fall to 0 per minute while quiet, recover when someone passes, and the context stays flat.
+  - **Live with a 2.3 s fake model:** no stale actions, 0 FN-1 violations.
+  - **BLOCKED on the owner's PC:** how it looks and feels with F3 and N3 (watched runs), and real model reviews per minute.
+- **Not in G3c-2:** the energy model (G5–G6); HORIZON-informed wake conditions and Focus-driven glances (G5); an idle posture variant (rig step B); CDC-mode scaling of the pulse interval (D-09, G5); FN-3 and FN-4 (G5).
 

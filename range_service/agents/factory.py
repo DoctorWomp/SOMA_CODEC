@@ -52,6 +52,21 @@ def setting_lines(game_map: dict[str, Any]) -> list[str]:
     return lines
 
 
+def spawn_point(entry: dict[str, Any], game_map: dict[str, Any]) -> dict[str, float] | None:
+    """Where the agent starts: its post (G3c-2)."""
+    sp = next((s for s in game_map.get("spawn_points", []) if s["spawn_id"] == entry.get("spawn")), None)
+    return {"x": float(sp["position"]["x"]), "z": float(sp["position"]["z"])} if sp else None
+
+
+def floor_area(game_map: dict[str, Any]) -> dict[str, float]:
+    """The area a survey covers: the main floor zone, else the whole map (public floor plan facts)."""
+    zone = next((z for z in game_map["zones"] if z["zone_id"] == "main_floor"), None)
+    if zone is not None:
+        return {k: float(v) for k, v in zone["area"].items()}
+    b = game_map["bounds"]
+    return {"x_min": 0.0, "x_max": float(b["width_m"]), "z_min": 0.0, "z_max": float(b["depth_m"])}
+
+
 def task_goal_point(entry: dict[str, Any], game_map: dict[str, Any]) -> dict[str, float] | None:
     goal = entry.get("task_goal")
     if goal is None:
@@ -66,7 +81,9 @@ def task_goal_point(entry: dict[str, Any], game_map: dict[str, Any]) -> dict[str
 def build_runtimes(scenario: dict[str, Any], cs: ConfigSet, *, gateway: ModelGateway | None = None,
                    body_overrides: dict[str, str] | None = None, tokenizer: Tokenizer | None = None,
                    npc_gateway: ModelGateway | None = None, npc_tokenizer: Tokenizer | None = None,
-                   prewarm: bool = True) -> dict[str, AgentRuntime]:
+                   prewarm: bool = True, pulse: dict[str, Any] | None = None, seed: int = 0) -> dict[str, AgentRuntime]:
+    """``pulse`` (G3c-2, D-61): the pulse settings for agents that decide for themselves (LLM_AGENT
+    cast members and model-driven NPCs), or None for the G3a-G3c-1 behavior."""
     overrides = body_overrides or {}
     game_map = cs.items["maps"][scenario["map"]]
     catalog = cs.items["expressions"]
@@ -91,5 +108,7 @@ def build_runtimes(scenario: dict[str, Any], cs: ConfigSet, *, gateway: ModelGat
             task_goal=task_goal_point(entry, game_map), focal=focal, pin=bool(entry.get("pin_cognition")),
             controller=entry["controller"], gateway=agent_gateway, tokenizer=agent_tokenizer,
             expression_gestures={eid: e["gesture"] for eid, e in catalog.items() if "gesture" in e},
-            own_private_goal=own_goal, prewarm=prewarm)
+            own_private_goal=own_goal, prewarm=prewarm, pa_operator=avatar_id in scenario.get("pa_operators", []),
+            pulse=pulse if (entry["controller"] == "LLM_AGENT" or agent_gateway is not None) else None, seed=seed,
+            post=spawn_point(entry, game_map), post_duty=bool(entry.get("post_duty")), survey_area=floor_area(game_map))
     return out

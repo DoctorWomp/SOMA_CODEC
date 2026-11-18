@@ -110,13 +110,14 @@ def promise_items(cs: ConfigSet, bodies: tuple[str, ...]) -> list[dict[str, Any]
             if job is None or job.assembled is None:
                 raise RuntimeError(f"no decision in the promise situation {situation!r} ({body_id})")
             prompt = job.assembled.prompt
+            choices = rt.answer_choices()
             demo = rt.decide_now(job)
             items.append({
                 "item_id": f"promise_{body_id}_{situation}", "scenario": "PROMISE_SITUATIONS", "role": "ROBOT_R",
                 "agent_id": "robot_r", "tier": job.tier, "triggers": job.triggers, "body_id": body_id,
                 "allowed_actions": persona["allowed_actions"], "gestures": body["gestures"], "expressions": available,
                 "max_tokens": OUTPUT_CAPS.get(job.tier, 120), "based_on_tick_id": job.tick, "prompt": prompt,
-                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(), "choices": choices,
                 "reference": {"situation": about, "promise_due": True, "promised_to": [PROMISED],
                               "demo_actions": [{"action": r["action"], "args": r["args"]} for r in demo],
                               "demo_fulfilled": any(p.fulfills for p in (job.proposals or []))},

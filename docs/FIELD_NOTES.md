@@ -40,3 +40,16 @@ When the robot senses speech, a sound or movement it did not expect, it asks its
 ### Why the visitors felt clunky
 
 Visitors are scripted until G3c-1 makes C1/C2 NPCs model-driven. Robot R's social behavior can only be judged properly once the people around it respond to what it does.
+
+### Status (2026-11-18, G3c-2, D-61)
+
+- **FN-1: built, awaiting the owner's check.**
+  - During an open conversation, a model answer that moves away needs a closing or excuse line in the same answer; otherwise one repair, then Robot R stays engaged.
+  - An activity holds `CONVERSE` with the partner.
+  - Counted in every run (`FN1_VIOLATION` must be 0; it is 0 in SB-04 with the fake model and in SB-06 to SB-08).
+  - The model runs on the owner's PC show whether F3 respects it without repairs.
+- **FN-2: built, awaiting the owner's check.**
+  - A deterministic glance (`LOOK_AT`) toward a new voice or movement, even one it cannot see (toward the voice's bearing).
+  - In SB-08 it came in the same sample (0 ms, the 0.5 s target met).
+  - A wake only for speech that could be to it.
+  - Echo and Focus (G5) will tie sounds to sources and rank them.

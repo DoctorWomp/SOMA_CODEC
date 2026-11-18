@@ -98,6 +98,25 @@ class _Reader:
         raise GGUFError(f"unknown value type {vtype} in the header")
 
 
+SMALL_ARRAY = 4096
+
+
+def _small_numeric_array(r: "_Reader") -> list[Any] | None:
+    itype = r.scalar("<I")
+    count = r.scalar("<Q")
+    if count > MAX_ARRAY:
+        raise GGUFError(f"a header array claims {count} items")
+    if itype in _SCALARS:
+        fmt = _SCALARS[itype]
+        if count <= SMALL_ARRAY:
+            return [r.scalar(fmt) for _ in range(count)]
+        r.take(struct.calcsize(fmt) * count)
+        return None
+    for _ in range(count):
+        r.value(itype, keep=False)
+    return None
+
+
 def read_header(path: Path) -> GGUFInfo:
     """Parse ``path``'s GGUF header and tensor table. Raises GGUFError if it is not GGUF."""
     return _parse(path)[0]
@@ -136,6 +155,69 @@ def kv_bytes_per_token(meta: dict[str, Any], kv_type: str) -> tuple[float | None
     return float(layers * heads_kv * (k_len + v_len) * KV_BYTES[kv_type]), "header (upper bound)"
 
 
+def kv_cache_bytes(meta: dict[str, Any], kv_type: str, slots: int, ctx_per_slot: int,
+                   n_ubatch: int = 512) -> tuple[float | None, str]:
+    """KV cache bytes for a server, layer by layer, as llama.cpp b12443 sizes it (G3c-2, D-60):
+
+    - a layer with its own KV cache keeps ``slots × ctx_per_slot`` cells; a **sliding-window**
+      layer (``attention.sliding_window_pattern``) only ``min(that, window × slots + n_ubatch)``,
+      rounded up to 256 (src/llama-kv-cache-iswa.cpp);
+    - layers sharing another layer's cache (``attention.shared_kv_layers``) keep none;
+    - a **hybrid** model with ``full_attention_interval`` k has attention (and a KV cache) only in
+      every k-th layer; its recurrent state is small and not counted;
+    - per-layer KV heads (an array) and separate SWA head sizes are used where the header has them.
+
+    (None, why) if the header lacks what is needed."""
+    arch = meta.get("general.architecture")
+    if not isinstance(arch, str):
+        return None, "no architecture in the header"
+    g = lambda k: meta.get(f"{arch}.{k}")   # noqa: E731
+    layers = g("block_count")
+    heads_kv, heads, embed = g("attention.head_count_kv"), g("attention.head_count"), g("embedding_length")
+    k_len, v_len = g("attention.key_length"), g("attention.value_length")
+    if not isinstance(layers, int) or layers <= 0:
+        return None, "no layer count in the header"
+    if not isinstance(k_len, int) and isinstance(embed, int) and isinstance(heads, int) and heads:
+        k_len = embed // heads
+    if not isinstance(v_len, int):
+        v_len = k_len
+    if not isinstance(k_len, int):
+        return None, "the header gives no head size"
+    if isinstance(heads_kv, list):
+        per_layer_heads = [int(h) for h in heads_kv[:layers]] + [0] * max(0, layers - len(heads_kv))
+    elif isinstance(heads_kv, int) or isinstance(heads, int):
+        per_layer_heads = [int(heads_kv if isinstance(heads_kv, int) else heads)] * layers
+    else:
+        return None, "the header gives no KV head count"
+    pattern = g("attention.sliding_window_pattern")
+    window = g("attention.sliding_window")
+    shared = g("attention.shared_kv_layers")
+    interval = g("full_attention_interval")
+    k_swa, v_swa = g("attention.key_length_swa"), g("attention.value_length_swa")
+    total_cells = slots * ctx_per_slot
+    swa_cells = total_cells
+    if isinstance(window, int) and window > 0:
+        swa_cells = min(total_cells, -(-(window * slots + n_ubatch) // 256) * 256)
+    own_kv = layers - (shared if isinstance(shared, int) else 0)
+    notes = []
+    total = 0.0
+    for i in range(own_kv):
+        if isinstance(interval, int) and interval > 1 and (i + 1) % interval != 0:
+            continue                                   # a linear-attention (recurrent) layer
+        is_swa = isinstance(pattern, list) and i < len(pattern) and bool(pattern[i])
+        kl = k_swa if is_swa and isinstance(k_swa, int) else k_len
+        vl = v_swa if is_swa and isinstance(v_swa, int) else v_len
+        cells = swa_cells if is_swa else total_cells
+        total += per_layer_heads[i] * (kl + vl) * KV_BYTES[kv_type] * cells
+    if isinstance(interval, int) and interval > 1:
+        notes.append(f"hybrid: KV in 1 of {interval} layers")
+    if isinstance(pattern, list) and any(pattern):
+        notes.append(f"{sum(bool(x) for x in pattern[:own_kv])} sliding-window layers of {own_kv}")
+    if isinstance(shared, int) and shared:
+        notes.append(f"{shared} layers share KV")
+    return total, "header, layer by layer" + (f" ({'; '.join(notes)})" if notes else "")
+
+
 def _parse(path: Path) -> tuple[GGUFInfo, dict[str, Any]]:
     with path.open("rb") as fh:
         r = _Reader(fh)
@@ -152,8 +234,12 @@ def _parse(path: Path) -> tuple[GGUFInfo, dict[str, Any]]:
         for _ in range(kv_count):
             key = r.string()
             vtype = r.scalar("<I")
-            # Arrays (vocabularies, merges) are skipped; every key we need is a scalar or string.
-            meta[key] = r.value(vtype, keep=vtype != _ARRAY)
+            # Large arrays (vocabularies, merges) are skipped; small per-layer arrays of numbers
+            # (KV heads, the sliding-window pattern) are kept for the VRAM estimate (G3c-2).
+            if vtype == _ARRAY:
+                meta[key] = _small_numeric_array(r)
+            else:
+                meta[key] = r.value(vtype)
         params = 0
         for _ in range(tensor_count):
             r.string()                                   # tensor name

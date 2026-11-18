@@ -41,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default="none")
     parser.add_argument("--npc-model", default="auto",
                         help="what drives C1/C2 NPCs: auto (follow --model), none, fake, replay:FILE, llama:MODEL")
+    parser.add_argument("--pulse", default="auto", choices=["auto", "on", "off"],
+                        help="the pulse protocol (G3c-2): auto = on if the scenario asks or a model drives Robot R")
     parser.add_argument("--no-prewarm", action="store_true",
                         help="never pre-warm NPC persona prefixes (measures cold promotion latency)")
     parser.add_argument("--seed", type=int, default=None)
@@ -65,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     opts = RunOptions(args.scenario, godot, mode=args.mode.upper(), model=args.model, seed=args.seed,
                       body_overrides=overrides, out_dir=args.out, headless=not args.watch, jitter_ms=args.jitter_ms,
                       godot_args=args.godot_arg, posing=not args.no_pose, npc_model=args.npc_model,
-                      prewarm=False if args.no_prewarm else None)
+                      prewarm=False if args.no_prewarm else None, pulse=args.pulse)
     try:
         result = asyncio.run(run_scenario(opts))
     except RunError as exc:
@@ -88,6 +90,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {agent_id}: {stats['decisions']} decisions, {stats['requests']} requests, "
               f"{stats['fallbacks']} fallbacks, level {stats['cognition']}, {stats['open_commitments']} open promises; "
               f"results {json.dumps(s['actions_by_agent'].get(agent_id, {}), sort_keys=True)}")
+    for agent_id, m in (s.get("pulse") or {}).items():
+        print(f"  pulse {agent_id}: {m['decisions']} decisions ({m['reviews']} reviews), {m['continues']} CONTINUE, "
+              f"{m['wakes']} wakes, {m['glances']} glances, {m['survey_moves']} survey moves, "
+              f"{m['returns_to_post']} returns to post; zombie {m['zombie']['ms']} ms "
+              f"({m['zombie']['events']}/{m['zombie']['relevant']}); FN-1 violations {m['fn1_violations']}, held {m['fn1_held']}; "
+              f"model reviews per minute {m['model_reviews_per_minute']}")
     for state in s["final_states"]:
         links = ", ".join(state["links_used"]) or "none"
         print(f"  {state['avatar_id']} ended at ({state['x']:.1f}, {state['y']:.2f}, {state['z']:.1f}); links used: {links}")

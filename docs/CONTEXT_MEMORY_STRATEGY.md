@@ -59,7 +59,7 @@ This order serves two purposes. The engine's prefix cache reuses everything up t
 | | **Total input** | | **~3.75K** | **~1.9K** | |
 | | Output cap | | ~200 | ~120 | |
 
-C1 reactive NPCs use only sections 1, 2, 7 (last turn) and 9: about 0.5K tokens. C0 uses no model.
+C1 reactive NPCs use only sections 1, 2, 7 (last turn) and 9: about 0.5K tokens. C0 uses no model. *Amended at G3c-2 (D-60, measured on the owner's NPC bake-off): C1 also gets the argument formats in section 1 and a minimal section 8 (who it perceives nearby, from its own senses), about 0.78K tokens in all; without them small models invented arguments and target ids.*
 
 Budgets are starting values. They are measured with the real tokenizer, not estimated.
 

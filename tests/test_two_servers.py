@@ -65,6 +65,7 @@ def setup_env(tmp_path, monkeypatch):
         key = {"F3": "focal_model", "N3": "npc_model", "BROKEN": "broken_npc"}[name]
         return ResolvedModel(key, files[key], "0" * 64, "Q4_0", name)
     monkeypatch.setattr(infmod, "resolve_model", fake_resolve)
+    monkeypatch.setattr(infmod, "VRAM_STORE", tmp_path / "vram.local.yaml")   # never the real store
     inf = copy.deepcopy(load_inference())
     inf["servers"]["focal"]["model"] = "F3"
     inf["servers"]["npc"]["model"] = "N3"
@@ -153,7 +154,7 @@ def test_over_budget_estimate_falls_back_before_starting_the_npc_server(setup_en
     reason = next(e["reason"] for e in iset.events if e["event"] == "OPTION_C_FALLBACK")
     assert "over the 1024 MiB budget" in reason and "focal" in reason
     est = iset.vram["estimate"]
-    assert est["npc"]["kv_source"] == "header (upper bound)" and est["npc"]["kv_mib"] >= 0
+    assert est["npc"]["kv_source"].startswith("header, layer by layer") and est["npc"]["kv_mib"] >= 0
     # Measured VRAM is null with a reason without a GPU, never 0.
     assert iset.vram["measured"]["focal"]["mib"] is None and iset.vram["measured"]["focal"]["note"]
 
@@ -267,12 +268,13 @@ def test_prewarm_never_waits_or_takes_robot_rs_slot(setup_env):
         try:
             gw = iset.npc_gateway                  # Option B: the focal server
             assert iset.option == "B"
-            gw.scheduler.busy.add(1)               # the one shared slot is busy
+            # G3c-2 (D-60): a pre-warm must leave a free slot for a real call. Option B has one
+            # shared slot, so it never pre-warms during a run; it still never touches slot 0.
             pw = await gw.prewarm("visitor_y", "C2", "k", PREFIX)
-            assert pw["method"] == "SKIPPED" and pw["note"] == "no free slot"
-            gw.scheduler.busy.discard(1)
-            pw = await gw.prewarm("visitor_y", "C2", "k", PREFIX)
-            assert pw["slot"] == 1                 # never slot 0, Robot R's
+            assert pw["method"] == "SKIPPED" and "free slot for a real call" in pw["note"]
+            assert 0 not in gw.scheduler.busy and not gw.scheduler.busy
+            snap = await gw.prepare_personas([("visitor_y", "C2", "k", PREFIX)])   # scene load: no real calls yet
+            assert snap[0]["slot"] == 1                                           # never slot 0, Robot R's
         finally:
             await iset.stop()
 
@@ -296,3 +298,36 @@ def test_npc_persona_prefix_goes_as_a_system_message_robot_r_stays_one_message()
     assert [m["role"] for m in p._body("other text", 64, None, 0, PREFIX)["messages"]] == ["user"]   # not a prefix
     off = LlamaProvider(port=1, api_key="k" * 20, warm_up=False, system_prefix=False)
     assert [m["role"] for m in off._body(PROMPT, 64, None, 2, PREFIX)["messages"]] == ["user"]
+
+
+def test_kv_estimate_counts_sliding_window_shared_and_linear_layers():
+    """G3c-2 (D-60): the owner's F3 + N3 measured 12944 MiB with the reserve; the old estimate
+    (every layer at full context) said 22779 MiB. Layer by layer as llama.cpp b12443 sizes it."""
+    full = {"general.architecture": "g", "g.block_count": 6, "g.attention.head_count_kv": 2,
+            "g.attention.key_length": 128, "g.attention.value_length": 128}
+    base, _ = gguf.kv_cache_bytes(full, "f16", 4, 2048)
+    assert base == 6 * 2 * 256 * 2 * 4 * 2048
+    swa = dict(full, **{"g.attention.sliding_window": 512, "g.attention.sliding_window_pattern": [1, 1, 1, 1, 1, 0]})
+    with_swa, note = gguf.kv_cache_bytes(swa, "f16", 4, 2048)
+    swa_cells = -(-(512 * 4 + 512) // 256) * 256                      # 2560 cells instead of 8192
+    assert with_swa == 5 * 2 * 256 * 2 * swa_cells + 1 * 2 * 256 * 2 * 8192 and "5 sliding-window layers" in note
+    shared, _ = gguf.kv_cache_bytes(dict(swa, **{"g.attention.shared_kv_layers": 2}), "f16", 4, 2048)
+    assert shared == 4 * 2 * 256 * 2 * swa_cells                      # the last two layers keep no cache
+    hybrid, note = gguf.kv_cache_bytes(dict(full, **{"g.full_attention_interval": 3}), "f16", 4, 2048)
+    assert hybrid == base / 3 and "1 of 3" in note
+    per_layer, _ = gguf.kv_cache_bytes(dict(full, **{"g.attention.head_count_kv": [2, 2, 2, 2, 0, 0]}), "f16", 4, 2048)
+    assert per_layer == base * 4 / 6
+
+
+def test_a_measured_server_replaces_the_estimate_next_time(tmp_path, setup_env):
+    _, _, inf = setup_env
+    from range_service.agents.inference import estimate_server_mib, load_measured, record_measured
+
+    store = tmp_path / "vram.local.yaml"
+    model = ResolvedModel("n3", Path(__file__), "a" * 64, "Q4_K_M", "N3")
+    server = inf["servers"]["npc"]
+    record_measured(model, server, 3271, "measured as the change in total GPU memory", store)
+    est = estimate_server_mib(model, server, inf["vram"], load_measured(store))
+    assert est["total_mib"] == 3271 and est["basis"] == "measured"
+    other = dict(server, kv_cache_type="f16")                          # other settings: not reused
+    assert estimate_server_mib(model, other, inf["vram"], load_measured(store))["basis"] == "estimate"

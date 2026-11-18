@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -29,8 +30,10 @@ from typing import Any
 from range_service.comms import disclosure
 
 from . import guardrails
+from . import activity as activities
+from .pulse import Digest, Event, IntentMonitor, Presence, Pulse, Survey, is_closing, voice_key
 from .cognition import FAR_FROM_FOCAL_M, LEVELS, NEAR_FOCAL_M, CognitionLevel, Signals
-from .context import OUTPUT_CAPS, Assembled, ContextAssembler, Identity
+from .context import OUTPUT_CAPS, Assembled, ContextAssembler, Identity, ago
 from .gateway import ModelGateway
 from .memory import AgentMemory
 from .policy_demo import NpcTemplatePolicy, Proposal, RobotDemoPolicy, RoutinePolicy, is_farewell
@@ -76,6 +79,7 @@ class DecisionJob:
     proposals: list[Proposal] | None      # set for ROUTINE/TEMPLATE/DEMO; None when the model decides
     demo_hint: str | None
     prefix_key: str | None = None         # the persona prefix of this tier (T5/T6), for the provider
+    choices: dict[str, Any] | None = None  # what the answer may name, fixed when the job is made (D-60)
 
 
 class AgentRuntime:
@@ -84,7 +88,9 @@ class AgentRuntime:
                  task_goal: dict[str, float] | None = None, focal: bool = False, pin: bool = False,
                  controller: str = "SCRIPTED", gateway: ModelGateway | None = None,
                  tokenizer: Tokenizer | None = None, expression_gestures: dict[str, str] | None = None,
-                 own_private_goal: str | None = None, prewarm: bool = True) -> None:
+                 own_private_goal: str | None = None, prewarm: bool = True, pa_operator: bool = False,
+                 pulse: dict[str, Any] | None = None, seed: int = 0, post: dict[str, float] | None = None,
+                 post_duty: bool = False, survey_area: dict[str, float] | None = None) -> None:
         self.agent_id = agent_id
         self.body = body
         self.focal = focal
@@ -95,6 +101,7 @@ class AgentRuntime:
         if own_private_goal and not self.npc_model:
             raise ValueError("only a model-driven NPC gets its own private goal in its prompt (D-51)")
         self.prewarm_enabled = prewarm and self.npc_model
+        self.pa_operator = pa_operator or bool(body["capabilities"].get("can_use_pa"))
         self.expressions = sorted(expressions)
         # Each available expression's gesture, if it has one (from the catalog).
         self.expression_gestures = {k: v for k, v in (expression_gestures or {}).items() if k in self.expressions}
@@ -134,6 +141,28 @@ class AgentRuntime:
         self._prewarm_asked: set[str] = set()
         self.promotions: list[dict[str, Any]] = []
         self._open_promotions: list[dict[str, Any]] = []
+        # The pulse protocol (G3c-2, D-61): None = off (the G3a/G3b behavior, byte for byte).
+        self.pulse_cfg = pulse
+        self.activity: activities.Activity | None = None
+        self.pulse_log: list[dict[str, Any]] = []
+        self.post_duty = post_duty
+        self.pending_kind: str | None = None
+        self.preempt_requested = False
+        self._presence_out: list[tuple[str, dict[str, Any]]] = []
+        self._answer_activity: dict[str, Any] | None = None
+        self._speaking_until_ms = 0
+        self._last_due_ms = -10**9
+        self._speech_seen = 0
+        self._sitrep_changes: list[str] = []
+        self._fn1_events: list[str] = []
+        self._first_trigger_ms: int | None = None
+        if pulse is not None:
+            self.monitor = IntentMonitor(pulse["pulse"]["cooldowns_s"])
+            self.pulse = Pulse(pulse["pulse"], agent_id, seed)
+            self.presence = Presence(pulse["presence"])
+            self.survey = Survey(pulse["survey"], survey_area, post) if survey_area is not None else None
+        else:
+            self.monitor = self.pulse = self.presence = self.survey = None   # type: ignore[assignment]
         for fact in persona.get("knows", []):
             self.memory.add("WORLD_KNOWLEDGE", fact, now_ms=0, status="OBSERVED", source_class="OBSERVED",
                             importance="NORMAL", tags=topics_of(fact))
@@ -207,9 +236,13 @@ class AgentRuntime:
                 if key not in self._prewarm_asked:
                     self._prewarm_asked.add(key)
                     self.prewarm_wanted.append((likely, key, prefix))
+        if self.pulse is not None:
+            triggers = self._pulse_observe(p, triggers)
         if self.pending:
             if triggers:
-                self._queued += [t for t in triggers if t not in self._queued]
+                if self.pending_kind == "PULSE" and any(t != "PULSE_REVIEW" for t in triggers):
+                    self.preempt_requested = True      # a real event: the pulse review gives way (D-61)
+                self._queued += [t for t in triggers if t not in self._queued and t != "PULSE_REVIEW"]
                 self.stats["skipped_pending"] += 1
             return None
         triggers = sorted(set(self._queued + triggers), key=_TRIGGER_ORDER.index)
@@ -233,6 +266,256 @@ class AgentRuntime:
             self._end_conversation("DEMOTED")
         return signals
 
+    # ---------- the pulse protocol (G3c-2, D-61; PULSE_PROTOCOL) ----------
+
+    def _log(self, event: str, **data: Any) -> None:
+        self.pulse_log.append(Event(event, self.ws.now_ms, data).record())
+
+    def _promise_due(self) -> bool:
+        """A promise can be kept now: free, the person in view, and not busy talking to someone else."""
+        if self.conversation.partner is not None:
+            return False
+        for c in self.memory.open_commitments():
+            for track in c["audience_present"]:
+                if self.ws.visible(track) and not self._busy_talking(track):
+                    return True
+        return False
+
+    def _busy_talking(self, track: str, window_ms: int = 20_000, near_m: float = 2.0) -> bool:
+        """Observable only: the person, or someone standing within 2 m of them, spoke to someone
+        else in the last 20 s (a conversation it is not part of). Never a judgment about them."""
+        me = self.ws.tracks.get(track)
+        if me is None or me.x is None:
+            return False
+        for other in self.ws.tracks.values():
+            if other.speaking_ms is None or self.ws.now_ms - other.speaking_ms >= window_ms or other.x is None:
+                continue
+            if other is me or math.hypot(other.x - me.x, other.z - me.z) <= near_m:
+                return True
+        return False
+
+    def _conversation_open(self) -> bool:
+        conv, cfg = self.conversation, self.pulse_cfg["conversation"]
+        if conv.partner is None or conv.closing or not self.ws.visible(conv.partner):
+            return False
+        state = self.ws.tracks[conv.partner]
+        return (state.range_m is None or state.range_m <= cfg["range_m"]) and \
+            self.ws.now_ms - conv.last_exchange_ms <= cfg["silence_limit_s"] * 1000
+
+    def _digest(self) -> Digest:
+        act = self.activity
+        target_visible = self.ws.visible(act.target_id) if act is not None and act.target_id else None
+        progress = None
+        if act is not None and act.destination is not None and self.ws.pose is not None:
+            progress = round(math.hypot(act.destination["x"] - self.ws.pose["x"], act.destination["z"] - self.ws.pose["z"]), 1)
+        due = frozenset(c["memory_id"] for c in self.memory.open_commitments()) if self._promise_due() else frozenset()
+        return Digest(frozenset(t for t in self.ws.tracks if self.ws.visible(t)), self._speech_seen, due,
+                      target_visible, progress)
+
+    def _pulse_observe(self, p: Perceived, triggers: list[str]) -> list[str]:
+        """Loops 2-4 on one packet: presence, the intent monitor, the pulse and the survey. Only the
+        agent's own perception; simulated time only."""
+        now = self.ws.now_ms
+        cfg = self.pulse_cfg
+        # Speech that could be to the agent counts as a change; talk between others it overhears
+        # does not (D-12), or a robot waiting near a conversation would review every few seconds.
+        self._speech_seen += len(p.addressed) + sum(1 for h in p.heard if h["addressed"] is None)
+        triggers = [t for t in triggers if t != "COMMITMENT_DUE"]       # rate-limited below, not per packet
+        due = self._promise_due()
+        if due and now - self._last_due_ms >= cfg["pulse"]["cooldowns_s"]["commitment_due"] * 1000:
+            self._last_due_ms = now
+            triggers.append("COMMITMENT_DUE")
+        if self.survey is not None:
+            self.survey.observe(now, self.ws.pose)
+        glance_range = cfg["presence"]["glance_range_m"]
+        for track in p.new_tracks:
+            if (self.ws.tracks[track].range_m or 99) <= glance_range:
+                self._log("RELEVANT", source=track, kind="movement")
+        heard = p.heard + [{"track_id": i.get("track_id"), "range_m": i.get("range_m"),
+                            "bearing_rad": i.get("bearing_rad")} for i in p.addressed]
+        for h in heard:
+            if h.get("track_id") and (h.get("range_m") or 99) <= glance_range:
+                self._log("RELEVANT", source=h["track_id"], kind="speech")
+            elif h.get("track_id") is None and h.get("bearing_rad") is not None:
+                self._log("RELEVANT", source=voice_key(h["bearing_rad"]), kind="voice")
+        # Loop 2: presence (no model). Glance at new movement or speech; gaze back to the partner.
+        actions, events = self.presence.step(
+            now_ms=now, ws=self.ws, perceived=p,
+            heard=heard,
+            partner=self.conversation.partner, speaking_until_ms=self._speaking_until_ms, activity=self.activity,
+            can_look="LOOK_AT" in self.allowed_actions, expressions=self.expressions)
+        self._presence_out += actions
+        for e in events:
+            self.pulse_log.append(e.record())
+        # Loop 3: the intent monitor. Speech that could be to it (unknown addressee, within
+        # conversation range) may wake it; speech to someone else only gets a glance (FN-2).
+        possibly_to_me = [h["track_id"] for h in p.heard if h["addressed"] is None and h["track_id"]
+                          and (h.get("range_m") or 99) <= cfg["conversation"]["range_m"]]
+        wakes = self.monitor.check(self.activity, now_ms=now, perceived=p, ws=self.ws, addressed=bool(p.addressed),
+                                   heard_tracks=possibly_to_me, new_tracks=p.new_tracks, due_commitment=due)
+        if wakes:
+            triggers.append("WAKE_CONDITION")
+            self._log("WAKE", conditions=wakes)
+        if triggers and self._first_trigger_ms is None:
+            self._first_trigger_ms = now
+        if triggers:
+            self.pulse.schedule(now, self.activity, reset=True)
+            return triggers
+        if self.pending:
+            return triggers
+        # Loop 4: the pulse. Triage first; the model only when something changed.
+        if self.pulse.next_ms is None:
+            self.pulse.schedule(now, self.activity, reset=True)
+        elif self.pulse.due(now):
+            changed = self.pulse.triage(self._digest())
+            if self.activity is not None and self.activity.kind == "CONVERSE" and not self._conversation_open():
+                changed.append("the conversation is over")
+            busy = self.npc_model and self.gateway is not None and \
+                self.gateway.busy_share(self.tier) >= cfg["pulse"]["npc_busy_share"]
+            if changed and not self.pulse.over_budget(now) and not busy:
+                self._sitrep_changes = changed
+                self.pulse.reviews += 1
+                triggers.append("PULSE_REVIEW")
+            else:
+                reason = "nothing changed" if not changed else ("idle budget used" if not busy else "NPC server busy")
+                self.pulse.continues += 1
+                self.pulse.continues_since_change += 1
+                self.pulse.step += 1
+                self.pulse.schedule(now, self.activity, reset=False)
+                self._log("CONTINUE", reason=reason, activity=self.activity.kind if self.activity else None)
+        # SURVEY / RETURN_TO_POST: deterministic moves, no model.
+        if not triggers and self.survey is not None and self.conversation.partner is None and \
+                self.activity is not None and self.activity.kind in ("SURVEY", "RETURN_TO_POST") and \
+                "MOVE_TO" in self.allowed_actions:
+            people = [(s.x, s.z) for k, s in self.ws.tracks.items() if self.ws.visible(k) and s.x is not None]
+            someone_close = any((s.range_m or 99) <= cfg["conversation"]["range_m"]
+                                for k, s in self.ws.tracks.items() if self.ws.visible(k))
+            # Never walk off while someone is close enough to talk to (they may be about to).
+            move = None if someone_close else self.survey.next_move(now, self.ws.pose, people)
+            if move is not None:
+                why, dest = move
+                self._presence_out.append(("MOVE_TO", {"destination": dest}))
+                self.activity.kind, self.activity.destination = why, dest
+                self._log(why, destination=dest)
+            elif self.activity.kind == "RETURN_TO_POST" and not self.survey.returning:
+                self.activity.kind = "SURVEY"
+        return triggers
+
+    def sitrep(self) -> str:
+        """Time made explicit for the model (PULSE_PROTOCOL §6): the activity and how long it has
+        run, the last interaction and review, promises due, and what changed (one line each).
+        Repeated CONTINUEs are one line here, never a growing log (§7)."""
+        now = self.ws.now_ms
+        act = self.activity
+        lines = []
+        if act is not None:
+            target = f" {act.target_id}" if act.target_id else ""
+            lines.append(f"Activity: {act.kind}{target} ({act.source.lower()}) for {(now - act.started_ms) // 1000}s.")
+        last_turn = max((tr.at_ms for tr in self.ws.turns), default=None)
+        lines.append(f"Last interaction: {ago(now, last_turn) if last_turn is not None else 'none yet'}.")
+        if self.pulse.last_review_ms is not None:
+            lines.append(f"Last review: {ago(now, self.pulse.last_review_ms)}; "
+                         f"{self.pulse.continues_since_change} quiet checks since, nothing changed.")
+        due = [c for c in self.memory.open_commitments()]
+        if due:
+            lines.append("Open promises: " + "; ".join(f"{c['memory_id']} to {', '.join(c['audience_present']) or 'nobody'}"
+                                                        f" (made {ago(now, c['observed_at_ms'])})" for c in due[:3]) + ".")
+        if self._sitrep_changes:
+            lines.append("Changed since the last review: " + "; ".join(self._sitrep_changes[:4]) + ".")
+        return "\n".join(lines)
+
+    def take_presence(self) -> list[dict[str, Any]]:
+        """Presence-loop and survey actions to send now (LOOK_AT, EXPRESS, MOVE_TO): through the
+        normal action path, journaled and gated like any other request."""
+        out = []
+        for action, args in self._presence_out:
+            if action not in self.allowed_actions:
+                continue
+            if action == "EXPRESS":
+                if self.ws.tick - self._last_express_tick < EXPRESSION_MIN_GAP_TICKS:
+                    continue
+                self._last_express_tick = self.ws.tick
+            self._requests += 1
+            out.append({"schema_version": "1.0", "action_request_id": f"act_{self.agent_id}_{self._requests:05d}"[:64],
+                        "agent_id": self.agent_id, "based_on_tick_id": self.ws.tick, "action": action, "args": args})
+        self._presence_out = []
+        self.stats["presence"] = self.stats.get("presence", 0) + len(out)
+        return out
+
+    def _fn1_problem(self, actions: list[dict[str, Any]], activity: dict[str, Any] | None) -> str | None:
+        """FN-1 (D-61, agent policy, not the host's gate): during an open conversation, moving away
+        needs a closing or excuse line in the same answer."""
+        if self.pulse is None or not self._conversation_open():
+            return None
+        partner = self.conversation.partner
+        state = self.ws.tracks[partner]
+        away = False
+        for a in actions:
+            if a["action"] != "MOVE_TO":
+                continue
+            target = a["args"].get("target_id")
+            dest = a["args"].get("destination")
+            if target is not None and target != partner:
+                away = True
+            elif dest is not None and state.x is not None and self.ws.pose is not None:
+                d_now = math.hypot(state.x - self.ws.pose["x"], state.z - self.ws.pose["z"])
+                if math.hypot(state.x - dest["x"], state.z - dest["z"]) > d_now + 0.5:
+                    away = True
+        if activity is not None and activity.get("kind") in ("TRAVEL_TO", "SURVEY", "RETURN_TO_POST", "REST"):
+            away = True
+        if not away:
+            return None
+        if any(a["action"] == "SPEAK" and is_closing(a["args"].get("text", "")) for a in actions):
+            return None
+        return (f"you are in a conversation with {partner}: before moving away, say a closing or excuse line "
+                "in the same answer (for example \"Excuse me, I need to go\"), or stay with them")
+
+    def _answer_check(self, actions: list[dict[str, Any]], activity: dict[str, Any] | None) -> str | None:
+        if activity is not None:
+            _, error = activities.parse(activity, now_ms=self.ws.now_ms,
+                                        default_review_s=self.pulse_cfg["pulse"]["default_review_after_s"],
+                                        max_review_s=self.pulse_cfg["pulse"]["max_review_after_s"],
+                                        open_commitments={c["memory_id"] for c in self.memory.open_commitments()},
+                                        perceived={t for t in self.ws.tracks if self.ws.visible(t)})
+            if error:
+                return error
+        return self._fn1_problem(actions, activity)
+
+    def _set_activity(self, job: DecisionJob, proposals: list[Proposal]) -> dict[str, Any]:
+        cfg = self.pulse_cfg["pulse"]
+        chosen = None
+        if self._answer_activity is not None:
+            chosen, _ = activities.parse(self._answer_activity, now_ms=self.ws.now_ms,
+                                         default_review_s=cfg["default_review_after_s"],
+                                         max_review_s=cfg["max_review_after_s"],
+                                         open_commitments={c["memory_id"] for c in self.memory.open_commitments()},
+                                         perceived={t for t in self.ws.tracks if self.ws.visible(t)})
+        self._answer_activity = None
+        if chosen is None:
+            promised = {t: c["memory_id"] for c in self.memory.open_commitments() for t in c["audience_present"]}
+            chosen = activities.derive([{"action": p.action, "args": p.args, "commitment": p.commitment}
+                                        for p in proposals], now_ms=self.ws.now_ms, current=self.activity,
+                                       partner=self.conversation.partner, promised=promised,
+                                       default_review_s=cfg["default_review_after_s"],
+                                       has_task_goal=self.task_goal is not None or bool(self.task),
+                                       post_duty=self.post_duty)
+        if chosen.kind in ("SURVEY", "RETURN_TO_POST") and self.activity is not None and \
+                self.activity.kind in ("SURVEY", "RETURN_TO_POST") and chosen.source != "CHOSEN":
+            chosen.kind, chosen.destination = self.activity.kind, self.activity.destination
+        self.activity = chosen
+        self.pulse.last_review_ms = self.ws.now_ms
+        self.pulse.schedule(self.ws.now_ms, chosen, reset=True)
+        if job.policy == "MODEL" and chosen.kind in activities.IDLE_KINDS and \
+                ("PULSE_REVIEW" in job.triggers or "WAKE_CONDITION" in job.triggers):
+            self.pulse.model_reviews_at.append(self.ws.now_ms)
+        self._sitrep_changes = []
+        waited = self.ws.now_ms - self._first_trigger_ms if self._first_trigger_ms is not None else 0
+        self._first_trigger_ms = None
+        self._log("REVIEW" if "PULSE_REVIEW" in job.triggers else "DECISION", policy=job.policy,
+                  triggers=job.triggers, activity=chosen.kind, source=chosen.source, waited_ms=waited,
+                  tokens=job.assembled.record["total_tokens"] if job.assembled else None)
+        return chosen.record()
+
     # ---------- persona prefixes, pre-warming and promotion latency (G3c-1; T5, T6) ----------
 
     def persona_prefix(self, tier: str) -> tuple[str, str]:
@@ -245,6 +528,14 @@ class AgentRuntime:
             digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
             self._prefixes[tier] = (f"{self.agent_id}:{tier}:{digest}", text)
         return self._prefixes[tier]
+
+    def answer_choices(self) -> dict[str, Any]:
+        """What this agent may name in its next answer (G3c-2, D-60): the people it perceives now
+        (never an invented id), the channels it may use, its body's gestures and expressions."""
+        targets = sorted(t for t in self.ws.tracks if self.ws.visible(t))
+        channels = ["LOCAL"] + (["PA"] if self.pa_operator else [])
+        gestures = list(self.body["gestures"]) if self.body["capabilities"]["can_gesture"] else []
+        return {"targets": targets, "channels": channels, "gestures": gestures, "expressions": list(self.expressions)}
 
     def model_tiers(self) -> list[str]:
         """The tiers at which this NPC calls the model (for persona snapshots at scene load)."""
@@ -353,9 +644,13 @@ class AgentRuntime:
             for item in self.perceived.addressed:
                 topics |= topics_of(item["value"]["text"])
             assembler = ContextAssembler(self.tokenizer, tier)
+            goal = self._goal_text()
+            if self.pulse is not None:
+                goal += "\n" + self.sitrep()
             assembled = assembler.assemble(
-                guardrails=guardrails.guardrails_section(tier, self.allowed_actions, self.body, self.expressions),
-                identity=self.identity, memory=self.memory, ws=self.ws, setting=self.setting, goal=self._goal_text(),
+                guardrails=guardrails.guardrails_section(tier, self.allowed_actions, self.body, self.expressions,
+                                                         activity=self.pulse is not None),
+                identity=self.identity, memory=self.memory, ws=self.ws, setting=self.setting, goal=goal,
                 triggers=[t.lower().replace("_", " ") for t in triggers], participants=participants, topics=topics,
                 audience=disclosure.audience_from_packet(packet))
         rule = self._rule_policy(policy)
@@ -368,12 +663,16 @@ class AgentRuntime:
         else:
             proposals = [p for p in proposals if p.action in self.allowed_actions]
         prefix_key = self.persona_prefix(tier)[0] if policy == "MODEL" else None
+        choices = self.answer_choices() if policy == "MODEL" else None
+        if choices is not None and self.pulse is not None:
+            choices["activity"] = self.pulse_cfg["pulse"]["max_review_after_s"]
         return DecisionJob(decision_id, self.ws.tick, triggers, policy, tier, self.cognition.level, assembled,
-                           proposals, demo_hint, prefix_key)
+                           proposals, demo_hint, prefix_key, choices)
 
     async def decide(self, job: DecisionJob) -> list[dict[str, Any]]:
         """Answer a job: returns the action requests to send. Model calls happen here."""
         self.pending = True
+        self.pending_kind = "PULSE" if job.triggers == ["PULSE_REVIEW"] else "REAL"
         try:
             model_calls: list[dict[str, Any]] = []
             fallback = None
@@ -381,6 +680,11 @@ class AgentRuntime:
                 proposals = job.proposals
             else:
                 assert self.gateway is not None and job.assembled is not None
+                call_started = time.perf_counter()
+                for rec in self._open_promotions:
+                    if "to_first_model_call_ms" not in rec:
+                        # G3c-2 (D-60): promotion -> the first model call starts, apart from the call itself
+                        rec["to_first_model_call_ms"] = round((call_started - rec["_t0"]) * 1000)
                 result = await self.gateway.decide(
                     agent_id=self.agent_id, tier=job.tier, prompt=job.assembled.prompt,
                     prompt_sha256=job.assembled.record["prompt_sha256"], max_tokens=OUTPUT_CAPS.get(job.tier, 120),
@@ -388,9 +692,17 @@ class AgentRuntime:
                     prefix_key=job.prefix_key,
                     # NPCs: the persona prefix may go as its own (system) message; Robot R's prompt
                     # shape stays one message, as the G3b bake-off measured it.
-                    prefix=self.persona_prefix(job.tier)[1] if self.npc_model else None)
+                    prefix=self.persona_prefix(job.tier)[1] if self.npc_model else None,
+                    choices=job.choices, background=job.triggers == ["PULSE_REVIEW"],
+                    check=self._answer_check if self.pulse is not None else None)
                 model_calls, fallback = result.model_calls, result.fallback
                 proposals = [_proposal_from_model(a, self.memory, self.conversation) for a in result.actions]
+                self._answer_activity = result.activity
+                if fallback is not None and self.pulse is not None and "conversation with" in (result.fallback_error or ""):
+                    # FN-1: the repair also walked away without a word. Stay engaged instead.
+                    partner = self.conversation.partner
+                    proposals = [Proposal("LOOK_AT", {"target_id": partner}), Proposal("WAIT", {"duration_ms": 1000})]
+                    self._log("FN1_HELD", partner=partner, how="model answer replaced after one repair")
             requests = self._emit(job, proposals, model_calls, fallback)
             if job.policy == "MODEL":
                 for rec in self._open_promotions:
@@ -407,12 +719,17 @@ class AgentRuntime:
             return requests
         finally:
             self.pending = False
+            self.pending_kind = None
 
     def decide_now(self, job: DecisionJob) -> list[dict[str, Any]]:
         """Synchronous answer for jobs that need no model (ROUTINE, TEMPLATE, DEMO)."""
         if job.proposals is None:
             raise ValueError("this job needs the model; use decide()")
-        return self._emit(job, job.proposals, [], None)
+        proposals = job.proposals
+        if self.pulse is not None and self._fn1_problem([p.as_dict() for p in proposals], None):
+            proposals = [p for p in proposals if p.action != "MOVE_TO"]          # FN-1: stay engaged
+            self._log("FN1_HELD", partner=self.conversation.partner, how="rule policy move dropped")
+        return self._emit(job, proposals, [], None)
 
     def _emit(self, job: DecisionJob, proposals: list[Proposal], model_calls: list[dict[str, Any]],
               fallback: dict[str, str] | None) -> list[dict[str, Any]]:
@@ -450,6 +767,7 @@ class AgentRuntime:
                 self.memory.set_commitment_state(memory_id, "FULFILLED")
             if p.action == "SPEAK":
                 self.ws.my_turn(p.args["text"], target)
+                self._speaking_until_ms = self.ws.now_ms + min(8000, 60 * len(p.args["text"]))
                 if target is not None and self.conversation.partner is None:
                     self._start_conversation(target, None)
                 if target is not None and target == self.conversation.partner:
@@ -469,9 +787,16 @@ class AgentRuntime:
             "model_calls": model_calls, "action_request_ids": [r["action_request_id"] for r in requests],
             "fallback": fallback,
         }
+        if self.pulse is not None:
+            if self._fn1_problem([p.as_dict() for p in kept], None) and any(p.action == "MOVE_TO" for p in kept):
+                self._log("FN1_VIOLATION", partner=self.conversation.partner)      # should never happen (tested)
+            record["activity"] = self._set_activity(job, kept)
         self.records.append(record)
         if job.assembled is not None:
-            self.prompts.append({"decision_id": job.decision_id, "prompt": job.assembled.prompt})
+            entry = {"decision_id": job.decision_id, "prompt": job.assembled.prompt}
+            if job.choices is not None:
+                entry["choices"] = job.choices
+            self.prompts.append(entry)
         return requests
 
     # ---------- results from the host ----------
@@ -500,7 +825,8 @@ class AgentRuntime:
 
 
 _TRIGGER_ORDER = ["START", "ADDRESSED_SPEECH", "DIRECTED_GESTURE", "DIRECTED_EXPRESSION", "PERSON_NEAR",
-                  "PARTNER_LEFT", "GROUP_INVITE", "ACTION_REJECTED", "COMMITMENT_DUE", "TASK_STEP"]
+                  "PARTNER_LEFT", "GROUP_INVITE", "ACTION_REJECTED", "COMMITMENT_DUE", "TASK_STEP",
+                  "WAKE_CONDITION", "PULSE_REVIEW"]
 
 
 def _proposal_entry(p: Proposal) -> dict[str, Any]:

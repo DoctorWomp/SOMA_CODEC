@@ -216,3 +216,37 @@ def test_observer_filter_check_catches_tracks_an_agent_never_perceived(tmp_path)
     found = canary.observer_filter_problems(run, ["robot_r", "visitor_x", "visitor_y"])
     assert any("never perceived" in f and "anon_zzzzzzzzzz" in f for f in found)
     assert any("names robot_r by its real id" in f for f in found)
+
+
+def test_c1_prompt_has_argument_formats_observations_and_real_choices():
+    """G3c-2 (D-60): a C1 NPC sees how to write each action and who is near (its own senses only),
+    and its answer can only name tracks it perceives."""
+    rts, _, npc = _runtimes()
+    x = rts["visitor_x"]
+    s = Scene(observer="visitor_x", pose={"x": 15.0, "y": 0.0, "z": 8.5, "yaw_rad": 0.0})
+    job = x.observe(s.see(ROBOT_TRACK, 15, 10).packet())
+    assert job.tier == "C1"
+    prompt = job.assembled.prompt
+    assert 'MOVE_TO {"destination"' in prompt and "## OBSERVATIONS" in prompt and ROBOT_TRACK in prompt
+    assert job.choices["targets"] == [ROBOT_TRACK] and job.choices["channels"] == ["LOCAL"]
+    asyncio.run(x.decide(job))
+    assert x.prompts[-1]["choices"] == job.choices
+    assert job.assembled.record["total_tokens"] <= job.assembled.record["budget_tokens"]
+
+
+def test_other_server_busy_time_is_measured_per_call():
+    import time
+
+    from range_service.agents.gateway import ServerActivity
+
+    a = ServerActivity()
+    t0 = time.perf_counter()
+    focal = a.begin("focal")
+    time.sleep(0.05)
+    npc_start = time.perf_counter()
+    time.sleep(0.05)
+    a.end(focal)
+    time.sleep(0.03)
+    busy = a.other_busy_ms("npc", npc_start, time.perf_counter())
+    assert 40 <= busy <= 70                                  # only the overlap with Robot R's call
+    assert a.other_busy_ms("focal", t0, time.perf_counter()) == 0

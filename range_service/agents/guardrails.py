@@ -58,18 +58,31 @@ ACTION_SHAPES: dict[str, str] = {
 
 
 def action_schema_text(allowed_actions: list[str], gestures: list[str], expressions: list[str], short: bool = False) -> str:
+    # G3c-2 (D-60): C1 lists the argument formats too. Without them, small models invented
+    # arguments ("destination": "platform") in most C1 answers of the owner's bake-off.
     lines = [OUTPUT_FORMAT_SHORT if short else OUTPUT_FORMAT, "Actions:"]
     for action in allowed_actions:
         if action in ACTION_SHAPES:
-            lines.append(f"{action} {ACTION_SHAPES[action]}" if not short else action)
-    if not short:
-        lines.append(f"Your gestures: {', '.join(gestures) if gestures else 'none'}.")
+            lines.append(f"{action} {ACTION_SHAPES[action]}")
+    lines.append(f"Your gestures: {', '.join(gestures) if gestures else 'none'}.")
+    if not short or expressions:
         lines.append(f"Your expressions: {', '.join(expressions) if expressions else 'none'}.")
     return "\n".join(lines)
 
 
-def guardrails_section(tier: str, persona_actions: list[str], body: dict[str, Any], expressions: list[str]) -> str:
+ACTIVITY_FORMAT = (
+    'You may add "activity": {"kind": CONVERSE|WAIT_FOR|ATTEND|SURVEY|TRAVEL_TO|ASSIST|OBSERVE|RETURN_TO_POST|REST, '
+    '"target_id": track, "review_after_s": s, "wake_if": [{"addressed": true}, {"target_within_m": m}, '
+    '{"target_lost": true}, {"speech_heard": true}, {"new_track": true}, {"commitment_due": true}]}: '
+    "what you do until one of these happens. In a conversation, say goodbye or excuse yourself before leaving."
+)
+
+
+def guardrails_section(tier: str, persona_actions: list[str], body: dict[str, Any], expressions: list[str],
+                       activity: bool = False) -> str:
     short = tier == "C1"
     rules = GUARDRAILS_SHORT if short else GUARDRAILS
     gestures = list(body["gestures"]) if body["capabilities"]["can_gesture"] else []
-    return rules + "\n" + action_schema_text(persona_actions, gestures, expressions, short)
+    text = rules + "\n" + action_schema_text(persona_actions, gestures, expressions, short)
+    # G3c-2 (D-61): with the pulse protocol on, the answer may carry an activity.
+    return text + "\n" + ACTIVITY_FORMAT if activity else text

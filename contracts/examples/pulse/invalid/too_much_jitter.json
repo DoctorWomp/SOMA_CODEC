@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "pulse_id": "pulse",
+  "presence": {
+    "glance_range_m": 12.0,
+    "glance_cooldown_s": 8,
+    "gaze_hold_s": 4,
+    "return_to_partner_s": 1.0,
+    "idle_expression": "waiting"
+  },
+  "pulse": {
+    "backoff_s": [
+      15,
+      30,
+      60
+    ],
+    "jitter_frac": 0.9,
+    "idle_budget_per_min": 2,
+    "default_review_after_s": 60,
+    "max_review_after_s": 600,
+    "cooldowns_s": {
+      "target_within_m": 5,
+      "target_lost": 5,
+      "speech_heard": 5,
+      "new_track": 8,
+      "commitment_due": 10
+    },
+    "npc_busy_share": 0.7
+  },
+  "conversation": {
+    "range_m": 3.5,
+    "silence_limit_s": 20
+  },
+  "survey": {
+    "cell_m": 5.0,
+    "observe_radius_m": 6.0,
+    "min_revisit_s": 90,
+    "people_clearance_m": 3.0,
+    "return_to_post_s": 120,
+    "dwell_s": 10
+  }
+}

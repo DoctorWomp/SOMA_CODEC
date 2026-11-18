@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/pulse.schema.json",
+  "title": "Pulse settings",
+  "description": "configs/pulse.yaml (G3c-2, D-61; PULSE_PROTOCOL): presence loop, pulse triage and backoff, conversation holding (FN-1) and the simple survey. All times are simulated time.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pulse_id",
+    "presence",
+    "pulse",
+    "conversation",
+    "survey"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "pulse_id": {
+      "const": "pulse"
+    },
+    "presence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gaze_hold_s",
+        "glance_cooldown_s",
+        "glance_range_m",
+        "idle_expression",
+        "return_to_partner_s"
+      ],
+      "properties": {
+        "glance_range_m": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "glance_cooldown_s": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "gaze_hold_s": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "return_to_partner_s": {
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 5
+        },
+        "idle_expression": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,47}$"
+        }
+      },
+      "description": "Loop 2 (no model): glances toward new movement or speech, gaze defaults (EXPRESSION_PRINCIPLES \u00a78), slow Beacon breathing."
+    },
+    "pulse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backoff_s",
+        "cooldowns_s",
+        "default_review_after_s",
+        "idle_budget_per_min",
+        "jitter_frac",
+        "max_review_after_s",
+        "npc_busy_share"
+      ],
+      "properties": {
+        "backoff_s": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 600
+          }
+        },
+        "jitter_frac": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.5
+        },
+        "idle_budget_per_min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "default_review_after_s": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 600
+        },
+        "max_review_after_s": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 3600
+        },
+        "cooldowns_s": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commitment_due",
+            "new_track",
+            "speech_heard",
+            "target_lost",
+            "target_within_m"
+          ],
+          "properties": {
+            "target_within_m": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 600
+            },
+            "target_lost": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 600
+            },
+            "speech_heard": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 600
+            },
+            "new_track": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 600
+            },
+            "commitment_due": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 600
+            }
+          }
+        },
+        "npc_busy_share": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 1.0
+        }
+      },
+      "description": "Loop 4: deterministic triage, then a model review only when something changed."
+    },
+    "conversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "range_m",
+        "silence_limit_s"
+      ],
+      "properties": {
+        "range_m": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 10
+        },
+        "silence_limit_s": {
+          "type": "number",
+          "minimum": 2,
+          "maximum": 120
+        }
+      },
+      "description": "FN-1: when a conversation counts as open."
+    },
+    "survey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cell_m",
+        "dwell_s",
+        "min_revisit_s",
+        "observe_radius_m",
+        "people_clearance_m",
+        "return_to_post_s"
+      ],
+      "properties": {
+        "cell_m": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "observe_radius_m": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "min_revisit_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1800
+        },
+        "people_clearance_m": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "return_to_post_s": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 3600
+        },
+        "dwell_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 600
+        }
+      },
+      "description": "SURVEY and RETURN_TO_POST without HORIZON (own observation history only)."
+    }
+  }
+}

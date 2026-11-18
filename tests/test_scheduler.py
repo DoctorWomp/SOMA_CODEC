@@ -194,3 +194,13 @@ def test_synthetic_load_tier_ranks_after_every_real_agent():
         assert await load == first
 
     asyncio.run(run())
+
+
+def test_prewarm_leaves_a_slot_free_for_real_calls():
+    """G3c-2 (D-60): try_acquire only takes a slot when another stays free for a real call."""
+    from range_service.agents.scheduler import SlotScheduler
+
+    s = SlotScheduler(4, pinned_tiers=(), reserved=0)
+    assert s.try_acquire("a") is not None and s.try_acquire("b") is not None and s.try_acquire("c") is not None
+    assert s.try_acquire("d") is None                     # the last free slot stays for a real call
+    assert s.try_acquire("d", keep_free=0) is not None    # scene load (no real calls yet) may use it

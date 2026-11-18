@@ -7,7 +7,7 @@ from pathlib import Path
 
 from range_service.agents.gateway import GatewayResult
 from range_service.eval import bakeoff as bk
-from tools.bakeoff import PROMPT_SET, PROMPT_SET_V1, load_set
+from tools.bakeoff import PROMPT_SET, PROMPT_SET_V1, PROMPT_SET_V2, load_set
 from tools.godot_check import is_own_goal, own_goal_owners, private_strings
 
 ITEM = {"item_id": "x", "body_id": "quadruped", "gestures": ["HEAD_TILT", "SIT_IN_PLACE"],
@@ -44,9 +44,18 @@ def test_prompt_set_hash_ignores_windows_line_endings(tmp_path):
     assert load_set(crlf)[1].startswith("ee2b7c03be96")
 
 
-def test_prompt_set_v2_has_npc_prompts_and_enough_promise_situations():
+def test_prompt_set_v2_is_frozen():
+    assert load_set(PROMPT_SET_V2)[1].startswith("476703d7d4a5")       # the owner's G3c-1 results name it
+
+
+def test_prompt_set_v3_has_npc_prompts_and_enough_promise_situations():
     items, sha = load_set(PROMPT_SET)
     assert len(sha) == 64 and len({i["item_id"] for i in items}) == len(items)
+    # G3c-2 (D-60): every prompt carries the answer choices of its decision, and every C1 prompt
+    # shows the agent's own observations and the argument formats.
+    assert all(i.get("choices") and "targets" in i["choices"] for i in items)
+    c1 = [i for i in items if i["tier"] == "C1"]
+    assert c1 and all("## OBSERVATIONS" in i["prompt"] and 'MOVE_TO {"destination"' in i["prompt"] for i in c1)
     roles = {(i["role"], i["tier"]) for i in items}
     assert {("ROBOT_R", "FOCAL"), ("NPC", "C1"), ("NPC", "C2")} <= roles
     assert {i["agent_id"] for i in items if i["role"] == "NPC"} == {"visitor_x", "visitor_y"}
@@ -142,13 +151,17 @@ def test_report_writes_markdown_and_json(tmp_path):
                          "decisions": 9, "timeouts": 0, "fallbacks": 0, "p50_ms": 900.0, "p95_ms": 1500, "npc_calls": 30,
                          "npc_p50_ms": 700.0, "promotion_warm_p50_ms": 650.0, "promotion_warm_n": 2,
                          "promotion_cold_p50_ms": 1200.0, "promotion_cold_n": 1, "vram_focal_mib": 8700,
-                         "vram_npc_mib": 3600, "journal": "abc"}]}
+                         "vram_npc_mib": 3600, "journal": "abc", "robot_actions_accepted": 9, "robot_actions_stale": 0,
+                         "npc_timeouts": 2, "npc_queue_p50_ms": 5, "npc_prefill_p50_ms": 300,
+                         "npc_generation_p50_ms": 380, "npc_robot_busy_share": 0.4, "loop_lag_p95_ms": 12.5,
+                         "promotion_warm_to_call_p50_ms": 4000, "promotion_warm_call_p50_ms": 600,
+                         "promotion_cold_to_call_p50_ms": 9000, "promotion_cold_call_p50_ms": 900}]}
     j, m = bk.write_report(results, tmp_path)
     text = m.read_text()
     assert "## Offline prompt set: Robot R prompts" in text and "## Offline prompt set: NPC prompts" in text
     assert "| N3 Qwen3.5-4B | Q4_K_M | q8_0 | 1 | 100% |" in text and "3100" in text
-    assert "| F3 Gemma 4 12B Q4_0 | N3 | LIVE_LOAD | C | yes | 9 | 0 | 0 | 900.0 | 1500 | 30 | 700.0 | 650.0 (2) | " \
-           "1200.0 (1) | 8700 / 3600 |" in text
+    assert "| F3 Gemma 4 12B Q4_0 | N3 | LIVE_LOAD | 1 | C | yes | 9 | 900.0 / 1500 | 9 / 0 | 30 (2) | " \
+           "700.0 / 5 / 300 / 380 | 40% | 12.5 | 4000 / 600 / 650.0 (2) | 9000 / 900 / 1200.0 (1) | 8700 / 3600 |" in text
     assert json.loads(Path(j).read_text())["offline"][0]["vram_mib"] == 3100
 
 

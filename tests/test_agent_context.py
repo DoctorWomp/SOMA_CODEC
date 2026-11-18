@@ -75,7 +75,8 @@ def test_t18_long_run_stays_within_budget_and_keeps_commitments():
 
 @pytest.mark.parametrize("tier", ["FOCAL", "C2", "C1"])
 def test_section_budgets_add_up_to_the_tier_budgets(tier):
-    assert sum(BUDGETS[tier].values()) == {"FOCAL": 3750, "C2": 1900, "C1": 500}[tier]
+    # C1 500 -> 780 at G3c-2 (D-60): argument formats and a minimal OBSERVATIONS line.
+    assert sum(BUDGETS[tier].values()) == {"FOCAL": 3750, "C2": 1900, "C1": 780}[tier]
 
 
 @pytest.mark.parametrize("body_id,tier", list(itertools.product(sorted(CONFIGS.items["bodies"]), ["FOCAL", "C2", "C1"])))

@@ -33,6 +33,8 @@ if TYPE_CHECKING:
     from .runtime import AgentRuntime
 
 FAREWELLS = ("bye", "goodbye", "see you", "that's all")
+# "Give me a moment": the person will come back to it (G3c-2, SB-06).
+WAIT_PHRASES = ("one moment", "just a moment", "give me a minute", "hold on", "one second")
 
 # Topic keywords -> answer. "I don't know" answers are deliberate: unknown stays unknown.
 ANSWERS: list[tuple[tuple[str, ...], str]] = [
@@ -51,6 +53,11 @@ def answer_for(text: str) -> str:
         if any(k in lowered for k in keys):
             return answer
     return DEFAULT_ANSWER
+
+
+def asks_to_wait(text: str) -> bool:
+    lowered = text.lower()
+    return any(w in lowered for w in WAIT_PHRASES)
 
 
 def is_farewell(text: str) -> bool:
@@ -89,6 +96,11 @@ class RobotDemoPolicy:
                     out += self._expressed("thank_you", speaker, rt)
                     out.append(Proposal("SPEAK", {"channel": "LOCAL", "text": "You're welcome. Enjoy the expo!",
                                                   "addressee_id": speaker}))
+                elif asks_to_wait(text) and speaker is not None and not rt.memory.commitments_to(speaker):
+                    # They asked it to wait: say so, and keep the promise when they come back (SB-06).
+                    out.append(Proposal("SPEAK", {"channel": "LOCAL", "text": "Of course, take your time. I'll be here.",
+                                                  "addressee_id": speaker},
+                                        commitment="Help them when they are ready."))
                 else:
                     # Answering someone it promised to help keeps that promise.
                     kept = [c["memory_id"] for c in rt.memory.commitments_to(speaker)] if speaker else []

@@ -75,7 +75,7 @@ class ProbeAgent(GreeterAgent):
     """A greeter that, once the run is under way, also sends requests the host must refuse,
     each tagged so tests can find its result. Some are deliberately invalid (``raw``)."""
 
-    START_TICK = 180
+    START_TICK = 480   # later than the stale window (390 ticks, D-60), so the stale probe can be old enough
 
     def __init__(self, agent_id: str) -> None:
         super().__init__(agent_id)
@@ -90,7 +90,7 @@ class ProbeAgent(GreeterAgent):
         self.probed = True
         tracks = [i["track_id"] for i in packet["observations"]
                   if i["kind"] == "VISUAL_PRESENCE" and i["validity"] in ("OBSERVED", "DEGRADED")]
-        out.append(self.request(tick - 120, "GESTURE", {"gesture": "NOD"}, "stale"))
+        out.append(self.request(tick - 450, "GESTURE", {"gesture": "NOD"}, "stale"))
         invalid = self.request(tick, "FLY", {"altitude_m": 3}, "invalid")
         self.raw_ids.add(invalid["action_request_id"])
         out.append(invalid)
