@@ -2,7 +2,24 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
-## G3e — Presence and expression (2026-11-18; draft PR)
+## G3f — Robot R on time under load (2026-11-19; draft PR)
+
+`docs/gates/G3_PLAN.md` (G3f), D-75 to D-83 PROPOSED, `docs/gates/G3f_OWNER_CHECKLIST.md`. Owner decisions recorded: D-60, D-61, D-63 to D-69 APPROVED; D-70's memory proposal APPROVED and built (D-81).
+
+### Fixed (each reproduced first, with a regression test)
+- The live bake-off pooled runs: run folders were reused and never cleared, and decision records are appended, so the owner's 2026-11-19 baseline rows included the earlier F3 + N3 runs' calls. A run now clears an earlier run's files from its folder (only what a run writes), folders are named by NPC model and condition, and pooled files are split (D-75).
+- With the pulse on, no prompt started with its persona prefix, so NPC prompts never went as system + user messages and snapshots and pre-warms cached a prefix the prompts did not use (D-76).
+- results.md printed any number ≤ 1 as a percentage (a 0.0 ms queue as "0%") (D-75).
+- The Demo policy turned the body (`TURN_TO`) to answer while walking; it now glances with the head and looks again once it stands (D-82).
+
+### Added
+- Robot R's calls by outcome and cost in every live row and every run's `summary.json` (`robot_calls`); `tools/bakeoff.py diagnose` for existing run folders; results.md leaves out void rows, marks pooled ones, and adds a Robot R table and the G3f target table (D-75).
+- Named conditions in `configs/inference.yaml` and the bake-off (live and offline): `focal.prompt_layout` (ONE_MESSAGE / SYSTEM_PREFIX, D-76), `focal.answer` (FULL / SHORT, D-77), `gpu_guard` (the NPC server holds new calls while Robot R thinks, D-78). Defaults unchanged until the owner's PC measures them.
+- Raw heard speech expires 10 minutes after its episode card and is capped at 40 per agent, except what an open promise or a correction ties (D-81; CONTEXT_MEMORY_STRATEGY §8).
+- SB10_GLANCE_WHILE_WALKING, checked by `tools/godot_check.py`; three spawn points on Sandbox Flats (D-82).
+- A simulated shared GPU: `--model fake-gpu`, `--npc-load`, `tools/contention_sim.py` (D-83).
+
+## G3e — Presence and expression (2026-11-18; merged)
 
 `docs/gates/G3_PLAN.md` (G3e), D-71 APPROVED (owner: color shifting, option a), D-72 to D-74 PROPOSED, `docs/gates/G3e_OWNER_CHECKLIST.md`. FIELD_NOTES FN-5 to FN-7.
 

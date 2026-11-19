@@ -1,0 +1,63 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/scenarios/SB10_GLANCE_WHILE_WALKING.yaml",
+  "kind": "scenarios",
+  "data": {
+    "schema_version": "1.0",
+    "scenario_id": "SB10_GLANCE_WHILE_WALKING",
+    "title": "Glance while walking",
+    "map": "sandbox_flats",
+    "default_seed": 1010,
+    "tick_hz": 10,
+    "duration_ticks": 450,
+    "events": [
+      {
+        "at_tick": 55,
+        "event_type": "say",
+        "actor": "visitor_s",
+        "args": {
+          "to": "robot_r",
+          "text": "Hi robot, where is the cafe?"
+        }
+      },
+      {
+        "at_tick": 40,
+        "event_type": "move_to",
+        "actor": "visitor_b",
+        "args": {
+          "x": 18.5,
+          "z": 15.0
+        }
+      },
+      {
+        "at_tick": 150,
+        "event_type": "say",
+        "actor": "visitor_b",
+        "args": {
+          "to": "robot_r",
+          "text": "Excuse me, can you help me?"
+        }
+      }
+    ],
+    "cast": {
+      "robot_r": {
+        "body": "wheeled_humanoid",
+        "controller": "LLM_AGENT",
+        "spawn": "spawn_walk_start",
+        "presence_amplitude": 0.5
+      },
+      "visitor_s": {
+        "body": "human_walker",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_walk_side",
+        "presence_amplitude": 0.5
+      },
+      "visitor_b": {
+        "body": "human_walker",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_walk_behind",
+        "presence_amplitude": 0.5
+      }
+    }
+  }
+}

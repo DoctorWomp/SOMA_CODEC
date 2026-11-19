@@ -105,3 +105,54 @@ def test_acceptance_after_the_next_decision_started_applies_once_and_shows_as_pe
     asyncio.run(go())
     assert len(rt.memory.commitments_to(Y)) == 1                         # applied exactly once
     assert rt.pending_line() is None
+
+
+# ---------- D-70 (owner 2026-11-19): raw heard speech is bounded ----------
+
+def _heard(mem, who, text, at_ms):
+    item = {"track_id": who, "event_id": f"ev_{at_ms}", "observed_at_ms": at_ms,
+            "value": {"text": text, "channel": "LOCAL", "addressed_to_observer": True}}
+    return mem.remember_heard(item, {"observations": []}, set())
+
+
+def test_raw_heard_items_expire_ten_minutes_after_their_card_except_a_promise():
+    from range_service.agents.memory import RAW_HEARD_RETENTION_MS, AgentMemory
+
+    mem = AgentMemory("robot_r")
+    a = _heard(mem, "anon_x", "Where is the demo?", 1000)
+    b = _heard(mem, "anon_y", "Can you help me after this?", 2000)
+    assert a is not None and b is not None and a["expires_at_ms"] is None
+    mem.commit("help Y after this", "anon_y", now_ms=2500, ttl_ms=10**7)   # still open at the check
+    done = mem.summarized({"anon_x", "anon_y"}, 0, now_ms=60_000)
+    assert set(done) == {a["memory_id"], b["memory_id"]}
+    mem.expire(60_000 + RAW_HEARD_RETENTION_MS - 1)
+    assert a["status"] == "REPORTED" and b["status"] == "REPORTED"
+    mem.expire(60_000 + RAW_HEARD_RETENTION_MS)
+    assert a["status"] == "EXPIRED"                                  # summarized, nothing open: gone
+    assert b["status"] == "REPORTED" and b["expires_at_ms"] is None  # Y still has an open promise: kept
+    assert a not in mem.active(now_ms=10**9) and b in mem.active(now_ms=10**9)
+
+
+def test_a_correction_is_never_expired_by_the_retention_window():
+    from range_service.agents.memory import RAW_HEARD_RETENTION_MS, AgentMemory
+
+    mem = AgentMemory("robot_r")
+    old = _heard(mem, "anon_x", "My name is Sam.", 1000)
+    new = mem.correct(old["memory_id"], "Actually my name is Sasha.", now_ms=2000, shared_by="anon_x")
+    mem.summarized({"anon_x"}, 0, now_ms=3000)
+    mem.expire(3000 + RAW_HEARD_RETENTION_MS + 1)
+    assert new["status"] == "REPORTED" and new in mem.active(now_ms=10**9)
+
+
+def test_raw_heard_items_are_capped_oldest_normal_first_promises_kept():
+    from range_service.agents.memory import MAX_RAW_HEARD, AgentMemory
+
+    mem = AgentMemory("robot_r")
+    kept = _heard(mem, "anon_y", "Please help me later.", 0)
+    mem.commit("help Y later", "anon_y", now_ms=1)
+    items = [_heard(mem, "anon_x", f"Question {i}?", 10 + i) for i in range(MAX_RAW_HEARD + 5)]
+    active = [i for i in mem.active(now_ms=10**6) if AgentMemory.is_raw_heard(i)]
+    assert len(active) == MAX_RAW_HEARD
+    assert kept in active                                            # tied to an open promise
+    assert all(i["status"] == "EXPIRED" for i in items[:6]) and all(i in active for i in items[6:])
+    assert sum(e["event"] == "RAW_HEARD_CAP" for e in mem.events) == 6

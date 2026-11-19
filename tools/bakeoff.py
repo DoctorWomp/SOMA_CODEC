@@ -7,6 +7,9 @@
     uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE LIVE_RENDERED \
         --resolution 1920x1080 --render-preset v0                           # the render tax (G3d)
     uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE --no-pulse  # pulse off (G3d)
+    uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE LIVE_LOAD \
+        --focal-layout SYSTEM_PREFIX --focal-answer SHORT --gpu-guard on      # G3f conditions (D-76 to D-78)
+    uv run python tools/bakeoff.py diagnose                      # G3f: Robot R's calls in existing run folders
     uv run python tools/bakeoff.py report                        # print results.md again
 
     uv run python tools/bakeoff.py build-set                     # maintainers: rebuild bakeoff/prompts_v3.jsonl
@@ -25,6 +28,16 @@ records frame times (p50/p95/p99, spikes) and the peak VRAM sampled during the r
 compares LIVE with LIVE_RENDERED (the render tax, ART_DIRECTION §7) and pulse on with pulse off
 (--no-pulse) where both were run. Both commands add to results.json and rewrite results.md:
 paste that file back.
+
+G3f (D-75 to D-78): every run gets a clean folder (several files are appended to during a run, and
+the old harness pooled a folder's earlier run into the next row); each live row breaks Robot R's
+calls down by outcome (timeout in the queue or at the model, invalid output by kind, repairs) and
+by cost (queue, prefill, generation, prompt, cached and generated tokens, other server busy); the
+conditions --focal-layout, --focal-answer and --gpu-guard are part of a row's identity, offline
+too (--focal-layout, --focal-answer on Robot R's prompts). results.md leaves out rows from the
+pre-G3c-2 harness (not real time) and marks rows that pooled an earlier run. ``diagnose`` reads
+existing run folders (also the old pooled ones, split run by run) and writes diagnosis.md: counts
+and timings only.
 
 Nothing is downloaded: models come from your registry (tools/models.py). Needs an NVIDIA GPU for
 meaningful speeds; on a CPU it runs, slowly (the cloud smoke test uses model T1).
@@ -50,6 +63,7 @@ from range_service.agents.runtime import OUTPUT_CAPS  # noqa: E402
 from range_service.eval.promptset import promise_items  # noqa: E402
 from range_service.configs import load_and_check  # noqa: E402
 from range_service.eval import bakeoff as bk  # noqa: E402
+from range_service.eval import live_diag  # noqa: E402
 from range_service.models import registry as reg  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -155,17 +169,25 @@ def limited(items: list[dict], limit: int | None) -> list[dict]:
     return out
 
 
-def npc_prefix(item: dict) -> str | None:
+def npc_prefix(item: dict, focal_layout: str = "ONE_MESSAGE") -> str | None:
     """NPC prompts are sent as in a run: the persona prefix (guardrails + identity) as its own
-    system message (configs/inference.yaml personas.system_prefix). Robot R's stay one message."""
-    if item.get("role") != "NPC":
+    system message (configs/inference.yaml personas.system_prefix). Robot R's stay one message,
+    unless the SYSTEM_PREFIX condition is asked for (G3f, D-76)."""
+    if item.get("role") != "NPC" and focal_layout != "SYSTEM_PREFIX":
         return None
     head, sep, _ = item["prompt"].partition("\n\n## COMMITMENTS")
     return head if sep else None
 
-async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, limit: int | None) -> dict:
+def condition_key(c: dict) -> tuple:
+    """An offline condition's identity: model, KV cache and Robot R's layout and answer (G3f)."""
+    return (c["label"], c["kv"], c.get("focal_layout", "ONE_MESSAGE"), c.get("focal_answer", "FULL"))
+
+
+async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, limit: int | None,
+                         focal_layout: str = "ONE_MESSAGE", focal_answer: str = "FULL") -> dict:
     setup = build_llama(entry["id"], kv_cache_type=kv, inference=inf,
                         log_path=RESULTS / f"server_{entry['label']}_{kv}.log")
+    setup.gateway.answer = focal_answer
     total_before = bk.gpu_memory_used_mib()     # for Windows, where per-process memory is N/A
     started = time.perf_counter()
     await setup.gateway.start()
@@ -180,7 +202,7 @@ async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, lim
             result = await setup.gateway.decide(agent_id=item["agent_id"], tier=item["tier"], prompt=item["prompt"],
                                                 prompt_sha256=item["prompt_sha256"], max_tokens=item["max_tokens"],
                                                 allowed_actions=item["allowed_actions"], tick=item["based_on_tick_id"],
-                                                prefix=npc_prefix(item), choices=item.get("choices"))
+                                                prefix=npc_prefix(item, focal_layout), choices=item.get("choices"))
             s = bk.score_item(item, result)
             scored.append(s)
             progress.update(f"  {entry['label']} {kv}: {n}/{len(todo)} ({'ok' if s['final_valid'] else s['fallback']})")
@@ -188,7 +210,8 @@ async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, lim
         progress.done()
         await setup.gateway.stop()
     return {"label": entry["label"], "id": entry["id"], "model": entry["model"], "quant": entry["quant"],
-            "qat": entry["qat"], "kv": kv, "sha256": setup.model.sha256, "load_s": load_s,
+            "qat": entry["qat"], "kv": kv, "focal_layout": focal_layout, "focal_answer": focal_answer,
+            "sha256": setup.model.sha256, "load_s": load_s,
             "vram_mib": vram, "vram_note": note, "summary": bk.summarize_condition(scored),
             "summary_by_role": bk.summarize_by_role(scored), "items": scored}
 
@@ -224,18 +247,19 @@ def cmd_offline(args: argparse.Namespace) -> int:
     for entry in entries:
         for kv in args.kv:
             try:
-                cond = asyncio.run(_run_condition(entry, kv, items, inf, args.limit))
+                cond = asyncio.run(_run_condition(entry, kv, items, inf, args.limit, args.focal_layout, args.focal_answer))
             except ProviderError as exc:
                 print(f"  {entry['label']} {kv}: FAILED: {exc}")
                 continue
-            results["offline"] = [c for c in results["offline"] if (c["label"], c["kv"]) != (entry["label"], kv)] + [cond]
+            results["offline"] = [c for c in results["offline"] if condition_key(c) != condition_key(cond)] + [cond]
             _save(results)
-    by_key = {(c["label"], c["kv"]): c for c in results["offline"]}
+    by_key = {condition_key(c): c for c in results["offline"]}
     for c in results["offline"]:
-        ref = bk.reference_for(c, [o for o in results["offline"] if o["kv"] == c["kv"]])
+        same = [o for o in results["offline"] if o["kv"] == c["kv"] and condition_key(o)[2:] == condition_key(c)[2:]]
+        ref = bk.reference_for(c, same)
         ag = bk.agreement(c["items"], ref["items"]) if ref else None
         c["agreement_precision"] = dict(ag, reference=f"{ref['label']} {ref['quant']}") if ag else None
-        f16 = by_key.get((c["label"], "f16"))
+        f16 = by_key.get((c["label"], "f16") + condition_key(c)[2:])
         c["agreement_kv"] = bk.agreement(c["items"], f16["items"]) if c["kv"] != "f16" and f16 else None
     _save(results)
     return 0
@@ -258,12 +282,34 @@ def _p(values: list[float], q: float) -> float | None:
     return float(vals[min(len(vals) - 1, int(round(q * (len(vals) - 1))))]) if vals else None
 
 
+HARNESS = "g3f"     # live rows from this harness on: one run per folder, Robot R's per-call breakdown
+
+
+def conditions_suffix(c: dict) -> str:
+    """The run-folder suffix of non-default conditions (G3f)."""
+    parts = []
+    if c.get("prompt_layout") == "SYSTEM_PREFIX":
+        parts.append("sysprefix")
+    if c.get("answer") == "SHORT":
+        parts.append("short")
+    if c.get("gpu_guard"):
+        parts.append(f"guard{c.get('npc_cap', 0)}")
+    return "".join(f"_{p}" for p in parts)
+
+
+def live_key(row: dict) -> tuple:
+    c = row.get("conditions") or {}
+    return (row["label"], row["mode"], row.get("npc_label"), row.get("pulse", True), c.get("prompt_layout", "ONE_MESSAGE"),
+            c.get("answer", "FULL"), bool(c.get("gpu_guard")), c.get("npc_cap", 0) if c.get("gpu_guard") else 0)
+
+
 def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, object]]) -> dict:
     """One live row over all repeats: Robot R's calls only for its latency; NPC calls (queue,
     prefill, generation, and how long Robot R's server was busy meanwhile), Robot R's action
     outcomes (accepted or stale), promotions, event-loop lag and VRAM apart."""
     robot, npc, promos, lags, accepted, stale, journals = [], [], [], [], 0, 0, []
     frames, vram_peaks, minutes = [], [], 0.0
+    all_records, all_delivery, pooled_runs = [], [], 0
     ok = True
     s = None
     for out, r in runs:
@@ -273,8 +319,18 @@ def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, obje
         if (render.get("vram") or {}).get("peak_mib") is not None:
             vram_peaks.append(render["vram"]["peak_mib"])
         minutes += (r.summary.get("ticks_run") or 0) / 3600
-        for line in (out / "sidecar" / "decision_records.jsonl").read_text(encoding="utf-8").splitlines():
-            rec = json.loads(line)
+        recs = [json.loads(line) for line in (out / "sidecar" / "decision_records.jsonl").read_text(encoding="utf-8").splitlines()
+                if line.strip()]
+        segments = live_diag.split_runs(recs)
+        if len(segments) > 1:
+            # Never again (G3f: run folders are cleared), but never pooled silently either: keep this run's.
+            pooled_runs += 1
+            recs = segments[-1]
+        all_records += recs
+        delivery = out / "sidecar" / "delivery.jsonl"
+        if delivery.is_file():
+            all_delivery += [json.loads(x) for x in delivery.read_text(encoding="utf-8").splitlines() if x.strip()]
+        for rec in recs:
             (robot if rec["agent_id"] == "robot_r" else npc).extend(rec["model_calls"])
         promos += [json.loads(line) for line in (out / "promotions.jsonl").read_text(encoding="utf-8").splitlines() if line]
         s = r.summary
@@ -322,7 +378,12 @@ def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, obje
             "frame_spikes": sum(x["spikes"] for x in frames) if frames else None,
             "frame_headless": all(x.get("display_server") == "headless" for x in frames) if frames else None,
             "vram_peak_mib": max(vram_peaks) if vram_peaks else None,
-            "vram_peak_note": None if vram_peaks else ((runs[-1][1].summary.get("render") or {}).get("vram") or {}).get("reason")}
+            "vram_peak_note": None if vram_peaks else ((runs[-1][1].summary.get("render") or {}).get("vram") or {}).get("reason"),
+            # G3f (D-75): one run per folder; Robot R's calls by outcome and cost; the conditions.
+            "harness": HARNESS, "pooled_runs_split": pooled_runs,
+            "conditions": dict(runs[-1][1].summary.get("conditions") or {}),
+            "gpu_guard_stats": runs[-1][1].summary.get("gpu_guard"),
+            "robot": live_diag.robot_breakdown(all_records, all_delivery)}
 
 
 def cmd_live(args: argparse.Namespace) -> int:
@@ -339,6 +400,11 @@ def cmd_live(args: argparse.Namespace) -> int:
     npc_items = [i for i in load_set(PROMPT_SET)[0] if i.get("role") == "NPC"]
     npc_label = reg.catalog_entry(catalog, args.npc_model)["label"] if args.npc_model not in ("config", "none") else args.npc_model
     npc_slots = _inf()["servers"].get("npc", {}).get("parallel_slots", 1)
+    from range_service.agents.runmodels import Conditions   # noqa: PLC0415
+
+    conditions = Conditions(args.focal_layout, args.focal_answer,
+                            None if args.gpu_guard is None else args.gpu_guard == "on", args.npc_cap)
+    suffix = conditions_suffix(conditions.resolve(_inf()))
     for name in args.models:
         entry = reg.catalog_entry(catalog, name)
         for mode in args.modes:
@@ -347,7 +413,9 @@ def cmd_live(args: argparse.Namespace) -> int:
             npc_spec = {"config": "auto", "none": "none"}.get(args.npc_model, f"llama:{args.npc_model}")
             runs = []
             for k in range(args.repeat):
-                out = RESULTS / f"run_{entry['label']}_{mode.lower()}{'_nopulse' if args.no_pulse else ''}_{k + 1}"
+                npc_part = "" if npc_label in ("config",) else f"_{str(npc_label).lower()}"
+                out = RESULTS / (f"run_{entry['label']}{npc_part}_{mode.lower()}{'_nopulse' if args.no_pulse else ''}"
+                                 f"{suffix}_{k + 1}")
                 print(f"SB-04 {mode} {k + 1}/{args.repeat} with {entry['label']} {entry['model']} {entry['quant']} "
                       f"(NPC model: {npc_label})...")
                 try:
@@ -357,7 +425,7 @@ def cmd_live(args: argparse.Namespace) -> int:
                         npc_load_streams=load, npc_load_prompts=npc_items,
                         headless=mode not in RENDERED_MODES, resolution=args.resolution,
                         render_preset=args.render_preset, frame_stats=True,
-                        pulse="off" if args.no_pulse else "auto")))
+                        pulse="off" if args.no_pulse else "auto", conditions=conditions)))
                 except RunError as exc:
                     print(f"  FAILED: {exc}")
                     continue
@@ -367,9 +435,33 @@ def cmd_live(args: argparse.Namespace) -> int:
             row = live_row(entry, npc_label, mode, runs)
             if row["fallback"]:
                 print(f"  NOTE: Option B (one server): {row['fallback']}")
-            results["live"] = [x for x in results["live"] if (x["label"], x["mode"], x.get("npc_label"), x.get("pulse", True)) !=
-                               (row["label"], mode, npc_label, row["pulse"])] + [row]
+            results["live"] = [x for x in results["live"] if live_key(x) != live_key(row)] + [row]
             _save(results)
+    return 0
+
+
+def cmd_diagnose(args: argparse.Namespace) -> int:
+    """G3f (D-75): Robot R's calls in existing run folders, split run by run (folders the old harness
+    reused hold several runs). Writes diagnosis.json and diagnosis.md: counts and timings only."""
+    folders = args.folders or sorted(p for p in RESULTS.glob("run_*") if (p / "sidecar" / "decision_records.jsonl").is_file())
+    if not folders:
+        print(f"No run folders with decision records under {RESULTS}")
+        return 1
+    rows = []
+    for folder in folders:
+        manifest = folder / "run_manifest.json"
+        settings = json.loads(manifest.read_text(encoding="utf-8")).get("resolved_settings", {}) if manifest.is_file() else {}
+        for row in live_diag.diagnose_folder(folder):
+            row["model"] = settings.get("model.catalog_label")
+            row["npc_model"] = settings.get("npc_model.catalog_label") or settings.get("npc_model")
+            row["run_mode"] = settings.get("run_mode") or settings.get("mode")
+            rows.append(row)
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    (RESULTS / "diagnosis.json").write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    md = bk.diagnosis_lines(rows)
+    (RESULTS / "diagnosis.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    print("\n".join(md))
+    print(f"\nWritten: {RESULTS / 'diagnosis.md'} (paste it back) and diagnosis.json")
     return 0
 
 
@@ -395,6 +487,10 @@ def main(argv: list[str] | None = None) -> int:
     p_off.add_argument("--kv", nargs="+", default=["f16", "q8_0"], choices=["f16", "q8_0", "q4_0"])
     p_off.add_argument("--set", type=Path, default=PROMPT_SET)
     p_off.add_argument("--limit", type=int, default=None, help="only the first N prompts of each role (smoke tests)")
+    p_off.add_argument("--focal-layout", default="ONE_MESSAGE", choices=["ONE_MESSAGE", "SYSTEM_PREFIX"],
+                       help="G3f (D-76): Robot R's prompts as one message (as measured) or with the prefix as a system message")
+    p_off.add_argument("--focal-answer", default="FULL", choices=["FULL", "SHORT"],
+                       help="G3f (D-77): Robot R's answer limits")
     p_live = sub.add_parser("live")
     p_live.add_argument("--models", nargs="+", required=True)
     p_live.add_argument("--modes", nargs="+", default=list(LIVE_MODES), choices=list(LIVE_MODES))
@@ -406,10 +502,21 @@ def main(argv: list[str] | None = None) -> int:
     p_live.add_argument("--render-preset", default="v0", help="LIVE_RENDERED: v0 or v0_compat (range_service/eval/runner.py)")
     p_live.add_argument("--no-pulse", action="store_true",
                         help="the pulse protocol off in every run (compare with the same command without it)")
+    p_live.add_argument("--focal-layout", default=None, choices=["ONE_MESSAGE", "SYSTEM_PREFIX"],
+                        help="G3f (D-76): Robot R's prompt layout (default: configs/inference.yaml)")
+    p_live.add_argument("--focal-answer", default=None, choices=["FULL", "SHORT"],
+                        help="G3f (D-77): Robot R's answer limits (default: configs/inference.yaml)")
+    p_live.add_argument("--gpu-guard", default=None, choices=["on", "off"],
+                        help="G3f (D-78): focal-first GPU guard on the NPC server (default: configs/inference.yaml)")
+    p_live.add_argument("--npc-cap", type=int, default=None,
+                        help="G3f (D-78): real NPC calls allowed in flight while Robot R thinks (default: config, 0)")
+    p_diag = sub.add_parser("diagnose")
+    p_diag.add_argument("folders", nargs="*", type=Path, help="run folders (default: every results/bakeoff/run_*)")
     sub.add_parser("report")
     args = parser.parse_args(argv)
     try:
-        return {"build-set": cmd_build_set, "offline": cmd_offline, "live": cmd_live, "report": cmd_report}[args.command](args)
+        return {"build-set": cmd_build_set, "offline": cmd_offline, "live": cmd_live, "diagnose": cmd_diagnose,
+                "report": cmd_report}[args.command](args)
     except reg.ModelError as exc:
         print(f"error: {exc}")
         return 1

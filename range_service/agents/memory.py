@@ -10,6 +10,11 @@ Every item follows contracts/memory_item.schema.json. Rules enforced here:
   ``MAX_OPEN_COMMITMENTS`` stay open; beyond that the oldest is released and logged.
 - **Nothing here comes from world truth or another agent's memory.** The agent's own
   ``reason_summary`` text is never stored (CONTEXT_MEMORY_STRATEGY §6, no self-feeding).
+- **Raw heard speech is bounded** (owner decision 2026-11-19 on D-70, built in G3f; CONTEXT_MEMORY_STRATEGY
+  §8): once a conversation is summarized into an episode card, its raw heard items expire after
+  ``RAW_HEARD_RETENTION_MS`` (10 minutes); and at most ``MAX_RAW_HEARD`` raw heard items stay
+  active per agent, the oldest NORMAL-importance one expiring first. Items tied to an open promise
+  (heard from someone the agent promised) or to a correction never expire this way while that holds.
 """
 
 from __future__ import annotations
@@ -25,6 +30,8 @@ MAX_OPEN_COMMITMENTS = 8
 MAX_EPISODE_CARDS = 50          # CONTEXT_MEMORY_STRATEGY §8
 COMMITMENT_TTL_MS = 300_000     # an unkept promise expires after 5 minutes (reported, never silently dropped)
 IMPORTANCE_RANK = {"LOW": 0, "NORMAL": 1, "HIGH": 2, "CRITICAL": 3}
+RAW_HEARD_RETENTION_MS = 600_000   # D-70 (owner 2026-11-19): raw heard items last 10 minutes after their card
+MAX_RAW_HEARD = 40                 # D-70: raw heard items active per agent, at most
 
 
 class MemoryRuleError(ValueError):
@@ -91,7 +98,64 @@ class AgentMemory:
         self.items.append(item)
         participants = {item["shared_by"]} if item["shared_by"] else set()
         self.tags[item["memory_id"]] = set(topics) | participants
+        self._cap_raw_heard(item["observed_at_ms"])
         return item
+
+    # ---------- raw heard speech: retention and cap (D-70, owner 2026-11-19) ----------
+
+    @staticmethod
+    def is_raw_heard(item: dict[str, Any]) -> bool:
+        """Speech addressed to this agent, stored as heard (REPORTED, untrusted): not a card, a
+        promise, a correction or a fact the agent discovered."""
+        return item["source_class"] == "REPORTED" and item["store"] in ("EPISODIC_LEDGER", "RELATIONAL_LEDGER") \
+            and item["content"].get("untrusted_text") is True and item["supersedes"] is None
+
+    def _protected(self, item: dict[str, Any]) -> bool:
+        """Tied to an open promise (heard from someone the agent promised) or to a correction."""
+        if item["importance"] in ("HIGH", "CRITICAL") or item["status"] == "CONTRADICTED":
+            return True
+        if any(i.get("supersedes") == item["memory_id"] for i in self.items):
+            return True
+        who = item.get("shared_by")
+        return who is not None and bool(self.commitments_to(who))
+
+    def _active_raw_heard(self, now_ms: int) -> list[dict[str, Any]]:
+        return [i for i in self.items if self.is_raw_heard(i) and i["status"] not in ("EXPIRED", "CONTRADICTED")
+                and (i["expires_at_ms"] is None or i["expires_at_ms"] > now_ms)]
+
+    def summarized(self, speakers: set[str], since_ms: int, now_ms: int,
+                   retention_ms: int = RAW_HEARD_RETENTION_MS) -> list[str]:
+        """A conversation with ``speakers`` from ``since_ms`` was summarized into an episode card:
+        its raw heard items expire ``retention_ms`` from now (D-70). Returns their ids."""
+        out = []
+        for item in self._active_raw_heard(now_ms):
+            # Every raw item heard from them so far without an expiry: earlier conversations with
+            # them were summarized already, and the line that opened this one may carry an
+            # observation time just before ``since_ms``.
+            if item.get("shared_by") in speakers and item["observed_at_ms"] <= now_ms and item["expires_at_ms"] is None:
+                item["expires_at_ms"] = now_ms + retention_ms
+                item["version"] += 1
+                out.append(item["memory_id"])
+        if out:
+            self.events.append({"event": "RAW_HEARD_SUMMARIZED", "count": len(out), "expires_at_ms": now_ms + retention_ms,
+                                "at_ms": now_ms})
+        return out
+
+    def _cap_raw_heard(self, now_ms: int, cap: int = MAX_RAW_HEARD) -> None:
+        active = self._active_raw_heard(now_ms)
+        excess = len(active) - cap
+        if excess <= 0:
+            return
+        candidates = sorted((i for i in active if i["importance"] == "NORMAL" and not self._protected(i)),
+                            key=lambda i: (i["observed_at_ms"], i["memory_id"]))
+        for item in candidates[:excess]:
+            item["status"] = "EXPIRED"
+            item["expires_at_ms"] = now_ms
+            item["version"] += 1
+            self.events.append({"event": "RAW_HEARD_CAP", "memory_id": item["memory_id"], "at_ms": now_ms})
+        if len(candidates) < excess:
+            self.events.append({"event": "RAW_HEARD_OVER_CAP", "count": len(active) - len(candidates[:excess]),
+                                "reason": "the rest are tied to an open promise or a correction", "at_ms": now_ms})
 
     # ---------- reading ----------
 
@@ -141,6 +205,13 @@ class AgentMemory:
             if item["status"] in ("CONTRADICTED", "EXPIRED") or item["expires_at_ms"] is None:
                 continue
             if item["expires_at_ms"] <= now_ms:
+                if self.is_raw_heard(item) and self._protected(item):
+                    # D-70: kept while tied to an open promise or a correction. Its expiry is cleared;
+                    # the next card about that person (or the cap) sets it again.
+                    item["expires_at_ms"] = None
+                    item["version"] += 1
+                    self.events.append({"event": "RAW_HEARD_KEPT", "memory_id": item["memory_id"], "at_ms": now_ms})
+                    continue
                 if item["store"] == "COMMITMENTS_AND_REFUSALS":
                     item["content"]["commitment_state"] = "EXPIRED"
                     self.events.append({"event": "COMMITMENT_EXPIRED", "memory_id": item["memory_id"], "at_ms": now_ms})

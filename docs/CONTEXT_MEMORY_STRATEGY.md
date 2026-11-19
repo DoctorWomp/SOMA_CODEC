@@ -125,6 +125,7 @@ Every adjustment is logged with the reason.
 | Episodic cards | Capped per agent (e.g. 50); lowest score evicted, with forgetting-kernel decay |
 | Public anonymous tracks | Expire shortly after leaving perception unless tied to an open interaction (Atlas L8 privacy baseline) |
 | Relational facts | Kept while in scope; removed on "forget that" or run end; never turned into person labels (D-13) |
+| Raw heard speech (speech addressed to the agent, stored REPORTED and untrusted) | Once its conversation is summarized into an episode card, it expires after a retention window (10 minutes); at most 40 stay active per agent, the oldest NORMAL-importance item expiring first. Items tied to an open promise (heard from someone the agent promised) or to a correction never expire this way while that holds (owner decision 2026-11-19 on D-70; built in G3f, D-81) |
 | Event journal | Full record on disk for replay and evaluation; **never** read directly into a prompt |
 
 Memory is reset between runs unless a scenario explicitly tests carry-over, which is then declared in the run manifest.

@@ -1,0 +1,56 @@
+# SB-10 Glance while walking (G3f; FIELD_NOTES FN-6, D-72): Robot R walks a long straight path
+# east along z = 15. A visitor beside the path speaks to it as it passes; later a visitor walking
+# behind it speaks from behind.
+# Expected: a head glance toward the side speaker without breaking stride (the body keeps its
+# heading and speed); for the voice from behind, beyond the neck's reach, the head stops at its
+# limit while walking; the body turns only once Robot R stands at the end of the path.
+schema_version: "1.0"
+scenario_id: SB10_GLANCE_WHILE_WALKING
+title: Glance while walking
+map: sandbox_flats
+default_seed: 1010
+tick_hz: 10
+duration_ticks: 450   # 45 s
+pulse: true
+
+cast:
+  robot_r:
+    persona: robot_r
+    body: wheeled_humanoid
+    controller: LLM_AGENT
+    policy: LLM
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_walk_start
+    task: Walk to the east end of the hall to meet the next group.
+    task_goal: {point: {x: 27.5, z: 15.0}}
+    directive: expo_assistant
+    pin_cognition: true
+  visitor_s:
+    persona: visitor_x
+    body: human_walker
+    controller: SCRIPTED
+    policy: SCRIPTED
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_walk_side
+  visitor_b:
+    persona: visitor_y
+    body: human_walker
+    controller: SCRIPTED
+    policy: SCRIPTED
+    preset: H0
+    sensor_package: STANDARD
+    spawn: spawn_walk_behind
+
+events:
+  - {at_tick: 55, event_type: say, actor: visitor_s, args: {to: robot_r, text: "Hi robot, where is the cafe?"}}
+  - {at_tick: 40, event_type: move_to, actor: visitor_b, args: {x: 18.5, z: 15.0}}
+  - {at_tick: 150, event_type: say, actor: visitor_b, args: {to: robot_r, text: "Excuse me, can you help me?"}}
+
+measure: [glance_while_walking, heading_kept, body_turn_after_stop]
+
+# EVALUATOR ONLY: never shown to any agent.
+evaluator_only:
+  side_speech_at_s: 5.5
+  behind_speech_at_s: 15

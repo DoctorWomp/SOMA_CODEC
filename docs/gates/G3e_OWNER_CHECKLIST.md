@@ -60,7 +60,20 @@ uv run python tools/run_scenario.py SB08_PERIPHERAL_SPEAKER --model llama --mode
 - [ ] When the visitors behind Robot R start talking, its **head** turns toward the voice right away (it may turn its body only if the voice is behind its neck's reach), and it does not answer them.
 - [ ] When one of them asks it a question, it turns, answers, and the visor shows listening between turns.
 
-**Glance while walking:** none of these four scenarios has Robot R walking while someone speaks (it stands at its post in SB-04, SB-06 and SB-08, and SB-07's hall is empty), so you will see head glances while standing, not while walking. Glancing while walking is covered by the headless test `test_head_glance_while_walking` (in `tools/check.py`). If you want to see it, say so and a scenario can be added for it.
+<a id="sb-10"></a>**SB-10, glance while walking** (added in G3f at your request; 45 s each; once at `subtle`, once at `performative`):
+```powershell
+uv run python tools/run_scenario.py SB10_GLANCE_WHILE_WALKING --model llama --mode live --watch --resolution 1920x1080 --render-preset v0 --presence subtle
+```
+```powershell
+uv run python tools/run_scenario.py SB10_GLANCE_WHILE_WALKING --model llama --mode live --watch --resolution 1920x1080 --render-preset v0 --presence performative
+```
+Robot R (wheeled humanoid) walks east along a straight 20 m path. At about 5.5 s a visitor standing beside the path asks it where the cafe is; at about 15 s a visitor walking behind it says "Excuse me, can you help me?".
+- [ ] For the visitor beside the path: the **head** turns toward them and Robot R answers **without breaking stride**: the body keeps its heading and speed.
+- [ ] For the voice from behind (beyond the neck's reach): the head turns as far as the neck allows (about 80°) while the body keeps walking straight.
+- [ ] Only once Robot R stands at the end of the path does its **body** turn toward the person who spoke from behind; then it looks at them.
+- [ ] Nothing looks like a stutter: no stop-and-turn in mid-walk, no twitching between the two speakers.
+
+Headless, `tools/check.py` already checks all of this from the journal on every run with the Demo policy (three runs, one journal). The watched run with F3 shows whether a real model's answer keeps the stride too: a model may still choose `TURN_TO` while walking (the Demo policy no longer does, D-82). Note it if it does.
 
 **At each dial setting, compare:**
 - [ ] `subtle`: signs of life are there but easy to miss. Not a blank stare.

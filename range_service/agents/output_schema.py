@@ -115,7 +115,13 @@ def _args_refs() -> dict[str, dict[str, Any]]:
 TARGET_KEYS = ("target_id", "addressee_id", "to_id")
 # Per tier: (max actions, reason_summary characters, SPEAK/clarification text characters).
 TIER_LIMITS: dict[str, tuple[int, int, int]] = {"FOCAL": (MAX_ACTIONS, 300, 500), "C2": (MAX_ACTIONS, 120, 200),
-                                                "C1": (2, 80, 160)}
+                                                "C1": (2, 80, 160),
+                                                # G3f (D-77): Robot R's SHORT answer condition. reason_summary is
+                                                # logged only (never fed back, CONTEXT_MEMORY_STRATEGY §6).
+                                                "FOCAL_SHORT": (MAX_ACTIONS, 60, 200)}
+# How long a promise's own text may be, per limits key (FULL keeps the contract's 200).
+COMMITMENT_MAX = {"FOCAL_SHORT": 80}
+LIMIT_KEYS = tuple(TIER_LIMITS)
 ALL_CHANNELS = ("LOCAL", "GROUP", "PA")
 _ONLY_STRUCTURE = {"required"}
 
@@ -221,7 +227,7 @@ def answer_schema(allowed_actions: tuple[str, ...], targets: tuple[str, ...] | N
                   activity_max_review_s: int = 0) -> dict[str, Any]:
     """The constrained answer for these actions. ``targets`` (G3c-2): the person ids the agent may
     name now (None = any id, as before); ``channels``: the speech channels it may use; ``tier``
-    sets the length limits (TIER_LIMITS)."""
+    sets the length limits (TIER_LIMITS; ``FOCAL_SHORT`` is Robot R's SHORT condition, G3f)."""
     max_actions, reason_max, text_max = TIER_LIMITS.get(tier, TIER_LIMITS["FOCAL"])
     schemas = {"action_request": contracts.load_schema("action_request")}
     args_for = _args_refs()
@@ -244,7 +250,7 @@ def answer_schema(allowed_actions: tuple[str, ...], targets: tuple[str, ...] | N
             args = _limit_enums(args, limits)
         props: dict[str, Any] = {"action": {"const": action}, "args": args}
         if action in PROMISE_ACTIONS:
-            props["commitment"] = {"type": "string", "minLength": 1, "maxLength": 200}
+            props["commitment"] = {"type": "string", "minLength": 1, "maxLength": COMMITMENT_MAX.get(tier, 200)}
             props["fulfills_commitment"] = {"type": "boolean"}
         choices.append({"type": "object", "properties": props, "required": ["action", "args"],
                         "additionalProperties": False})

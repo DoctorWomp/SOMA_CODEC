@@ -11,9 +11,14 @@ default: Robot R plus C1/C2 NPCs), then splits the run into 5-minute windows and
   sections have filled: the largest context in the last full window is at most 5% above the full
   window before it (contexts grow in the first minutes while facts, episodes and conversation
   fill their budgets; that is expected and reported);
-- **memory per agent**: active memory items (counted from each item's own times) stop growing:
-  the last full window's count is at most 10% (+2 items) above the one before; open promises stay
-  at most 8 and episode cards at most 50; the count per store at the end is reported;
+- **memory per agent**, counted per window from each item's own times, by kind (G3f, D-81):
+  *raw heard speech* (REPORTED speech in the episodic and relational ledgers, bounded by retention
+  and a cap) and *everything else that has no cap* must stop growing: the last full window's count
+  at most 10% (+2 items) above the one before; *capped stores* must stay within their caps: raw heard
+  at most 40, episode cards at most 50 (cards grow until the cap, then the lowest-scored is evicted:
+  growth below the cap is expected), open promises at most 8. The total and the count per store at
+  the end are reported. (Before D-81 raw heard speech had no cap or expiry, so the total was the
+  check; it failed, as reported in D-70.);
 - **log and journal growth**: journal lines, decision records, pulse-log lines and link messages
   per window grow linearly, not faster: the last window's count is at most 1.5x the median window;
 - the run itself: no sidecar problems, no step timeouts.
@@ -34,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from range_service.agents.context import BUDGETS  # noqa: E402
-from range_service.agents.memory import MAX_EPISODE_CARDS, MAX_OPEN_COMMITMENTS  # noqa: E402
+from range_service.agents.memory import MAX_EPISODE_CARDS, MAX_OPEN_COMMITMENTS, MAX_RAW_HEARD  # noqa: E402
 
 WINDOW_MS = 300_000
 SCENARIO = "SB09_SOAK"
@@ -53,6 +58,17 @@ def _window(ms: int) -> int:
 def _median(values: list[int]) -> float:
     vals = sorted(values)
     return vals[len(vals) // 2] if vals else 0
+
+
+def _kind(item: dict) -> str:
+    """Which bound applies to a memory item (G3f, D-81)."""
+    if item["store"] in ("EPISODIC_LEDGER", "RELATIONAL_LEDGER") and item["source_class"] == "REPORTED":
+        return "raw_heard"
+    if item["store"] == "EPISODIC_LEDGER" and item["source_class"] == "SELF":
+        return "episode_cards"
+    if item["store"] == "COMMITMENTS_AND_REFUSALS":
+        return "promises"
+    return "uncapped"
 
 
 def soak_summary(run_dir: Path, tick_hz_world: int = 60) -> dict:
@@ -91,12 +107,18 @@ def soak_summary(run_dir: Path, tick_hz_world: int = 60) -> dict:
     for aid, items in memory.items():
         if not isinstance(items, list) or not items or not isinstance(items[0], dict) or "store" not in items[0]:
             continue
-        counts = []
+        counts, kinds = [], {"raw_heard": [], "episode_cards": [], "promises": [], "uncapped": []}
         for w in range(windows):
             t = min(end_ms, (w + 1) * WINDOW_MS)
-            counts.append(sum(1 for i in items if i["observed_at_ms"] <= t
-                              and (i["expires_at_ms"] is None or i["expires_at_ms"] > t)
-                              and not (i["status"] == "CONTRADICTED")))
+            act = [i for i in items if i["observed_at_ms"] <= t and (i["expires_at_ms"] is None or i["expires_at_ms"] > t)
+                   and not (i["status"] == "CONTRADICTED")]
+            counts.append(len(act))
+            k = {"raw_heard": sum(1 for i in act if _kind(i) == "raw_heard"),
+                 "episode_cards": sum(1 for i in act if _kind(i) == "episode_cards"),
+                 "promises": sum(1 for i in act if _kind(i) == "promises")}
+            k["uncapped"] = len(act) - sum(k.values())
+            for name, n in k.items():
+                kinds[name].append(n)
         open_promises = sum(1 for i in items if i["store"] == "COMMITMENTS_AND_REFUSALS"
                             and i["content"].get("commitment_state") == "OPEN" and i["status"] != "EXPIRED")
         cards = sum(1 for i in items if i["store"] == "EPISODIC_LEDGER" and i["source_class"] == "SELF"
@@ -107,12 +129,18 @@ def soak_summary(run_dir: Path, tick_hz_world: int = 60) -> dict:
                 continue
             key = f"{i['store']}:{i['source_class']}"
             by_store[key] = by_store.get(key, 0) + 1
-        mem[aid] = {"active_items_per_window": counts, "stored_items_total": len(items), "open_promises_end": open_promises,
-                    "episode_cards_end": cards, "active_by_store_end": dict(sorted(by_store.items()))}
-        body = counts[:full]
-        if len(body) >= 2 and body[-1] > body[-2] * 1.10 + 2:
-            problems.append(f"{aid}: active memory items still growing in the last full window {body} "
-                            f"(at the end, by store: {dict(sorted(by_store.items()))})")
+        mem[aid] = {"active_items_per_window": counts, "active_by_kind_per_window": kinds, "stored_items_total": len(items),
+                    "open_promises_end": open_promises, "episode_cards_end": cards,
+                    "active_by_store_end": dict(sorted(by_store.items()))}
+        for name in ("raw_heard", "uncapped"):
+            body = kinds[name][:full]
+            if len(body) >= 2 and body[-1] > body[-2] * 1.10 + 2:
+                problems.append(f"{aid}: {name.replace('_', ' ')} items still growing in the last full window {body} "
+                                f"(at the end, by store: {dict(sorted(by_store.items()))})")
+        caps = {"raw_heard": MAX_RAW_HEARD, "episode_cards": MAX_EPISODE_CARDS, "promises": MAX_OPEN_COMMITMENTS}
+        for name, cap in caps.items():
+            if max(kinds[name], default=0) > cap:
+                problems.append(f"{aid}: {max(kinds[name])} {name.replace('_', ' ')} items, over the cap of {cap}")
         if open_promises > MAX_OPEN_COMMITMENTS or cards > MAX_EPISODE_CARDS:
             problems.append(f"{aid}: {open_promises} open promises, {cards} episode cards (caps {MAX_OPEN_COMMITMENTS}/{MAX_EPISODE_CARDS})")
 
@@ -175,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     for key, per in s["prompt_tokens_max_per_window"].items():
         print(f"  prompt tokens, largest per window, {key}: {per}")
     for aid, m in s["memory"].items():
+        print(f"  memory {aid}: by kind per window {m['active_by_kind_per_window']}")
         print(f"  memory {aid}: active items per window {m['active_items_per_window']}; open promises "
               f"{m['open_promises_end']}, episode cards {m['episode_cards_end']}; by store {m['active_by_store_end']}")
     for name, counts in s["growth_per_window"].items():

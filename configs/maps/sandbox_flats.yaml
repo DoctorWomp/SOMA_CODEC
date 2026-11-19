@@ -73,3 +73,7 @@ spawn_points:
   - {spawn_id: spawn_stairs_side_1, position: {x: 18.0, z: 1.6}, yaw_rad: -1.5708}
   - {spawn_id: spawn_stairs_side_2, position: {x: 18.0, z: 3.3}, yaw_rad: -1.5708}
   - {spawn_id: spawn_stairs_side_3, position: {x: 18.0, z: 5.0}, yaw_rad: -1.5708}
+  # SB-10 (G3f): a long straight walk east along z = 15, a visitor beside the path, one behind.
+  - {spawn_id: spawn_walk_start, position: {x: 7.0, z: 15.0}, yaw_rad: -1.5708}
+  - {spawn_id: spawn_walk_side, position: {x: 15.0, z: 12.0}, yaw_rad: 3.1416}
+  - {spawn_id: spawn_walk_behind, position: {x: 3.5, z: 14.5}, yaw_rad: -1.5708}

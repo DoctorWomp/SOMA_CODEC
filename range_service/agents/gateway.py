@@ -287,6 +287,11 @@ class ModelGateway:
         self.persona_events: list[dict[str, Any]] = []
         self.recent_totals: dict[str, list[int]] = {}      # tier -> last call times (pulse: is this server busy?)
         self._calls = 0
+        # G3f conditions (configs/inference.yaml ``focal``, D-76, D-77): how FOCAL calls are sent.
+        self.prompt_layout = "ONE_MESSAGE"                 # or SYSTEM_PREFIX: the runtime passes Robot R's prefix
+        self.answer = "FULL"                               # or SHORT: shorter text limits for FOCAL answers
+        # G3f (D-78): the focal-first GPU guard. On Robot R's gateway, every call marks the guard busy.
+        self.guard: Any = None
 
     async def start(self) -> None:
         if hasattr(self.provider, "start"):
@@ -360,16 +365,26 @@ class ModelGateway:
                     queue_ms = round((time.perf_counter() - started) * 1000)
                     request.slot = slot
                     busy = self.activity.begin(self.server or "?") if self.activity is not None else None
+                    if self.guard is not None:
+                        self.guard.focal_begin()
                     try:
                         response = await self.provider.complete(request)
                     finally:
+                        if self.guard is not None:
+                            self.guard.focal_end()
                         if busy is not None:
                             self.activity.end(busy)
                         self.scheduler.release(slot)
                 else:
                     async with self._slots:
                         queue_ms = round((time.perf_counter() - started) * 1000)
-                        response = await self.provider.complete(request)
+                        if self.guard is not None:
+                            self.guard.focal_begin()
+                        try:
+                            response = await self.provider.complete(request)
+                        finally:
+                            if self.guard is not None:
+                                self.guard.focal_end()
         except TimeoutError:
             outcome, error = "TIMEOUT", f"no answer within {deadline_ms} ms"
         except Dropped as exc:
@@ -434,8 +449,11 @@ class ModelGateway:
         deadline_ms = self.deadlines_ms[tier]
         calls: list[dict[str, Any]] = []
         c = choices or {}
+        limits = tier if tier in ("FOCAL", "C2", "C1") else "C1"
+        if limits == "FOCAL" and self.answer == "SHORT":
+            limits = "FOCAL_SHORT"                         # G3f (D-77)
         schema = answer_schema(tuple(allowed_actions), tuple(c["targets"]) if c.get("targets") is not None else None,
-                               tuple(c.get("channels", ALL_CHANNELS)), tier if tier in ("FOCAL", "C2", "C1") else "C1",
+                               tuple(c.get("channels", ALL_CHANNELS)), limits,
                                tuple(c["gestures"]) if c.get("gestures") is not None else None,
                                tuple(c["expressions"]) if c.get("expressions") is not None else None,
                                int(c["activity"]) if c.get("activity") else 0)

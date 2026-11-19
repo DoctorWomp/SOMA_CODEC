@@ -26,6 +26,12 @@ on a semaphore, so Robot R can wait behind a queue of NPC chatter. With this sch
   evidence time, deadline and estimated cost (prompt tokens), so queues stay attributable per
   observer. ``waiting_labels()`` lists them.
 
+- **Focal-first GPU guard** (G3f, D-78; ``FocalGuard``): in Option C both servers share one GPU.
+  With a guard, the NPC server's scheduler starts no background call (pulse reviews, pre-warms)
+  while a Robot R call is in flight, and real calls (the bake-off's synthetic load counts as real)
+  only while fewer than ``npc_cap`` are in flight on it. Waiting calls keep their deadlines (stale-drop as above); running calls are
+  never interrupted. When Robot R's call ends, the queue is served again.
+
 Slot ids are real llama-server slot ids: the provider sends the granted id as ``id_slot``.
 In Option C (G3c-1) each server has its own scheduler; the NPC server's has no pinned slots.
 """
@@ -39,6 +45,46 @@ from typing import Callable
 
 DEFAULT_PRIORITIES = {"FOCAL": 0, "C2": 1, "C1": 2}
 BACKGROUND_PRIORITY = 9          # pulse reviews and synthetic load: after every real call (G3c-2)
+
+
+class FocalGuard:
+    """Focal-first GPU protection (G3f, D-78). Robot R's gateway marks its calls in flight
+    (``focal_begin``/``focal_end``); the NPC scheduler asks ``allows`` before it starts a call."""
+
+    def __init__(self, npc_cap: int = 0) -> None:
+        self.npc_cap = npc_cap
+        self.focal_in_flight = 0
+        self._listeners: list[Callable[[], None]] = []
+        self.stats = {"focal_calls": 0, "deferred": 0, "deferred_background": 0, "admitted_while_focal": 0}
+        self._deferred_ids: set[int] = set()
+
+    def listen(self, callback: Callable[[], None]) -> None:
+        self._listeners.append(callback)
+
+    def focal_begin(self) -> None:
+        self.focal_in_flight += 1
+        self.stats["focal_calls"] += 1
+
+    def focal_end(self) -> None:
+        self.focal_in_flight = max(0, self.focal_in_flight - 1)
+        if self.focal_in_flight == 0:
+            self._deferred_ids.clear()           # counts are per Robot R call; the set stays small
+            for callback in list(self._listeners):
+                callback()
+
+    def allows(self, background: bool, npc_in_flight: int) -> bool:
+        if self.focal_in_flight == 0:
+            return True
+        if background:
+            return False
+        return npc_in_flight < self.npc_cap
+
+    def note_deferred(self, key: int, background: bool) -> None:
+        if key not in self._deferred_ids:
+            self._deferred_ids.add(key)
+            self.stats["deferred"] += 1
+            if background:
+                self.stats["deferred_background"] += 1
 
 
 class Dropped(Exception):
@@ -81,6 +127,13 @@ class SlotScheduler:
         self.waiting: list[_Waiter] = []
         self._seq = 0
         self.stats = {"granted": 0, "dropped_stale": 0, "dropped_superseded": 0}
+        self.guard: FocalGuard | None = None        # G3f (D-78): set on the NPC server's scheduler only
+
+    def set_guard(self, guard: FocalGuard | None) -> None:
+        """Let ``guard`` hold back this server's calls while a Robot R call is in flight (D-78)."""
+        self.guard = guard
+        if guard is not None:
+            guard.listen(self._dispatch)
 
     # ---------- public ----------
 
@@ -136,6 +189,8 @@ class SlotScheduler:
         agent's own slot."""
         if self.waiting:
             return None
+        if self.guard is not None and not self.guard.allows(True, len(self.busy)):
+            return None                                   # a pre-warm is background work (D-78)
         free = self._shared_free()
         if len(free) <= keep_free:
             return None
@@ -185,8 +240,20 @@ class SlotScheduler:
                     w.future.set_exception(Dropped("stale: the deadline would pass before an answer could arrive"))
         free = self._shared_free()
         while free and self.waiting:
-            best = min(self.waiting, key=lambda w: self._effective(w, now))
+            candidates = self.waiting
+            if self.guard is not None:
+                # D-78: while Robot R's call is in flight, background calls wait first; real calls
+                # start only up to the cap. Held calls keep their place and their deadlines.
+                candidates = [w for w in self.waiting if self.guard.allows(bool(w.label.get("background")), len(self.busy))]
+                for w in self.waiting:
+                    if w not in candidates:
+                        self.guard.note_deferred(w.seq, bool(w.label.get("background")))
+                if not candidates:
+                    break
+            best = min(candidates, key=lambda w: self._effective(w, now))
             self.waiting.remove(best)
+            if self.guard is not None and self.guard.focal_in_flight:
+                self.guard.stats["admitted_while_focal"] += 1
             if best.future.done():
                 continue
             slot = self._pick(best.agent_id, free)

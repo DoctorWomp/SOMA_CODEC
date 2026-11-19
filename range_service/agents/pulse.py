@@ -190,6 +190,9 @@ class Pulse:
 
 # ---------- loop 2: presence ----------
 
+ARRIVAL_LOOK_WITHIN_MS = 20_000     # G3f (SB-10): speech to it at most this long ago gets a look on arrival
+
+
 class Presence:
     def __init__(self, cfg: dict[str, Any]) -> None:
         self.range_m = cfg["glance_range_m"]
@@ -202,23 +205,41 @@ class Presence:
         self.gaze_since_ms = 0
         self.return_at_ms: int | None = None
         self.shown_idle = False
+        # G3f (SB-10): speech to it glanced at while walking; looked at again on arrival, when a
+        # standing body may turn for a target beyond the neck (D-72).
+        self.deferred: dict[str, Any] | None = None
+        self.was_en_route = False
 
     def step(self, *, now_ms: int, ws: Any, perceived: Any, heard: list[dict[str, Any]], partner: str | None,
              speaking_until_ms: int, activity: Activity | None, can_look: bool,
-             expressions: list[str]) -> tuple[list[tuple[str, dict[str, Any]]], list[Event]]:
+             expressions: list[str], en_route: bool = False) -> tuple[list[tuple[str, dict[str, Any]]], list[Event]]:
         """Presence actions for this packet: [(action, args)] and their log events, one event per
-        action and in the same order (G3d: each event learns its request id and the host's result)."""
+        action and in the same order (G3d: each event learns its request id and the host's result).
+        ``en_route``: walking to its own MOVE_TO destination (G3f)."""
         out: list[tuple[str, dict[str, Any]]] = []
         events: list[Event] = []
+        arrived = self.was_en_route and not en_route
+        self.was_en_route = en_route
         if not can_look:
             return out, events
         speaking = now_ms < speaking_until_ms
+        if self.deferred is not None and now_ms - self.deferred["at_ms"] > ARRIVAL_LOOK_WITHIN_MS:
+            self.deferred = None
+        if arrived and self.deferred is not None and not speaking and self.deferred["source"] != partner:
+            d, self.deferred = self.deferred, None
+            out.append(("LOOK_AT", d["args"]))
+            events.append(Event("ARRIVAL_LOOK", now_ms, {"target": d["source"], "heard_ms_ago": now_ms - d["at_ms"]}))
+            self.gaze_target, self.gaze_since_ms = d["source"], now_ms
+            return out, events
         sources: list[tuple[str, str]] = []
         voices: dict[str, dict[str, float]] = {}
+        to_me: set[str] = set()
         for item in heard:
             track = item.get("track_id")
             if track and ws.visible(track) and (ws.tracks[track].range_m or 99) <= self.range_m:
                 sources.append((track, "speech"))
+                if item.get("to_me"):
+                    to_me.add(track)
             elif track is None and item.get("bearing_rad") is not None and ws.pose is not None:
                 # A voice it cannot see (FN-2): glance toward where it came from, 3 m out at head
                 # height. Bearing is relative to its facing, positive to the left (D-29).
@@ -227,6 +248,8 @@ class Presence:
                 voices[key] = {"x": round(ws.pose["x"] - 3.0 * math.sin(yaw), 2), "y": 1.6,
                                "z": round(ws.pose["z"] - 3.0 * math.cos(yaw), 2)}
                 sources.append((key, "voice"))
+                if item.get("to_me"):
+                    to_me.add(key)
         for track in perceived.new_tracks:
             if (ws.tracks[track].range_m or 99) <= self.range_m:
                 sources.append((track, "movement"))
@@ -240,6 +263,8 @@ class Presence:
                 self.last_glance[track] = now_ms
                 out.append(("LOOK_AT", {"point": voices[track]} if track in voices else {"target_id": track}))
                 events.append(Event("GLANCE", now_ms, {"target": track, "why": why}))
+                if en_route and track in to_me:
+                    self.deferred = {"args": out[-1][1], "source": track, "at_ms": now_ms}
                 self.gaze_target, self.gaze_since_ms = track, now_ms
                 if partner is not None and track != partner:
                     self.return_at_ms = now_ms + self.return_ms

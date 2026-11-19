@@ -63,6 +63,8 @@ SEND_GRACE_MS = 400
 # Model work started by the agent's own pulse or wake conditions while idle (counted by the idle budget).
 IDLE_WORK_TRIGGERS = frozenset({"PULSE_REVIEW", "WAKE_CONDITION"})
 DELIVERY_MARGIN_MS = 500
+ARRIVED_M = 0.75                    # G3f (SB-10): within this of its MOVE_TO destination ...
+MOVING_M = 0.005                    # ... and moved less than this since the last packet: it has arrived
 _WORD = re.compile(r"[a-zà-ÿ']{4,}")
 STOPWORDS = frozenset({"about", "there", "where", "what", "that", "this", "with", "your", "have", "from", "they",
                        "would", "could", "should", "thanks", "tell", "please"})
@@ -195,6 +197,8 @@ class AgentRuntime:
         self.ambient = AmbientDisplay(ambient or {}, expression_holds or {}) if pulse is not None and ambient else None
         self.pending_policy: str | None = None
         self._last_fallback = False
+        self.travel_to: dict[str, Any] | None = None   # its own accepted MOVE_TO destination (G3f, SB-10)
+        self._moving = False
         if pulse is not None:
             self.monitor = IntentMonitor(pulse["pulse"]["cooldowns_s"])
             self.pulse = Pulse(pulse["pulse"], agent_id, seed)
@@ -221,12 +225,27 @@ class AgentRuntime:
 
     # ---------- perception ----------
 
+    def en_route(self) -> bool:
+        """Walking to a destination of its own accepted MOVE_TO, not there yet (G3f, SB-10). Then
+        attention goes with the head (LOOK_AT), never a body turn that would break its stride (D-72)."""
+        dest, pose = self.travel_to, self.ws.pose
+        if not isinstance(dest, dict) or "x" not in dest or pose is None:
+            return False
+        return math.hypot(dest["x"] - pose["x"], dest["z"] - pose["z"]) > ARRIVED_M or self._moving
+
     def observe(self, packet: dict[str, Any]) -> DecisionJob | None:
         """Take in one packet. Returns a decision job if one is needed now, else None."""
         if packet["observer_id"] != self.agent_id:
             raise ValueError("a runtime only reads its own packets")
+        prev = self.ws.pose
         self.perceived = p = self.ws.update(packet)
         now = self.ws.now_ms
+        pose = self.ws.pose
+        # Still moving: its own position changed since the last packet (no speed in the packet).
+        self._moving = prev is not None and pose is not None and \
+            math.hypot(pose["x"] - prev["x"], pose["z"] - prev["z"]) > MOVING_M
+        if self.travel_to is not None and not self.en_route():
+            self.travel_to = None                    # arrived
         self.memory.expire(now)
         triggers: list[str] = []
         if not self._started:
@@ -389,7 +408,7 @@ class AgentRuntime:
             if (self.ws.tracks[track].range_m or 99) <= glance_range:
                 self._log("RELEVANT", source=track, kind="movement")
         heard = p.heard + [{"track_id": i.get("track_id"), "range_m": i.get("range_m"),
-                            "bearing_rad": i.get("bearing_rad")} for i in p.addressed]
+                            "bearing_rad": i.get("bearing_rad"), "to_me": True} for i in p.addressed]
         for h in heard:
             if h.get("track_id") and (h.get("range_m") or 99) <= glance_range:
                 self._log("RELEVANT", source=h["track_id"], kind="speech")
@@ -400,7 +419,7 @@ class AgentRuntime:
             now_ms=now, ws=self.ws, perceived=p,
             heard=heard,
             partner=self.conversation.partner, speaking_until_ms=self._speaking_until_ms, activity=self.activity,
-            can_look="LOOK_AT" in self.allowed_actions, expressions=self.expressions)
+            can_look="LOOK_AT" in self.allowed_actions, expressions=self.expressions, en_route=self.en_route())
         for (action, args), e in zip(actions, events):
             record = e.record()
             self.pulse_log.append(record)
@@ -663,8 +682,11 @@ class AgentRuntime:
         identical from call to call. The key changes if the text does (model + prompt version)."""
         if tier not in self._prefixes:
             assembler = ContextAssembler(self.tokenizer, tier)
+            # The same guardrails as the prompt: with the pulse on they carry the activity format
+            # (G3f, D-76: without it no prompt started with its prefix).
             text = assembler.persona_prefix(
-                guardrails.guardrails_section(tier, self.allowed_actions, self.body, self.expressions), self.identity)
+                guardrails.guardrails_section(tier, self.allowed_actions, self.body, self.expressions,
+                                              activity=self.pulse is not None), self.identity)
             digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
             self._prefixes[tier] = (f"{self.agent_id}:{tier}:{digest}", text)
         return self._prefixes[tier]
@@ -743,6 +765,9 @@ class AgentRuntime:
                 f"ended: {why.lower()}; {open_text}.",
                 now_ms=self.ws.now_ms, scope=scope, participants=set(conv.participants), topics=set(conv.topics),
                 source_event_id=conv.first_event_id)
+        # D-70 (owner 2026-11-19): the card now holds the conversation, so its raw heard items expire
+        # after the retention window (unless tied to an open promise or a correction).
+        self.memory.summarized(set(conv.participants), conv.since_ms, self.ws.now_ms)
         self.conversation = Conversation()
 
     # ---------- deciding ----------
@@ -858,9 +883,11 @@ class AgentRuntime:
                     prompt_sha256=job.assembled.record["prompt_sha256"], max_tokens=OUTPUT_CAPS.get(job.tier, 120),
                     allowed_actions=self.allowed_actions, tick=job.tick, demo_hint=job.demo_hint,
                     prefix_key=job.prefix_key,
-                    # NPCs: the persona prefix may go as its own (system) message; Robot R's prompt
-                    # shape stays one message, as the G3b bake-off measured it.
-                    prefix=self.persona_prefix(job.tier)[1] if self.npc_model else None,
+                    # NPCs: the persona prefix may go as its own (system) message. Robot R's prompt
+                    # stays one message, as the G3b bake-off measured it, unless its gateway runs the
+                    # SYSTEM_PREFIX layout condition (G3f, D-76). The prompt text is the same either way.
+                    prefix=self.persona_prefix(job.tier)[1]
+                    if self.npc_model or getattr(self.gateway, "prompt_layout", "ONE_MESSAGE") == "SYSTEM_PREFIX" else None,
                     choices=job.choices, background=job.triggers == ["PULSE_REVIEW"],
                     check=self._answer_check if self.pulse is not None else None, started_at=job.started_at,
                     evidence_ms=job.now_ms)
@@ -957,7 +984,8 @@ class AgentRuntime:
                                       "replanned": "ACTION_REJECTED" in job.triggers, "target": target,
                                       "checked": checked, "job_ms": job.now_ms, "policy": job.policy,
                                       "tier": job.tier, "started_at": job.started_at,
-                                      "expression_id": p.args.get("expression_id") if p.action == "EXPRESS" else None}
+                                      "expression_id": p.args.get("expression_id") if p.action == "EXPRESS" else None,
+                                      "destination": p.args.get("destination") if p.action == "MOVE_TO" else None}
             if closing_at is not None and i == closing_at:
                 closing_id = request_id
             if closing_id is not None and i > closing_at and self._moves_away(p.as_dict()):
@@ -1023,6 +1051,11 @@ class AgentRuntime:
         if sent is None:
             return
         if result["accepted"]:
+            if sent["action"] == "MOVE_TO":
+                # G3f (SB-10): where it is walking, from its own accepted move (no speed in the packet).
+                self.travel_to = sent.get("destination")
+            elif sent["action"] in ("TURN_TO", "STOP"):
+                self.travel_to = None
             if staged:
                 self._apply(staged)
             if held:
