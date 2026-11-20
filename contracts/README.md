@@ -40,6 +40,7 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 - G3b (D-57): new config contracts `model_catalog` (configs/models/catalog.yaml), `model_registry` (the git-ignored models/registry.local.yaml) and `inference` (configs/inference.yaml). No message contract changed.
 - G3c-1 (D-59): `inference` gains optional `vram` (budget, reserve, compute buffer, FALLBACK/WARN) and `personas` (snapshots, prewarm, system_prefix); `decision_record` model calls gain optional `server`, `slot` and `prefix_state`, and `activity` is reserved (null only) for G3c-2. All backward-compatible, versions unchanged.
 - G3c-2 (D-60, D-61): `decision_record.activity` now holds an activity (`common` `activity_kind`, `wake_condition`, with `horizon` reserved for G5); new trigger values `WAKE_CONDITION` and `PULSE_REVIEW`; optional model-call field `other_server_busy_ms`; scenario fields `pulse` and `post_duty`; new config contract `pulse`. All backward-compatible, versions unchanged.
+- G3f/G3g (D-77, D-78, D-85, D-86, D-89): `inference` `focal.answer` takes FULL, SHORT or LEAN; optional `gpu_guard.hold` (ALL, DECISIONS) and top-level `salvage`; `decision_record` model calls gain optional `salvaged` (the field cut off, the actions used). All backward-compatible, versions unchanged.
 - Gestures come from one shared vocabulary, `common.schema.json#/$defs/gesture`, used by `body`, `action_request` and `observation` (D-36). Expression channels likewise (`SPEECH`, `FACE`, `LIGHT`).
 
 ## Examples

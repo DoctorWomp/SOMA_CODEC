@@ -131,6 +131,11 @@ class SimGpu:
 
 
 def _reason_max(schema: dict[str, Any] | None) -> int:
+    """How long a reason the answer may carry: the schema's limit; none when the schema has no
+    reason_summary (LEAN, G3g D-85); 300 without a schema."""
+    props = schema.get("properties") if isinstance(schema, dict) else None
+    if isinstance(props, dict) and "reason_summary" not in props:
+        return 0
     try:
         return int(schema["properties"]["reason_summary"]["maxLength"])   # type: ignore[index]
     except (KeyError, TypeError, ValueError):

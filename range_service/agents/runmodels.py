@@ -31,6 +31,7 @@ from typing import Any
 from .gateway import ModelGateway, ServerActivity, gateway_from_spec
 
 FAKE_KINDS = ("fake", "fake-slow:", "fake-malformed")
+ANSWERS = ("FULL", "SHORT", "LEAN")
 
 
 def _is_fake(spec: str) -> bool:
@@ -45,9 +46,11 @@ def _is_simgpu(spec: str) -> bool:
 class Conditions:
     """G3f run conditions (D-76 to D-78); None = configs/inference.yaml."""
     prompt_layout: str | None = None      # ONE_MESSAGE or SYSTEM_PREFIX
-    answer: str | None = None             # FULL or SHORT
+    answer: str | None = None             # FULL, SHORT (G3f, D-77) or LEAN (G3g, D-85)
     gpu_guard: bool | None = None
     npc_cap: int | None = None
+    guard_hold: str | None = None         # G3g (D-89): ALL or DECISIONS
+    salvage: bool | None = None           # G3g (D-86): use a cut-off answer's complete actions
 
     def resolve(self, inf: dict[str, Any]) -> dict[str, Any]:
         focal = inf.get("focal", {}) or {}
@@ -55,9 +58,11 @@ class Conditions:
         out = {"prompt_layout": self.prompt_layout or focal.get("prompt_layout", "ONE_MESSAGE"),
                "answer": self.answer or focal.get("answer", "FULL"),
                "gpu_guard": guard.get("enabled", False) if self.gpu_guard is None else self.gpu_guard,
-               "npc_cap": guard.get("npc_cap", 0) if self.npc_cap is None else self.npc_cap}
-        if out["prompt_layout"] not in ("ONE_MESSAGE", "SYSTEM_PREFIX") or out["answer"] not in ("FULL", "SHORT") \
-                or not 0 <= int(out["npc_cap"]) <= 16:
+               "npc_cap": guard.get("npc_cap", 0) if self.npc_cap is None else self.npc_cap,
+               "guard_hold": self.guard_hold or guard.get("hold", "ALL"),
+               "salvage": inf.get("salvage", True) if self.salvage is None else self.salvage}
+        if out["prompt_layout"] not in ("ONE_MESSAGE", "SYSTEM_PREFIX") or out["answer"] not in ANSWERS \
+                or not 0 <= int(out["npc_cap"]) <= 16 or out["guard_hold"] not in ("ALL", "DECISIONS"):
             raise ValueError(f"unknown focal condition {out}")
         return out
 
@@ -103,13 +108,15 @@ class RunModels:
         self.focal.prompt_layout = c["prompt_layout"]
         self.focal.answer = c["answer"]
         npc = self.npc
+        for gw in {id(g): g for g in (self.focal, npc) if g is not None}.values():
+            gw.salvage = bool(c.get("salvage", True))
         if c["gpu_guard"] and npc is not None and npc is not self.focal and npc.scheduler is not None:
             from .scheduler import FocalGuard   # noqa: PLC0415
 
-            self.guard = FocalGuard(int(c["npc_cap"]))
+            self.guard = FocalGuard(int(c["npc_cap"]), c.get("guard_hold", "ALL"))
             self.focal.guard = self.guard
             npc.scheduler.set_guard(self.guard)
-            self.events.append({"event": "GPU_GUARD_ON", "npc_cap": int(c["npc_cap"])})
+            self.events.append({"event": "GPU_GUARD_ON", "npc_cap": int(c["npc_cap"]), "hold": self.guard.hold})
         elif c["gpu_guard"]:
             # Asked for, but there is no second server to hold back (Option B, or no scheduler):
             # recorded as off, never claimed (G3f).
@@ -157,7 +164,9 @@ class RunModels:
         if self.conditions:
             out.update({"focal.prompt_layout": self.conditions["prompt_layout"], "focal.answer": self.conditions["answer"],
                         "gpu_guard.enabled": self.guard is not None,
-                        "gpu_guard.npc_cap": int(self.conditions["npc_cap"]) if self.guard is not None else None})
+                        "gpu_guard.npc_cap": int(self.conditions["npc_cap"]) if self.guard is not None else None,
+                        "gpu_guard.hold": self.guard.hold if self.guard is not None else None,
+                        "salvage": bool(self.conditions.get("salvage", True))})
         if self.inference is not None:
             out.update(self.inference.manifest_settings())
         else:

@@ -40,6 +40,8 @@ from typing import Any, Callable, Protocol
 
 from range_service import contracts
 
+from . import lean
+
 DEADLINES_MS = {"FOCAL": 4000, "C2": 6000, "C1": 3000}
 MAX_ACTIONS = 3
 # Actions that can carry a promise: words, or a nod/expression toward someone (a nonverbal "I'll be with you").
@@ -232,6 +234,66 @@ def parse_output(text: str, allowed_actions: list[str], agent_id: str, tick: int
     return out, reason, None
 
 
+_DECODER = json.JSONDecoder()
+
+
+def complete_fields(text: str) -> tuple[dict[str, Any], str | None]:
+    """The top-level fields of a JSON object that were written out in full before the text
+    stopped, and the name of the field that was cut off (None if the object closed, or if the
+    text stopped between fields). G3g (D-86): salvage reads only whole values: a field whose
+    value did not close is never used, so a cut-off action (or a half-written list of actions) is
+    never salvaged."""
+    body = text.strip()
+    if body.startswith("```"):
+        body = body.split("\n", 1)[1] if "\n" in body else ""
+    fields: dict[str, Any] = {}
+    i = 0
+    n = len(body)
+
+    def ws(j: int) -> int:
+        while j < n and body[j] in " \t\r\n":
+            j += 1
+        return j
+
+    i = ws(i)
+    if i >= n or body[i] != "{":
+        return fields, None
+    i = ws(i + 1)
+    while i < n:
+        if body[i] == "}":
+            return fields, None
+        try:
+            key, i = _DECODER.raw_decode(body, i)
+        except ValueError:
+            return fields, None
+        if not isinstance(key, str):
+            return fields, None
+        i = ws(i)
+        if i >= n or body[i] != ":":
+            return fields, key
+        i = ws(i + 1)
+        try:
+            value, i = _DECODER.raw_decode(body, i)
+        except ValueError:
+            return fields, key            # this field's value was cut off
+        fields[key] = value
+        i = ws(i)
+        if i < n and body[i] == ",":
+            i = ws(i + 1)
+    return fields, None
+
+
+def salvage(text: str) -> tuple[str, list[str]] | None:
+    """A cut-off answer whose ``actions`` list is complete: the answer rebuilt from its complete
+    fields (as JSON text for ``parse_output``), and the fields dropped. None when the actions
+    list itself was cut off (never salvage a partial action) or there is none."""
+    fields, cut = complete_fields(text)
+    if not isinstance(fields.get("actions"), list) or not fields["actions"]:
+        return None
+    dropped = [cut] if cut else []
+    return json.dumps(fields), dropped
+
+
 class ServerActivity:
     """When each model server is computing (G3c-2, D-60). Two llama-server processes share one GPU
     in Option C, so a call's time can depend on the other server's work: each model call records
@@ -292,6 +354,8 @@ class ModelGateway:
         self.answer = "FULL"                               # or SHORT: shorter text limits for FOCAL answers
         # G3f (D-78): the focal-first GPU guard. On Robot R's gateway, every call marks the guard busy.
         self.guard: Any = None
+        # G3g (D-86): accept a cut-off answer's complete, valid actions instead of a WAIT fallback.
+        self.salvage = True
 
     async def start(self) -> None:
         if hasattr(self.provider, "start"):
@@ -365,26 +429,24 @@ class ModelGateway:
                     queue_ms = round((time.perf_counter() - started) * 1000)
                     request.slot = slot
                     busy = self.activity.begin(self.server or "?") if self.activity is not None else None
-                    if self.guard is not None:
-                        self.guard.focal_begin()
+                    held = self.guard.focal_begin(background) if self.guard is not None else False
                     try:
                         response = await self.provider.complete(request)
                     finally:
                         if self.guard is not None:
-                            self.guard.focal_end()
+                            self.guard.focal_end(held)
                         if busy is not None:
                             self.activity.end(busy)
                         self.scheduler.release(slot)
                 else:
                     async with self._slots:
                         queue_ms = round((time.perf_counter() - started) * 1000)
-                        if self.guard is not None:
-                            self.guard.focal_begin()
+                        held = self.guard.focal_begin(background) if self.guard is not None else False
                         try:
                             response = await self.provider.complete(request)
                         finally:
                             if self.guard is not None:
-                                self.guard.focal_end()
+                                self.guard.focal_end(held)
         except TimeoutError:
             outcome, error = "TIMEOUT", f"no answer within {deadline_ms} ms"
         except Dropped as exc:
@@ -450,8 +512,8 @@ class ModelGateway:
         calls: list[dict[str, Any]] = []
         c = choices or {}
         limits = tier if tier in ("FOCAL", "C2", "C1") else "C1"
-        if limits == "FOCAL" and self.answer == "SHORT":
-            limits = "FOCAL_SHORT"                         # G3f (D-77)
+        if limits == "FOCAL" and self.answer in ("SHORT", "LEAN"):
+            limits = f"FOCAL_{self.answer}"                # G3f (D-77), G3g (D-85)
         schema = answer_schema(tuple(allowed_actions), tuple(c["targets"]) if c.get("targets") is not None else None,
                                tuple(c.get("channels", ALL_CHANNELS)), limits,
                                tuple(c["gestures"]) if c.get("gestures") is not None else None,
@@ -482,12 +544,30 @@ class ModelGateway:
             if response is None:
                 reason = {"TIMEOUT": "TIMEOUT", "REPLAY_DIVERGED": "REPLAY_DIVERGED"}.get(call["outcome"], "PROVIDER_ERROR")
                 return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": reason})
-            actions, reason_summary, error = parse_output(response.text, allowed_actions, agent_id, tick, allow_activity)
-            activity = answer_activity(response.text) if error is None and allow_activity else None
+            text = response.text
+            if self.answer == "LEAN" and tier == "FOCAL":
+                text = lean.expand(text)                    # G3g (D-85): the compact answer, as the runtime reads it
+            actions, reason_summary, error = parse_output(text, allowed_actions, agent_id, tick, allow_activity)
+            activity = answer_activity(text) if error is None and allow_activity else None
             if error is None and check is not None:
                 error = check(actions or [], activity)
             if error is None:
                 return GatewayResult(actions or [], reason_summary, calls, activity=activity)
+            if response.truncated and self.salvage:
+                # G3g (D-86): cut off at the output cap, but the actions were complete and valid:
+                # use them, drop the cut-off trailing field (the runtime derives an activity).
+                saved = salvage(response.text)
+                if saved is not None:
+                    s_text, dropped = saved
+                    if self.answer == "LEAN" and tier == "FOCAL":
+                        s_text = lean.expand(s_text)
+                    s_actions, s_reason, s_error = parse_output(s_text, allowed_actions, agent_id, tick, allow_activity)
+                    s_activity = answer_activity(s_text) if s_error is None and allow_activity else None
+                    if s_error is None and check is not None:
+                        s_error = check(s_actions or [], s_activity)
+                    if s_error is None:
+                        call["salvaged"] = {"dropped": dropped, "actions": len(s_actions or [])}
+                        return GatewayResult(s_actions or [], s_reason, calls, activity=s_activity)
             if response.truncated:
                 error = f"the answer was cut off at the {max_tokens}-token limit ({error})"
             call["outcome"], call["error"] = "INVALID_OUTPUT", error[:300]

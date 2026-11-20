@@ -47,25 +47,43 @@ DEFAULT_PRIORITIES = {"FOCAL": 0, "C2": 1, "C1": 2}
 BACKGROUND_PRIORITY = 9          # pulse reviews and synthetic load: after every real call (G3c-2)
 
 
+GUARD_HOLDS = ("ALL", "DECISIONS")
+
+
 class FocalGuard:
     """Focal-first GPU protection (G3f, D-78). Robot R's gateway marks its calls in flight
-    (``focal_begin``/``focal_end``); the NPC scheduler asks ``allows`` before it starts a call."""
+    (``focal_begin``/``focal_end``); the NPC scheduler asks ``allows`` before it starts a call.
 
-    def __init__(self, npc_cap: int = 0) -> None:
+    ``hold`` (G3g, D-89): ALL (as G3f built it) holds NPC calls during every Robot R call;
+    DECISIONS only during its real decisions, not its background pulse reviews (the lowest
+    priority by design, D-61), so a review never makes a visitor wait."""
+
+    def __init__(self, npc_cap: int = 0, hold: str = "ALL") -> None:
+        if hold not in GUARD_HOLDS:
+            raise ValueError(f"unknown GPU guard hold {hold!r}: one of {', '.join(GUARD_HOLDS)}")
         self.npc_cap = npc_cap
+        self.hold = hold
         self.focal_in_flight = 0
         self._listeners: list[Callable[[], None]] = []
-        self.stats = {"focal_calls": 0, "deferred": 0, "deferred_background": 0, "admitted_while_focal": 0}
+        self.stats = {"focal_calls": 0, "deferred": 0, "deferred_background": 0, "admitted_while_focal": 0,
+                      "focal_reviews_not_held": 0}
         self._deferred_ids: set[int] = set()
 
     def listen(self, callback: Callable[[], None]) -> None:
         self._listeners.append(callback)
 
-    def focal_begin(self) -> None:
-        self.focal_in_flight += 1
+    def focal_begin(self, background: bool = False) -> bool:
+        """A Robot R call starts. Returns whether it holds NPC calls (pass it to ``focal_end``)."""
         self.stats["focal_calls"] += 1
+        if background and self.hold == "DECISIONS":
+            self.stats["focal_reviews_not_held"] += 1
+            return False
+        self.focal_in_flight += 1
+        return True
 
-    def focal_end(self) -> None:
+    def focal_end(self, held: bool = True) -> None:
+        if not held:
+            return
         self.focal_in_flight = max(0, self.focal_in_flight - 1)
         if self.focal_in_flight == 0:
             self._deferred_ids.clear()           # counts are per Robot R call; the set stays small

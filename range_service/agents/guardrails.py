@@ -57,10 +57,13 @@ ACTION_SHAPES: dict[str, str] = {
 }
 
 
-def action_schema_text(allowed_actions: list[str], gestures: list[str], expressions: list[str], short: bool = False) -> str:
+def action_schema_text(allowed_actions: list[str], gestures: list[str], expressions: list[str], short: bool = False,
+                       lean: bool = False) -> str:
     # G3c-2 (D-60): C1 lists the argument formats too. Without them, small models invented
     # arguments ("destination": "platform") in most C1 answers of the owner's bake-off.
-    lines = [OUTPUT_FORMAT_SHORT if short else OUTPUT_FORMAT, "Actions:"]
+    from .lean import OUTPUT_FORMAT_LEAN   # noqa: PLC0415
+
+    lines = [OUTPUT_FORMAT_SHORT if short else (OUTPUT_FORMAT_LEAN if lean else OUTPUT_FORMAT), "Actions:"]
     for action in allowed_actions:
         if action in ACTION_SHAPES:
             lines.append(f"{action} {ACTION_SHAPES[action]}")
@@ -79,10 +82,15 @@ ACTIVITY_FORMAT = (
 
 
 def guardrails_section(tier: str, persona_actions: list[str], body: dict[str, Any], expressions: list[str],
-                       activity: bool = False) -> str:
+                       activity: bool = False, answer: str = "FULL") -> str:
+    """``answer`` is Robot R's answer condition (configs/inference.yaml ``focal.answer``): LEAN
+    (G3g, D-85) changes the answer-format lines of FOCAL prompts; FULL and SHORT keep them."""
+    from .lean import ACTIVITY_FORMAT_LEAN   # noqa: PLC0415
+
     short = tier == "C1"
+    lean = tier == "FOCAL" and answer == "LEAN"
     rules = GUARDRAILS_SHORT if short else GUARDRAILS
     gestures = list(body["gestures"]) if body["capabilities"]["can_gesture"] else []
-    text = rules + "\n" + action_schema_text(persona_actions, gestures, expressions, short)
+    text = rules + "\n" + action_schema_text(persona_actions, gestures, expressions, short, lean)
     # G3c-2 (D-61): with the pulse protocol on, the answer may carry an activity.
-    return text + "\n" + ACTIVITY_FORMAT if activity else text
+    return text + "\n" + (ACTIVITY_FORMAT_LEAN if lean else ACTIVITY_FORMAT) if activity else text

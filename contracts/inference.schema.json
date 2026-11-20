@@ -348,7 +348,7 @@
       }
     },
     "focal": {
-      "description": "G3f (D-76, D-77): how Robot R's calls are sent, each a named condition the bake-off compares. prompt_layout ONE_MESSAGE is the layout measured from G3b to G3e (one user message); SYSTEM_PREFIX sends the persona prefix (guardrails + identity) as a system message, as NPC prompts are sent since G3c-1, so llama-server's context checkpoints (made at message starts for sliding-window and hybrid models) can reuse it. answer FULL keeps the G3b-G3e answer limits (reason_summary up to 300 characters, speech up to 500, commitment up to 200); SHORT limits them to 60, 200 and 80. The prompt text is the same in every condition.",
+      "description": "G3f (D-76, D-77): how Robot R's calls are sent, each a named condition the bake-off compares. prompt_layout ONE_MESSAGE is the layout measured from G3b to G3e (one user message); SYSTEM_PREFIX sends the persona prefix (guardrails + identity) as a system message, as NPC prompts are sent since G3c-1, so llama-server's context checkpoints (made at message starts for sliding-window and hybrid models) can reuse it. answer FULL keeps the G3b-G3e answer limits (reason_summary up to 300 characters, speech up to 500, commitment up to 200); SHORT limits them to 60, 200 and 80. The prompt text is the same in every condition. G3g (D-85): LEAN drops reason_summary, offers a compact optional activity last, and checks text limits after parsing instead of in the grammar.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -365,7 +365,8 @@
         "answer": {
           "enum": [
             "FULL",
-            "SHORT"
+            "SHORT",
+            "LEAN"
           ]
         }
       }
@@ -386,8 +387,19 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 16
+        },
+        "hold": {
+          "description": "G3g (D-89): ALL holds NPC calls during every Robot R call (G3f); DECISIONS only during its real decisions, not its background pulse reviews. Optional; ALL when absent.",
+          "enum": [
+            "ALL",
+            "DECISIONS"
+          ]
         }
       }
+    },
+    "salvage": {
+      "description": "G3g (D-86): an answer cut off at the output cap whose actions list is complete and valid is used (the cut-off trailing field dropped) instead of a WAIT fallback. Never a partial action. Optional; true when absent.",
+      "type": "boolean"
     }
   }
 }

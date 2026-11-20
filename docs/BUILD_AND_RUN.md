@@ -177,6 +177,17 @@ uv run python tools/soak.py
 
 A rendered run (`--watch`) records frame times and peak VRAM in `summary.json` (`render`); every run has a per-agent `report` (offered vs accepted actions, response latency, timeouts, fallbacks, model calls, glances, FN-1). `compare_runs.py` prints two or more runs side by side. `soak.py` runs SB-09 (21 simulated minutes) and writes `soak_summary.json`. Summaries hold counts only; run folders hold raw prompts and memories and stay under the git-ignored `runs/` and `results/`. `tools/check.py` runs its scenario runs side by side (`RANGE_CHECK_JOBS=N` to change how many at once, D-68).
 
+**Lean answers (G3g, D-84 to D-89):**
+
+```bash
+uv run python tools/bakeoff.py tokens --models F3 F1
+uv run python tools/bakeoff.py offline --models F3 F1 --kv q8_0 --focal-answer LEAN --activity on
+uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE LIVE_LOAD --focal-answer LEAN --gpu-guard on --npc-cap 1 --guard-hold DECISIONS
+uv run python tools/soak.py --model llama --mode live --focal-answer LEAN
+```
+
+`tokens` sends Robot R's prompts with and without `maxLength` in the grammar and counts the generated tokens per field (`--answer SHORT` for the limit that binds); it writes `results/bakeoff/tokens.md`. `--focal-answer LEAN` drops `reason_summary`, offers a compact activity and keeps text limits out of the grammar; `--activity on` offers the offline prompts an activity as a live run does. A cut-off answer whose actions are complete is used (salvage, on by default; `--no-salvage` to compare). `--guard-hold DECISIONS` lets NPC calls run during Robot R's pulse reviews. Every run's `summary.json` records the GPU memory other programs held before the servers started (`vram_hygiene`); see [OWNER_SETUP_WINDOWS.md](OWNER_SETUP_WINDOWS.md) "GPU memory".
+
 **Robot R on time under load (G3f, D-75 to D-83):**
 
 ```bash

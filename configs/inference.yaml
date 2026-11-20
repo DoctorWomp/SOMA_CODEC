@@ -35,10 +35,13 @@ personas:                    # INFERENCE_STRATEGY T5, T6 (G3c-1)
   system_prefix: true        # NPC prompts: persona prefix as a system message, so hybrid/SWA models reuse all of it
 focal:                       # G3f: Robot R on time under load. Named conditions the bake-off compares (live --focal-layout, --focal-answer)
   prompt_layout: ONE_MESSAGE # ONE_MESSAGE (as measured G3b-G3e) or SYSTEM_PREFIX: persona prefix as a system message (D-76)
-  answer: FULL               # FULL (reason <= 300 chars, speech <= 500) or SHORT (reason <= 60, speech <= 200) (D-77)
+  answer: FULL               # FULL (reason <= 300 chars, speech <= 500); SHORT (reason <= 60, speech <= 200; D-77, a
+                             #   comparison only); LEAN (no reason, compact optional activity, limits after parsing; D-85)
 gpu_guard:                   # G3f (D-78): while a Robot R call is in flight the NPC server starts no background call and
-  enabled: false             #   at most npc_cap real NPC calls (live --gpu-guard on|off). Off until the owner's PC measures it
+  enabled: false             #   at most npc_cap real NPC calls (live --gpu-guard on|off). Off by default (owner, 2026-11-20)
   npc_cap: 0
+  hold: ALL                  # G3g (D-89): ALL = every Robot R call; DECISIONS = not during its pulse reviews (--guard-hold)
+salvage: true                # G3g (D-86): a cut-off answer with complete, valid actions is used, not a WAIT fallback
 sampling:
   temperature: 0.0           # decisions are compared across models and runs (D-55)
   top_p: 1.0

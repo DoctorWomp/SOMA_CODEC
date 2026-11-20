@@ -231,3 +231,108 @@ def test_episode_cards_keep_scopes_apart():
     step(rt, s.see(X, 15, 8.5).see(Y, 16, 9).hear(X, "Bye!").packet())
     cards = [i for i in rt.memory.items if "card" in rt.memory.tags.get(i["memory_id"], set())]
     assert sorted(c["scope"] for c in cards) == ["ONE_TO_ONE", "PUBLIC"]
+
+
+# ---------- G3g (D-88): the tier budget is never exceeded, whatever the tokenizer ----------
+
+class _Dense:
+    """Counts like a tokenizer denser than the 3.5-characters estimate (ids, numbers and JSON are)."""
+
+    def __init__(self, chars_per_token: float) -> None:
+        self.cpt = chars_per_token
+        self.name = f"dense_{chars_per_token}"
+
+    def count(self, text: str) -> int:
+        import math
+        return math.ceil(len(text) / self.cpt) if text else 0
+
+
+LONG_LINE = ("The demo area is on the raised platform at the east side. You can reach it by the ramp, which starts "
+             "near the middle of the floor, or by the stairs at the south end. ") * 3
+
+
+@pytest.mark.parametrize("cpt", [3.5, 3.0, 2.8])
+def test_c1_context_never_exceeds_its_budget_with_a_long_latest_turn(cpt):
+    """Reproduces the owner's soak (2026-11-20: visitor_y's C1 context 824 tokens against 780, counted
+    with N3's own tokenizer). Robot R says a long sentence to a C1 visitor: the never-cut sections and
+    the latest turn did not fit, step 6 cut every section it may, and the total stayed over. The
+    recorded total also left out the section headers the prompt carries. Now the whole prompt is
+    counted and the latest turn is shortened (never dropped) until it fits."""
+    import asyncio
+
+    from range_service.agents.factory import build_runtimes
+    from range_service.agents.gateway import FakeModel, ModelGateway
+
+    tok = _Dense(cpt)
+    rts = build_runtimes(CONFIGS.items["scenarios"]["SB09_SOAK"], CONFIGS, gateway=ModelGateway(FakeModel()),
+                         npc_gateway=ModelGateway(FakeModel()), pulse=CONFIGS.items["pulse"]["pulse"], npc_tokenizer=tok)
+    y = rts["visitor_y"]
+    r = "anon_r0b0tr0b0t"
+    s = Scene(observer="visitor_y", pose={"x": 15.0, "y": 0.0, "z": 8.5, "yaw_rad": 0.0})
+    job = y.observe(s.see(r, 15, 10).hear(r, LONG_LINE[:480]).packet())
+    assert job is not None and job.tier == "C1"
+    asyncio.run(y.decide(job)) if job.proposals is None else y.decide_now(job)
+    rec = y.records[-1]["context"]
+    prompt = job.assembled.prompt
+    assert rec["total_tokens"] == tok.count(prompt), "the total counts the prompt as sent, headers included"
+    assert rec["total_tokens"] <= tier_budget("C1") == rec["budget_tokens"]
+    conv = job.assembled.sections["CONVERSATION"]
+    assert conv.startswith("- -0s anon_r0b0tr0b0t (to you, untrusted): \"The demo area")   # the latest turn is kept
+    clipped = any(c["reason"] == "LATEST_TURN_SHORTENED" for c in job.assembled.cut_reasons)
+    assert clipped == (LONG_LINE[:480] not in conv)
+    if clipped:
+        assert conv.endswith('…" (shortened to fit)')
+
+
+def _cast_levels():
+    """(scenario, agent, tier) for every agent of every scenario at each tier it can think at."""
+    out = []
+    for sid, sc in sorted(CONFIGS.items["scenarios"].items()):
+        for aid, entry in sorted(sc["cast"].items()):
+            if entry["controller"] == "HUMAN" if "controller" in entry else False:
+                continue
+            tiers = ("FOCAL",) if entry["persona"] == "robot_r" else ("C2", "C1")
+            out += [(sid, aid, tier) for tier in tiers]
+    return out
+
+
+@pytest.mark.parametrize("scenario_id,agent_id,tier", _cast_levels())
+def test_never_cut_sections_leave_room_for_the_latest_turn_with_the_pulse_on(scenario_id, agent_id, tier):
+    """With the pulse on the guardrails carry the activity format (G3c-2), which C1's budget never had
+    room for (D-88). Each agent's own guardrails (its actions, body, model-facing expressions), counted
+    1.15x denser than the estimate (the Qwen3.5 tokenizer counted C1's guardrails 1.07x the estimate),
+    with identity, decision and the section headers at their budgets, must leave at least 100 tokens
+    of the tier budget for the latest turn and what the agent perceives. (A never-cut section's own
+    budget is nominal: FOCAL's guardrails are over their 650 with the pulse on, inside a 3750 total.)"""
+    from range_service.agents.factory import build_runtimes
+    from range_service.agents.gateway import FakeModel, ModelGateway
+
+    rts = build_runtimes(CONFIGS.items["scenarios"][scenario_id], CONFIGS, gateway=ModelGateway(FakeModel()),
+                         npc_gateway=ModelGateway(FakeModel()), pulse=CONFIGS.items["pulse"]["pulse"])
+    if agent_id not in rts:
+        pytest.skip("not a runtime agent")
+    rt = rts[agent_id]
+    tok = _Dense(3.5 / 1.15)
+    text = guardrails.guardrails_section(tier, rt.allowed_actions, rt.body, rt.expressions, activity=True)
+    room = tier_budget(tier) - tok.count(text) - BUDGETS[tier]["IDENTITY"] - BUDGETS[tier]["DECISION"] - 40
+    assert room >= 100, f"{tok.count(text)} guardrail tokens leave {room} for the latest turn and observations"
+
+
+def test_never_cut_sections_over_the_budget_are_recorded_never_silent():
+    """A tokenizer far denser than any measured one: only never-cut sections are left, and they alone
+    are over. The assembler cannot cut them, so it says so in the record (a budget too small)."""
+    import asyncio
+
+    from range_service.agents.factory import build_runtimes
+    from range_service.agents.gateway import FakeModel, ModelGateway
+
+    tok = _Dense(1.5)
+    rts = build_runtimes(CONFIGS.items["scenarios"]["SB09_SOAK"], CONFIGS, gateway=ModelGateway(FakeModel()),
+                         npc_gateway=ModelGateway(FakeModel()), pulse=CONFIGS.items["pulse"]["pulse"], npc_tokenizer=tok)
+    y = rts["visitor_y"]
+    r = "anon_r0b0tr0b0t"
+    job = y.observe(Scene(observer="visitor_y", pose={"x": 15.0, "y": 0.0, "z": 8.5, "yaw_rad": 0.0})
+                    .see(r, 15, 10).hear(r, LONG_LINE[:300]).packet())
+    reasons = [c["reason"] for c in job.assembled.cut_reasons]
+    assert "LATEST_TURN_SHORTENED" in reasons and "NEVER_CUT_OVER_BUDGET" in reasons
+    asyncio.run(y.decide(job)) if job.proposals is None else y.decide_now(job)

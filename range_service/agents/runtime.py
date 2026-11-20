@@ -677,6 +677,10 @@ class AgentRuntime:
 
     # ---------- persona prefixes, pre-warming and promotion latency (G3c-1; T5, T6) ----------
 
+    def answer_condition(self) -> str:
+        """Robot R's answer condition on its gateway (FULL, SHORT, LEAN; G3f D-77, G3g D-85)."""
+        return getattr(self.gateway, "answer", "FULL") if self.gateway is not None else "FULL"
+
     def persona_prefix(self, tier: str) -> tuple[str, str]:
         """(key, text) of this agent's stable prompt prefix at ``tier``: guardrails and identity,
         identical from call to call. The key changes if the text does (model + prompt version)."""
@@ -686,7 +690,8 @@ class AgentRuntime:
             # (G3f, D-76: without it no prompt started with its prefix).
             text = assembler.persona_prefix(
                 guardrails.guardrails_section(tier, self.allowed_actions, self.body, self.expressions,
-                                              activity=self.pulse is not None), self.identity)
+                                              activity=self.pulse is not None, answer=self.answer_condition()),
+                self.identity)
             digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
             self._prefixes[tier] = (f"{self.agent_id}:{tier}:{digest}", text)
         return self._prefixes[tier]
@@ -835,7 +840,7 @@ class AgentRuntime:
                 goal += "\n" + self.sitrep()
             assembled = assembler.assemble(
                 guardrails=guardrails.guardrails_section(tier, self.allowed_actions, self.body, self.expressions,
-                                                         activity=self.pulse is not None),
+                                                         activity=self.pulse is not None, answer=self.answer_condition()),
                 identity=self.identity, memory=self.memory, ws=self.ws, setting=self.setting, goal=goal,
                 triggers=[t.lower().replace("_", " ") for t in triggers], participants=participants, topics=topics,
                 audience=disclosure.audience_from_packet(packet))

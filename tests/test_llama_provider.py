@@ -118,8 +118,17 @@ def test_malformed_answer_gets_one_repair_then_waits_t26(stand_in):
 
 
 def test_an_answer_cut_off_at_the_token_limit_says_so(stand_in):
+    """The stand-in stops inside reason_summary (finish_reason "length"). G3g (D-86): its actions list
+    is complete and valid, so they are used and the call says it was salvaged; with salvage off the
+    answer is unusable and says it was cut off, as before."""
     s = stand_in(mode="truncate")
     result = decide(ModelGateway(LlamaProvider.attach(s.port, s.key, warm_up=False)))
+    assert result.fallback is None and result.actions == [{"action": "WAIT", "args": {"duration_ms": 1000}}]
+    assert result.model_calls[0]["salvaged"] == {"dropped": ["reason_summary"], "actions": 1}
+    assert result.model_calls[0]["response_text"].endswith("waiting bec")
+    gw = ModelGateway(LlamaProvider.attach(s.port, s.key, warm_up=False))
+    gw.salvage = False
+    result = decide(gw)
     assert result.fallback == {"action": "WAIT", "reason": "INVALID_OUTPUT"}
     assert result.model_calls[0]["error"].startswith("the answer was cut off at the 128-token limit")
     assert result.model_calls[0]["response_text"].endswith("waiting bec")

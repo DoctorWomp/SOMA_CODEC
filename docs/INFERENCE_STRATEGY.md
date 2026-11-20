@@ -22,6 +22,8 @@ A model call has four costs:
 
 Generation for a short action (~50–150 tokens) is usually not the problem. **Prefill and queueing are**, and those are what caching and scheduling fix.
 
+*Measured at G3f (owner's PC, 2026-11-19/20): for Robot R it is the other way round.* Generation dominates its call time (F3 gen p50 ~2000 ms vs prefill ~300 ms; ~125 generated tokens per answer, p95 at the 200-token cap), and a second server on the same GPU slows generation for both. G3g therefore works on the answer: what each field costs (D-84), a LEAN format (D-85), and salvaging cut-off answers (D-86).
+
 ## 2. Techniques
 
 Each technique with its effect, cost and when to use it.
@@ -65,7 +67,7 @@ Each technique with its effect, cost and when to use it.
 | Not allowed in trials | Response cache (T15); mid-run model changes (T18) |
 | Optional, measured | KV quantization (T8), speculative decoding (T17) |
 | Fairness | Record queue time, prefill tokens, cached tokens and generation time per call, per arm. HORIZON arms may send longer or shorter prompts; report it rather than hide it. |
-| Sharing the GPU (G3f) | Option C's two servers share one GPU: Robot R's misses came from that contention (D-75). Measured conditions, off until the owner's PC decides: the persona prefix as a system message (D-76), shorter answers (D-77), and the focal-first GPU guard, which holds new NPC calls while a Robot R call is in flight (D-78) |
+| Sharing the GPU (G3f) | Option C's two servers share one GPU: Robot R's misses came from that contention (D-75). Measured conditions, off until the owner's PC decides: the persona prefix as a system message (D-76), shorter answers (D-77), and the focal-first GPU guard, which holds new NPC calls while a Robot R call is in flight (D-78). G3g: the LEAN answer (D-85), salvage (D-86, on), the guard for real decisions only (D-89); the target counts fallback decisions (D-87) |
 
 ### 3.2 Non-focal avatars (crowd, staff, supporting NPCs)
 

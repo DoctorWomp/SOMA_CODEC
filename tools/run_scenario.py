@@ -64,8 +64,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="never pre-warm NPC persona prefixes (measures cold promotion latency)")
     parser.add_argument("--focal-layout", default=None, choices=["ONE_MESSAGE", "SYSTEM_PREFIX"],
                         help="G3f (D-76): Robot R's prompt layout (default: configs/inference.yaml focal.prompt_layout)")
-    parser.add_argument("--focal-answer", default=None, choices=["FULL", "SHORT"],
-                        help="G3f (D-77): Robot R's answer limits (default: configs/inference.yaml focal.answer)")
+    parser.add_argument("--focal-answer", default=None, choices=["FULL", "SHORT", "LEAN"],
+                        help="G3f (D-77), G3g (D-85): Robot R's answer format (default: configs/inference.yaml focal.answer)")
+    parser.add_argument("--guard-hold", default=None, choices=["ALL", "DECISIONS"],
+                        help="G3g (D-89): the GPU guard holds NPC calls during every Robot R call or only its real decisions")
+    parser.add_argument("--no-salvage", action="store_true",
+                        help="G3g (D-86): never use a cut-off answer's complete actions (for comparison)")
     parser.add_argument("--gpu-guard", default=None, choices=["on", "off"],
                         help="G3f (D-78): focal-first GPU guard in Option C (default: configs/inference.yaml gpu_guard)")
     parser.add_argument("--npc-cap", type=int, default=None, help="G3f: real NPC calls allowed while Robot R thinks")
@@ -97,7 +101,8 @@ def main(argv: list[str] | None = None) -> int:
                       resolution=args.resolution, render_preset=args.render_preset,
                       frame_stats=True if args.frame_stats else None, presence=args.presence,
                       conditions=Conditions(args.focal_layout, args.focal_answer,
-                                            None if args.gpu_guard is None else args.gpu_guard == "on", args.npc_cap),
+                                            None if args.gpu_guard is None else args.gpu_guard == "on", args.npc_cap,
+                                            args.guard_hold, False if args.no_salvage else None),
                       npc_load_streams=args.npc_load,
                       npc_load_prompts=[i for i in load_set(PROMPT_SET)[0] if i.get("role") == "NPC"] if args.npc_load else [])
     try:
