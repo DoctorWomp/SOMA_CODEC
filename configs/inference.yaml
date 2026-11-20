@@ -33,6 +33,12 @@ personas:                    # INFERENCE_STRATEGY T5, T6 (G3c-1)
   snapshots: true            # at scene load, warm and save each model-driven NPC's persona prefix (slot save/restore)
   prewarm: true              # when a promotion becomes likely, put that prefix into a free NPC slot first
   system_prefix: true        # NPC prompts: persona prefix as a system message, so hybrid/SWA models reuse all of it
+focal:                       # G3f: Robot R on time under load. Named conditions the bake-off compares (live --focal-layout, --focal-answer)
+  prompt_layout: ONE_MESSAGE # ONE_MESSAGE (as measured G3b-G3e) or SYSTEM_PREFIX: persona prefix as a system message (D-76)
+  answer: FULL               # FULL (reason <= 300 chars, speech <= 500) or SHORT (reason <= 60, speech <= 200) (D-77)
+gpu_guard:                   # G3f (D-78): while a Robot R call is in flight the NPC server starts no background call and
+  enabled: false             #   at most npc_cap real NPC calls (live --gpu-guard on|off). Off until the owner's PC measures it
+  npc_cap: 0
 sampling:
   temperature: 0.0           # decisions are compared across models and runs (D-55)
   top_p: 1.0

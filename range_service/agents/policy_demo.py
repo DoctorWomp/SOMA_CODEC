@@ -91,7 +91,9 @@ class RobotDemoPolicy:
             text = item["value"]["text"]
             if conv.partner is None or speaker == conv.partner:
                 if speaker is not None:
-                    out.append(Proposal("TURN_TO", {"target_id": speaker}))
+                    # While walking, attention goes with the head and the stride is kept (G3f, SB-10;
+                    # D-72: the body turns only once it stands, or for a target beyond the neck).
+                    out.append(Proposal("LOOK_AT" if rt.en_route() else "TURN_TO", {"target_id": speaker}))
                 if is_farewell(text):
                     out += self._expressed("thank_you", speaker, rt)
                     out.append(Proposal("SPEAK", {"channel": "LOCAL", "text": "You're welcome. Enjoy the expo!",
@@ -131,7 +133,7 @@ class RobotDemoPolicy:
             for c in rt.memory.open_commitments():
                 for track in c["audience_present"]:
                     if rt.ws.visible(track):
-                        out.append(Proposal("TURN_TO", {"target_id": track}))
+                        out.append(Proposal("LOOK_AT" if rt.en_route() else "TURN_TO", {"target_id": track}))
                         out += self._expressed("greeting", track, rt, prefer_gesture=False)
                         out.append(Proposal("SPEAK", {"channel": "LOCAL", "text": "Thanks for waiting. How can I help?",
                                                       "addressee_id": track}, fulfills=[c["memory_id"]]))

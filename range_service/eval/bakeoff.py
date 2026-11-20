@@ -268,6 +268,21 @@ class Progress:
 
 # ---------- report ----------
 
+def fmt(v: Any) -> str:
+    return "–" if v is None else str(v)
+
+
+def pct(v: Any) -> str:
+    return "–" if v is None else f"{v:.0%}"
+
+
+def offline_cond(c: dict[str, Any]) -> str:
+    """Robot R's layout and answer condition of an offline row, when not the measured default (G3f)."""
+    parts = [x for x in (c.get("focal_layout", "ONE_MESSAGE"), c.get("focal_answer", "FULL"))
+             if x not in ("ONE_MESSAGE", "FULL")]
+    return f" [{', '.join(parts)}]" if parts else ""
+
+
 def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
     folder.mkdir(parents=True, exist_ok=True)
     json_path, md_path = folder / "results.json", folder / "results.md"
@@ -277,8 +292,9 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
              f"({results.get('prompt_set_sha256', '')[:12]}) · temperature 0", ""]
     offline = results.get("offline", [])
 
-    def f(v: Any) -> str:
-        return "–" if v is None else (f"{v:.0%}" if isinstance(v, float) and v <= 1.0 and not isinstance(v, bool) else str(v))
+    # G3f: numbers print as numbers; only shares print as percentages (before, any float <= 1 did, so
+    # a 0.0 ms queue read "0%" and 0.03 ms headless frames "3%").
+    f = fmt
     roles = sorted({r for c in offline for r in (c.get("summary_by_role") or {"ROBOT_R": None})},
                    key=lambda r: (r != "ROBOT_R", r))
     for role in roles:
@@ -294,14 +310,28 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
             s = (c.get("summary_by_role") or {}).get(role) or c["summary"]
             ag = c.get("agreement_precision")
             akv = c.get("agreement_kv")
-            lines.append(f"| {c['label']} {c['model']} | {c['quant']}{' QAT' if c['qat'] else ''} | {c['kv']} | {s['n']} | "
-                         f"{f(s['valid_before_repair'])} | {f(s['repair_rate'])} | {f(s['final_valid'])} | "
-                         f"{f(s['valid_action_rate'])} | {f(s['commitments_kept'])} / {f(s.get('commitments_kept_behavior'))} | "
-                         f"{f(ag['first_action']) + ' vs ' + ag['reference'] if ag else '–'} | {f(akv['first_action']) if akv else '–'} | "
+            lines.append(f"| {c['label']} {c['model']}{offline_cond(c) if role == 'ROBOT_R' else ''} | "
+                         f"{c['quant']}{' QAT' if c['qat'] else ''} | {c['kv']} | {s['n']} | "
+                         f"{pct(s['valid_before_repair'])} | {pct(s['repair_rate'])} | {pct(s['final_valid'])} | "
+                         f"{pct(s['valid_action_rate'])} | {pct(s['commitments_kept'])} / {pct(s.get('commitments_kept_behavior'))} | "
+                         f"{pct(ag['first_action']) + ' vs ' + ag['reference'] if ag else '–'} | {pct(akv['first_action']) if akv else '–'} | "
                          f"{f(s['prompt_tps_median'])} | {f(s['gen_tps_median'])} | {f(s['latency_ms_p50'])} | "
                          f"{c['vram_mib'] if c['vram_mib'] is not None else '– (' + str(c['vram_note']) + ')'} |")
         lines.append("")
-    live = results.get("live", [])
+    live_all = results.get("live", [])
+    # G3f (D-75): rows from the pre-G3c-2 harness did not run in real time (void); rows of the
+    # pre-G3f harness whose run folder an earlier row had used pooled that run's calls.
+    void = [r for r in live_all if "repeats" not in r]
+    live = [r for r in live_all if "repeats" in r]
+    pooled = pooled_rows(live)
+    if void:
+        lines += [f"**{len(void)} live row(s) from the pre-G3c-2 harness are left out:** those runs were not real time "
+                  "(headless LIVE ran ~15x faster, D-60), so their numbers are void. They stay in results.json "
+                  "(rows without `repeats`).", ""]
+    if pooled:
+        lines += [f"**{len(pooled)} row(s) marked POOLED** pooled the calls of an earlier row's runs: the pre-G3f harness "
+                  "reused run folders and appended to their decision records (D-75). Their call counts, timeouts, "
+                  "p50/p95 and NPC columns include the earlier runs. Rerun them with this harness.", ""]
     if live:
         lines += ["## SB-04 in Godot: Robot R and the NPC server (Option C)", "",
                   "| Robot R model | NPC model | Mode | Runs | Option | OK | Robot R calls | Robot R p50 / p95 ms | "
@@ -311,12 +341,13 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
                   "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for r in live:
             lines.append(
-                f"| {r['label']} | {r.get('npc_label', '–')} | {r['mode']} | {r.get('repeats', 1)} | {r.get('option') or '–'} | "
+                f"| {r['label']}{' (POOLED: ' + pooled[id(r)] + ')' if id(r) in pooled else ''}{cond_text(r)} | "
+                f"{r.get('npc_label', '–')} | {r['mode']} | {r.get('repeats', 1)} | {r.get('option') or '–'} | "
                 f"{'yes' if r['ok'] else 'NO'} | {r['decisions']} | {f(r['p50_ms'])} / {f(r['p95_ms'])} | "
                 f"{f(r.get('robot_actions_accepted'))} / {f(r.get('robot_actions_stale'))} | "
                 f"{f(r.get('npc_calls'))} ({f(r.get('npc_timeouts'))}) | {f(r.get('npc_p50_ms'))} / {f(r.get('npc_queue_p50_ms'))} / "
                 f"{f(r.get('npc_prefill_p50_ms'))} / {f(r.get('npc_generation_p50_ms'))} | "
-                f"{f(r.get('npc_robot_busy_share'))} | {f(r.get('loop_lag_p95_ms'))} | "
+                f"{pct(r.get('npc_robot_busy_share'))} | {f(r.get('loop_lag_p95_ms'))} | "
                 f"{f(r.get('promotion_warm_to_call_p50_ms'))} / {f(r.get('promotion_warm_call_p50_ms'))} / "
                 f"{f(r.get('promotion_warm_p50_ms'))} ({r.get('promotion_warm_n', 0)}) | "
                 f"{f(r.get('promotion_cold_to_call_p50_ms'))} / {f(r.get('promotion_cold_call_p50_ms'))} / "
@@ -334,7 +365,7 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
                          f"{f(r.get('frame_p50_ms'))} / {f(r.get('frame_p95_ms'))} / {f(r.get('frame_p99_ms'))} | "
                          f"{f(r.get('frame_spikes'))} | {target} | "
                          f"{f(r.get('vram_peak_mib')) if r.get('vram_peak_mib') is not None else '– (' + str(r.get('vram_peak_note')) + ')'} |")
-        lines += render_tax_lines(live, f) + pulse_ab_lines(live, f)
+        lines += render_tax_lines(live, f) + pulse_ab_lines(live, f) + robot_lines(live, f) + target_lines(live, f, pooled)
         lines += ["", "Modes: LIVE (pre-warm and snapshots on), LIVE_COLD (both off), LIVE_LOAD (pre-warm on, plus "
                   "synthetic NPC calls on all NPC slots but one, to measure Robot R under NPC load), STEPPED. Since "
                   "G3c-2 LIVE runs in real time (90 s per SB-04) and rows pool all repeats. Robot R columns count "
@@ -350,6 +381,109 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
               "– = not measured (see results.json for the reason)."]
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, md_path
+
+
+TARGET_P95_MS = 4000          # G3f target: Robot R p95 under the 4 s deadline ...
+TARGET_TIMEOUT_SHARE = 0.05   # ... and at most 5% of its calls timed out, in LIVE and LIVE_LOAD
+
+
+def pooled_rows(live: list[dict]) -> dict[int, str]:
+    """Rows (by id) whose first run folder an earlier pre-G3f row had used, with that row's name."""
+    out, seen = {}, {}
+    for r in live:
+        folder = str(r.get("run_dir", "")).replace("\\", "/").rsplit("/", 1)[-1]
+        if r.get("harness") != "g3f" and folder in seen:
+            out[id(r)] = f"with {seen[folder]}"
+        seen.setdefault(folder, f"{r['label'].split(' ')[0]}+{r.get('npc_label', '–')} {r['mode']}")
+    return out
+
+
+def cond_text(r: dict) -> str:
+    c = r.get("conditions") or {}
+    parts = []
+    if c.get("prompt_layout", "ONE_MESSAGE") != "ONE_MESSAGE":
+        parts.append(c["prompt_layout"])
+    if c.get("answer", "FULL") != "FULL":
+        parts.append(f"answer {c['answer']}")
+    if c.get("gpu_guard"):
+        parts.append(f"GPU guard cap {c.get('npc_cap', 0)}")
+    return f" [{', '.join(parts)}]" if parts else ""
+
+
+def robot_lines(live: list[dict], f) -> list[str]:
+    """G3f (D-75): Robot R's calls by outcome and by cost, for rows from the G3f harness."""
+    rows = [r for r in live if r.get("robot")]
+    if not rows:
+        return []
+    out = ["", "### Robot R's calls: outcomes and where the time goes (G3f)", "",
+           "| Robot R model | NPC model | Mode | Calls | Valid first try / after repair | Timeouts at model / in queue | "
+           "Invalid output (kinds) | Fallback decisions (why) | Dropped before send | Queue / prefill / gen p50 ms | "
+           "Prefill / gen p95 ms | Prompt tokens p50 / p95 | Cache share | Generated tokens p50 / p95 / max (cap) | "
+           "Other server busy: all / timeouts |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for r in rows:
+        b = r["robot"]
+        o = b["outcomes"]
+        kinds = ", ".join(f"{k} {v}" for k, v in b["invalid_kinds"].items()) or "–"
+        why = ", ".join(f"{k} {v}" for k, v in b["fallbacks_by_reason"].items()) or "–"
+        out.append(f"| {r['label']}{cond_text(r)} | {r.get('npc_label', '–')} | {r['mode']} | {b['calls']} | "
+                   f"{o['VALID_FIRST_TRY']} / {o['VALID_AFTER_REPAIR']} | {o['TIMEOUT_AT_MODEL']} / {o['TIMEOUT_IN_QUEUE']} | "
+                   f"{o['INVALID_OUTPUT']} ({kinds}) | {sum(b['fallbacks_by_reason'].values())} ({why}) | {b['dropped_before_send']} | "
+                   f"{f(b['queue_ms_p50'])} / {f(b['prefill_ms_p50'])} / {f(b['generation_ms_p50'])} | "
+                   f"{f(b['prefill_ms_p95'])} / {f(b['generation_ms_p95'])} | {f(b['prompt_tokens_p50'])} / {f(b['prompt_tokens_p95'])} | "
+                   f"{pct(b['cache_share'])} | {f(b['generated_tokens_p50'])} / {f(b['generated_tokens_p95'])} / "
+                   f"{f(b['generated_tokens_max'])} ({b['output_cap']}) | {pct(b['other_server_busy_share'])} / "
+                   f"{pct(b['other_server_busy_share_timeouts'])} |")
+    out += ["", "Calls include repairs. Prefill, generation and token columns come from answered calls (llama-server's "
+            "own timings); a timed-out call has none, so its prompt size is the assembled context's (the `robot` block "
+            "in results.json: `context_tokens_p50/p95`). Cache share = cached prompt tokens / prompt tokens. Invalid "
+            "kinds: TRUNCATED (cut off at the output cap), FORMAT (not JSON or wrong shape), ARGS (an action's "
+            "arguments), FN1_RULE (left a conversation without a closing line), ACTIVITY_RULE (the pulse's activity "
+            "rules), OTHER."]
+    return out
+
+
+def target_lines(live: list[dict], f, pooled: dict[int, str]) -> list[str]:
+    """G3f target: Robot R p95 < 4000 ms and timeouts <= 5% in LIVE and LIVE_LOAD, NPC timeouts beside."""
+    rows = [r for r in live if r["mode"] in ("LIVE", "LIVE_LOAD") and id(r) not in pooled]
+    if not rows:
+        return []
+    out = ["", f"### G3f target: Robot R p95 < {TARGET_P95_MS} ms and timeouts <= {TARGET_TIMEOUT_SHARE:.0%} "
+           "(LIVE, LIVE_LOAD; pooled rows left out)", "",
+           "| Robot R model | NPC model | Mode | Robot R p95 ms | Robot R timeouts | Target | NPC timeouts |",
+           "|---|---|---|---|---|---|---|"]
+    for r in rows:
+        share = r["timeouts"] / r["decisions"] if r["decisions"] else None
+        met = r["p95_ms"] is not None and r["p95_ms"] < TARGET_P95_MS and share is not None and share <= TARGET_TIMEOUT_SHARE
+        out.append(f"| {r['label']}{cond_text(r)} | {r.get('npc_label', '–')} | {r['mode']} | {f(r['p95_ms'])} | "
+                   f"{r['timeouts']}/{r['decisions']} ({pct(share)}) | {'met' if met else 'NOT met'} | "
+                   f"{f(r.get('npc_timeouts'))}/{f(r.get('npc_calls'))} |")
+    return out
+
+
+def diagnosis_lines(rows: list[dict]) -> list[str]:
+    """``tools/bakeoff.py diagnose``: one line per run found in each folder (G3f, D-75)."""
+    def f(v: Any) -> str:
+        return "–" if v is None else str(v)
+    out = ["# Robot R's calls in existing run folders (bakeoff.py diagnose, G3f)", "",
+           "Each folder is split run by run (the pre-G3f harness appended later runs to a folder's records). "
+           "Counts and timings only.", "",
+           "| Folder | Run | Model / NPC | Calls | Valid 1st / repaired | Timeouts model / queue | Invalid (kinds) | "
+           "Queue / prefill / gen p50 ms | Gen p95 ms | Prompt tok p50 (context p50) | Cache share | Gen tok p50 / p95 / max | "
+           "Other busy (timeouts) | NPC calls (timeouts) |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for r in rows:
+        o = r["outcomes"]
+        kinds = ", ".join(f"{k} {v}" for k, v in r["invalid_kinds"].items()) or "–"
+        out.append(f"| {r['run_dir']} | {r['segment']}/{r['segments']} | {f(r.get('model'))} / {f(r.get('npc_model'))} | "
+                   f"{r['calls']} | {o['VALID_FIRST_TRY']} / {o['VALID_AFTER_REPAIR']} | {o['TIMEOUT_AT_MODEL']} / "
+                   f"{o['TIMEOUT_IN_QUEUE']} | {o['INVALID_OUTPUT']} ({kinds}) | {f(r['queue_ms_p50'])} / "
+                   f"{f(r['prefill_ms_p50'])} / {f(r['generation_ms_p50'])} | {f(r['generation_ms_p95'])} | "
+                   f"{f(r['prompt_tokens_p50'])} ({f(r['context_tokens_p50'])}) | {f(r['cache_share'])} | "
+                   f"{f(r['generated_tokens_p50'])} / {f(r['generated_tokens_p95'])} / {f(r['generated_tokens_max'])} | "
+                   f"{f(r['other_server_busy_share'])} ({f(r['other_server_busy_share_timeouts'])}) | "
+                   f"{r['npc_calls']} ({r['npc_timeouts']}) |")
+    return out
 
 
 def render_tax_lines(live: list[dict], f) -> list[str]:

@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 COMPLETE (merged 2026-11-17; D-59 APPROVED 2026-11-17) · G3c-2 built 2026-11-18 (D-60, D-61 PROPOSED) · G3d built 2026-11-18 (D-62 to D-70 PROPOSED): G3 complete pending the owner's PC results · **G3e (presence and expression) built 2026-11-18, draft PR; D-71 APPROVED, D-72 to D-74 PROPOSED** · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md), [G3c-2](G3c2_OWNER_CHECKLIST.md), [G3d](G3d_OWNER_CHECKLIST.md), [G3e](G3e_OWNER_CHECKLIST.md)
+**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 COMPLETE (merged 2026-11-17; D-59 APPROVED 2026-11-17) · G3c-2 built 2026-11-18 (D-60, D-61 APPROVED 2026-11-19) · G3d built 2026-11-18 (D-63 to D-70 APPROVED 2026-11-19; D-62 PROPOSED): G3 complete pending the owner's PC results · **G3e (presence and expression) built 2026-11-18; D-71 APPROVED, D-72 to D-74 PROPOSED** · **G3f (Robot R on time under load) built 2026-11-19, draft PR; D-75 to D-83 PROPOSED; D-60, D-61, D-63 to D-70 APPROVED 2026-11-19** · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md), [G3c-2](G3c2_OWNER_CHECKLIST.md), [G3d](G3d_OWNER_CHECKLIST.md), [G3e](G3e_OWNER_CHECKLIST.md), [G3f](G3f_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -333,6 +333,115 @@ What these showed, diagnosed in G3c-2 (D-60): NPC answers failed because MOVE_TO
 
 - **Pulse metrics unchanged in kind:** zero zombie events and zero FN-1 violations in SB-06 to SB-08; SB-08's glance follows the voice in the same sample.
 - **Needs the owner's PC:** the watched runs ([G3e_OWNER_CHECKLIST.md](G3e_OWNER_CHECKLIST.md)): four scenarios at three dial settings with F3 + N3, with frame times and peak VRAM. None of those scenarios has Robot R walking while someone speaks; glancing while walking is covered by a headless test.
+
+## G3f — Robot R on time under load (draft PR; D-75 to D-83 PROPOSED; D-60, D-61, D-63 to D-70 APPROVED 2026-11-19)
+
+**Owner direction (2026-11-19):** diagnose Robot R's missed deadlines from the owner's bake-off before changing anything; build the fixes the evidence supports, each a named, configurable condition, measured in the cloud with stand-ins and fake slow models and marked for the PC; tidy the bake-off; build the approved D-70 memory bound; add a watchable glance-while-walking scenario (SB-10). **Target:** Robot R p95 under 4 s with timeouts at most 5% in LIVE and LIVE_LOAD, NPC timeouts reported beside it. Owner steps: [G3f_OWNER_CHECKLIST.md](G3f_OWNER_CHECKLIST.md).
+
+### Plan
+
+| # | What | Proof |
+|---|---|---|
+| 1 | Diagnosis from the owner's results.md/results.json: Robot R's non-VALID outcomes by kind, where its time goes, the baseline matrix (alone, with N3, with S1; F3 vs F1), the dominant cause. Whatever is not recorded is added to the live bake-off, with the exact rerun | The tables below; D-75 |
+| 2 | Fixes as named conditions in `configs/inference.yaml` (`focal`, `gpu_guard`) and live/offline bake-off options: Robot R's prompt prefix as a system message (D-76), SHORT answers (D-77), the focal-first GPU guard (D-78); model choice (D-79) and the deadline (D-80) as decisions only | A simulated shared GPU (`agents/simgpu.py`) driving the real gateway, schedulers and guard: `tools/contention_sim.py`, end to end in Godot with `--model fake-gpu`; unit tests |
+| 3 | Bake-off tidy-up: void and pooled rows marked; conditions as live options; `diagnose` for existing folders | `tests/test_focal_conditions.py` |
+| 4 | D-70 as approved: raw heard speech expires 10 minutes after its card, capped per agent | `tests/test_memory_outcomes.py`; `tools/soak.py` passes (D-81) |
+| 5 | SB-10 glance while walking; determinism ×3; G3e checklist | `tools/godot_check.py` step 6 (D-82) |
+
+### 1. Diagnosis (from the owner's attached files only)
+
+**First finding: five of the twelve live rows in results.md pooled an earlier run (a harness bug, D-75).** The bake-off named run folders `run_<model>_<mode>_<k>` without the NPC model and never cleared them, and the sidecar *appends* to `sidecar/decision_records.jsonl`. So the 2026-11-19 baseline runs landed in the 2026-11-18 F3+N3 folders and added to their records. Evidence: the "F3 alone" LIVE row has 33 NPC calls, NPC p50 1168 ms and a 43% busy share (identical to the F3+N3 LIVE row, though no NPC model ran), the same `run_dir`, and 0 promotions (`promotions.jsonl` is rewritten, not appended). Subtracting the earlier row from the later one, every count matches exactly: 69 = 36 + 33 Robot R calls, 7 = 7 + 0 timeouts, 33 = 33 + 0 NPC calls. **Pooled rows:** F3 alone LIVE and STEPPED, F1 + N3 LIVE, F3 + S1 LIVE and LIVE_LOAD. Their counts can be recovered by subtraction (below); their p50/p95 cannot. Rows with Runs = 1 (pre-G3c-2, not real time) are void, as the owner said.
+
+**Robot R's calls per condition** (calls include repairs; "invalid" = non-VALID outcomes that are not timeouts, i.e. INVALID_OUTPUT; pooled rows by subtraction):
+
+| Robot R | NPC | Mode | Calls | Timeouts | Invalid output | Robot R p50 / p95 ms | NPC calls (timeouts) | Source |
+|---|---|---|---|---|---|---|---|---|
+| F3 | N3 | LIVE | 36 | 7 (19%) | 8 (22%) | 3059 / 4010 | 33 (1) | clean (G3c-2 code) |
+| F3 | N3 | LIVE_COLD | 43 | 18 (42%) | 2 | 3273 / 4013 | 65 (8) | clean (G3c-2 code) |
+| F3 | N3 | LIVE_LOAD | 30 | 23 (77%) | 0 | 4009 / 4014 | 18 (6) | clean (G3c-2 code) |
+| F3 | N3 | STEPPED | 33 | 3 (9%) | 12 (36%) | 2623 / 4011 | 30 (3) | clean (G3c-2 code) |
+| F3 | none | LIVE | 33 | **0** | 5 (15%) | not recoverable | 0 | 69 − 36 |
+| F3 | none | STEPPED | 54 | **0** | 6 (11%) | not recoverable | 0 | 87 − 33 |
+| F1 | none | LIVE | 36 | **0** | 3 (8%) | 1894 / 2447 | 0 | clean |
+| F1 | none | STEPPED | 42 | **0** | 12 (29%) | 2114 / 2591 | 0 | clean |
+| F1 | N3 | LIVE | 44 | 5 (11%) | 4 (9%) | not recoverable | 29 (4) | 80 − 36 |
+| F1 | N3 | LIVE_LOAD | 44 | 18 (41%) | 0 | 3869 / 4011 | 21 (10) | clean |
+| F3 | S1 | LIVE | 41 | 6 (15%) | 3 (7%) | not recoverable | 48 (0) | 110 − 69 |
+| F3 | S1 | LIVE_LOAD | 28 | 18 (64%) | 0 | not recoverable | 23 (6) | 58 − 30 |
+
+**What the files do not record** (so the diagnosis cannot go further from them): Robot R's queue, prefill and generation times, prompt, cached and generated tokens (the live rows carry these for NPC calls only); which *kind* of invalid output (cut off at the 200-token cap, the FN-1 rule, the activity rules, bad arguments); and how much of each Robot R call the NPC server was also busy. All of it is now recorded per call and reported per row (D-75), and `tools/bakeoff.py diagnose` reads it from the owner's existing run folders, split run by run, without a rerun.
+
+**Which cause dominates: GPU contention.**
+- *Timeouts only happen with a second model server on the GPU.* Alone, neither F3 nor F1 timed out once in 165 calls (LIVE and STEPPED). With N3: F3 19%, F1 11% in LIVE; with S1, a smaller NPC model making more calls: F3 15%. Under LIVE_LOAD: F3 77% (N3), 64% (S1), F1 41%. Even STEPPED, where the world waits, F3 timed out 3 times with N3 and never alone.
+- *Not queueing:* Robot R owns a pinned slot (no scheduler queue by design), and NPC queue p50 is 0 ms in every row.
+- *The GPU slows generation on both servers:* NPC generation p50 doubles under load (N3 984 → 2040 ms with F3; F1 + N3 928 → 2074 ms) while NPC prefill stays 104–254 ms. The same answer simply takes twice as long. NPC calls overlapped a Robot R call 43–90% of their time.
+- *Long answers amplify it.* Generation is the larger part of a call: F1 alone, p50 1894 ms, is about 0.45 s of prefill and 1.4 s of generation at 94.7 tok/s (about 135 tokens; an inference from the offline speeds, not a measurement). Robot R may write a 300-character reason and 500-character lines (FOCAL limits), and the reason is never used by the runtime (logged only). Every token is GPU time the NPC server also wants.
+- *Cache reuse is likely poor but unmeasured.* Robot R's prompt goes as one user message; llama-server b12443 reuses a sliding-window (Gemma) or hybrid (Qwen3.5) model's cache only from message starts (D-59), so Robot R's ~700-token persona prefix is probably prefilled again every call (about 0.3 s on F3). Not recorded for Robot R in the owner's files. **Found while building:** with the pulse on (every run with a model), the persona prefix never matched the prompt's start (D-76), so the NPC prompts' system-message layout and the snapshots/pre-warms (G3c-1) silently fell back to one message. NPC prefill (111 ms for a ~650–1300-token prompt at 3900–5900 tok/s) fits a prompt processed from scratch.
+- *Repairs are a separate, second problem:* 8–36% of Robot R's calls were invalid output in conditions without contention too (F1 alone STEPPED 29%, F3 + N3 STEPPED 36%), against 2–4% on the offline prompt set, which has neither the pulse's activity format nor its FN-1 and activity checks. A repair costs a second call when there is time and a WAIT fallback when there is not. Their kind is what `diagnose` will show.
+- *Model choice alone does not reach the target:* F1 times out less than F3 with N3 (11% vs 19% LIVE; 41% vs 77% LIVE_LOAD) but is still far over 5%, and F1's Robot R quality on prompts_v3 has not been measured (D-79).
+
+The F3 + N3 rows ran on the G3c-2 code (a repair got a fresh 4 s), the baseline rows on G3d/G3e (one deadline per decision, D-63): timeouts per call compare; repairs per decision do not quite.
+
+### 2. Fixes, measured on a simulated shared GPU
+
+Three conditions, each named and configurable (`configs/inference.yaml` `focal` and `gpu_guard`; bake-off `--focal-layout`, `--focal-answer`, `--gpu-guard`, `--npc-cap`), **all off by default until the owner's PC measures them**:
+
+| Condition | What it changes | Decision |
+|---|---|---|
+| `focal.prompt_layout: SYSTEM_PREFIX` | Robot R's guardrails + identity as a system message, so llama-server can reuse that ~700-token prefix on a sliding-window/hybrid model; prompt text unchanged | D-76 |
+| `focal.answer: SHORT` | reason_summary ≤ 60 characters (was 300; the runtime never uses it), speech ≤ 200 (was 500), promise text ≤ 80 | D-77 |
+| `gpu_guard` (`npc_cap` 0 or 1) | While a Robot R call is in flight the NPC server starts no background call and real calls only below the cap; held calls keep their deadlines | D-78 |
+
+**Measured on a simulated shared GPU** (`tools/contention_sim.py`, 6 simulated minutes per cell at 10x, seed 7; the real gateway, schedulers, deadlines and guard; model speeds from the owner's offline bake-off; D-83). Robot R p50 / p95 ms, timeouts, NPC (two visitors' C2 calls) and LIVE_LOAD's synthetic calls:
+
+| Robot R | Workload | Condition | Robot R timeouts | Robot R p50 / p95 | Gen tokens p50 | NPC p50 / p95 (timeouts) | Load calls timed out | Target |
+|---|---|---|---|---|---|---|---|---|
+| F3 | LIVE | baseline | 3/25 (12%) | 3060 / 4010 | 147 | 900 / 1790 (0) | – | NOT met |
+| F3 | LIVE | system_prefix | 0/26 | 2730 / 3580 | 147 | 880 / 1700 (0) | – | met |
+| F3 | LIVE | short | 0/27 | 2300 / 3180 | 100 | 880 / 1750 (0) | – | met |
+| F3 | LIVE | guard cap 0 | 0/26 | 3010 / 3720 | 147 | 900 / 2490 (0) | – | met |
+| F3 | LIVE | guard cap 1 | 3/25 (12%) | 3060 / 4010 | 147 | 900 / 1790 (0) | – | NOT met |
+| F3 | LIVE | all three (cap 0) | 0/28 | 2020 / 2700 | 100 | 900 / 2500 (0) | – | met |
+| F3 | LIVE_LOAD | baseline | 25/25 (100%) | 4010 / 4010 | – | 1960 / 3310 (0) | 0/741 | NOT met |
+| F3 | LIVE_LOAD | system_prefix | 25/25 | 4010 / 4020 | – | 1940 / 3310 (0) | 0/741 | NOT met |
+| F3 | LIVE_LOAD | short | 25/25 | 4010 / 4020 | – | 1950 / 3310 (0) | 1/742 | NOT met |
+| F3 | LIVE_LOAD | guard cap 0 | 4/25 (16%) | 3700 / 4010 | 147 | 1900 / 3920 (0) | 70/720 | NOT met |
+| F3 | LIVE_LOAD | guard cap 1 | 25/25 | 4010 / 4020 | – | 1940 / 2970 (0) | 52/719 | NOT met |
+| F3 | LIVE_LOAD | short + guard cap 0 | 0/26 | 3070 / 3280 | 100 | 1940 / 4270 (0) | 53/730 | met |
+| F3 | LIVE_LOAD | all three (cap 0) | 0/26 | 2550 / 3030 | 100 | 1950 / 3540 (0) | 34/738 | met |
+| F1 | LIVE | baseline | 0/28 | 2030 / 2920 | 147 | 890 / 1760 (0) | – | met |
+| F1 | LIVE | all three (cap 0) | 0/32 | 1360 / 1590 | 100 | 890 / 1610 (0) | – | met |
+| F1 | LIVE_LOAD | baseline | 18/25 (72%) | 4010 / 4010 | 147 | 1970 / 3270 (0) | 1/742 | NOT met |
+| F1 | LIVE_LOAD | system_prefix | 1/25 (4%) | 3690 / 3770 | 147 | 1930 / 3050 (0) | 0/752 | met |
+| F1 | LIVE_LOAD | short | 0/26 | 3030 / 3100 | 100 | 1910 / 2830 (0) | 0/767 | met |
+| F1 | LIVE_LOAD | guard cap 0 | 0/26 | 2560 / 3130 | 147 | 1940 / 3710 (0) | 34/738 | met |
+| F1 | LIVE_LOAD | all three (cap 0) | 0/28 | 1960 / 2530 | 100 | 1790 / 2660 (0) | 5/767 | met |
+
+(Every cell is in `results/contention_sim.json`; the full matrix also has F1 with each condition alone in LIVE, all met.)
+
+What it says, under its assumptions:
+- **Calibration, both ways:** its F3 + N3 LIVE baseline (12% timeouts) is close to the owner's 19%, but its F1 + N3 LIVE baseline is too kind (0% vs the owner's 11%) and its LIVE_LOAD baselines too harsh (100% vs 77% for F3, 72% vs 41% for F1). It is a model of the mechanism, not the owner's GPU: it ranks the conditions, the PC measures them.
+- **For F3 under load no single condition is enough**; SHORT plus the guard, or all three, meet the target. In plain LIVE each condition alone does.
+- **SHORT cuts Robot R's generated tokens about a third** (147 → 100), the largest single saving because generation dominates. **SYSTEM_PREFIX cuts prefill** (780 → 490 ms for F3).
+- **The guard with cap 0 is what helps under load;** cap 1 rarely holds anything (about one NPC call is in flight anyway) and changes nothing. Its cost lands on NPCs: the visitors' p95 rises (F3 LIVE_LOAD 3310 → 3540–4270 ms, under their 6 s deadline, no timeouts), and 5–9% of the synthetic load calls (3 s deadline) time out.
+- **F1 meets the target under load with any one of the conditions;** F3 needs two. Whether F1 keeps Robot R's quality is the open question (D-79).
+
+End to end in Godot (`--model fake-gpu --npc-load 3`, SB-04 LIVE, 90 s real time, one run each; the plumbing through the real sidecar, world and summaries):
+
+| Condition | Robot R calls | Timeouts | p50 / p95 ms | Prefill / gen p50 ms | Prompt tokens p50, cache share | Generated tokens p50 | Visitors' model calls (timeouts) | Guard |
+|---|---|---|---|---|---|---|---|---|
+| baseline | 9 | 9 | 3997 / 4010 | – (all timed out) | – | – | 8 (0) | off |
+| SYSTEM_PREFIX + SHORT + guard cap 0 | 9 | 0 | 2209 / 3153 | 318 / 1891 | 1138, 60% | 66 | 7 (2) | 30 deferrals |
+
+The NPC cost shows here too: two of the visitors' seven calls timed out while held behind Robot R's.
+
+### Result
+
+- **Built:** all five parts. Diagnosis and harness (D-75), the three conditions (D-76 to D-78, off by default), model choice and deadline as decisions only (D-79, D-80), raw heard speech bounded (D-81), attention while walking and SB-10 (D-82), the simulated shared GPU (D-83). Two defects found and fixed on the way, each reproduced first: pooled run folders in the bake-off (D-75) and a persona prefix that no prompt started with when the pulse is on (D-76).
+- **Journals** (each scenario three times, one with random sidecar delays; one journal each): every existing scenario is **byte-identical to main**: SB-04 `50048b7e3d42`, SB-05 `3ef2e2e0e63c`, SB-06 `b5b29006cad4`, SB-07 `a486ddb7a471`, SB-08 `f1f631e031c1`, SB-04 with fake-model NPCs `a7854d66f268` (and replayed), SB-06 with the fake model `f7b4d221a195` (and replayed; main's run gives the same), SB-09 soak `09a8d071f381` (main's run gives the same). New: **SB-10 `ab5964d77f57`**.
+- **SB-10 (Demo policy, stepped):** Robot R walks at a steady 1.0 m/s with its heading unchanged (−90°) from start to stop; the side speaker gets a head glance (50–66°, checked within 1 s) and an answer; the voice from behind sends the head to its 80° limit, heading kept; Robot R stops at 21.9 s, then its body turns to face the visitor behind (−90° → 89°), and it looks at them. Before D-82 the body never turned after stopping (the speaker behind was never seen), and the Demo policy's `TURN_TO` would have turned the body mid-walk.
+- **Soak:** `tools/soak.py` OK (D-81 has the numbers).
+- **Needs the owner's PC** ([G3f_OWNER_CHECKLIST.md](G3f_OWNER_CHECKLIST.md)): `bakeoff.py diagnose` on the existing run folders (no rerun), the baseline rerun with the new instrumentation, each condition alone and together for F3 (and F1) in LIVE and LIVE_LOAD, the offline quality of SHORT and SYSTEM_PREFIX on prompts_v3, and the watched SB-10. The decisions to make with those numbers: D-76 to D-79.
 
 ## Out of scope for G3
 

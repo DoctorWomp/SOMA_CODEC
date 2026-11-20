@@ -148,6 +148,7 @@ def test_report_writes_markdown_and_json(tmp_path):
                             "agreement_precision": None, "agreement_kv": None,
                             "vram_mib": 3100, "vram_note": bk.VRAM_DELTA_NOTE, "items": [item, npc]}],
                "live": [{"label": "F3 Gemma 4 12B Q4_0", "npc_label": "N3", "mode": "LIVE_LOAD", "option": "C", "ok": True,
+                         "repeats": 1,
                          "decisions": 9, "timeouts": 0, "fallbacks": 0, "p50_ms": 900.0, "p95_ms": 1500, "npc_calls": 30,
                          "npc_p50_ms": 700.0, "promotion_warm_p50_ms": 650.0, "promotion_warm_n": 2,
                          "promotion_cold_p50_ms": 1200.0, "promotion_cold_n": 1, "vram_focal_mib": 8700,

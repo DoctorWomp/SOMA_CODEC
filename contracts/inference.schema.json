@@ -346,6 +346,48 @@
           "type": "boolean"
         }
       }
+    },
+    "focal": {
+      "description": "G3f (D-76, D-77): how Robot R's calls are sent, each a named condition the bake-off compares. prompt_layout ONE_MESSAGE is the layout measured from G3b to G3e (one user message); SYSTEM_PREFIX sends the persona prefix (guardrails + identity) as a system message, as NPC prompts are sent since G3c-1, so llama-server's context checkpoints (made at message starts for sliding-window and hybrid models) can reuse it. answer FULL keeps the G3b-G3e answer limits (reason_summary up to 300 characters, speech up to 500, commitment up to 200); SHORT limits them to 60, 200 and 80. The prompt text is the same in every condition.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prompt_layout",
+        "answer"
+      ],
+      "properties": {
+        "prompt_layout": {
+          "enum": [
+            "ONE_MESSAGE",
+            "SYSTEM_PREFIX"
+          ]
+        },
+        "answer": {
+          "enum": [
+            "FULL",
+            "SHORT"
+          ]
+        }
+      }
+    },
+    "gpu_guard": {
+      "description": "G3f (D-78): focal-first GPU protection in Option C. While a Robot R call is in flight, the NPC server starts no background call (pulse reviews, pre-warms) and real NPC calls only while fewer than npc_cap calls are in flight on it. The bake-off's synthetic LIVE_LOAD calls count as real calls, so LIVE_LOAD measures the guard against a busy NPC server. Waiting NPC calls keep their own deadlines and are dropped before the model if they could only answer late (D-58). Calls already running are not interrupted. Off by default until the owner's PC measures it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "npc_cap"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "npc_cap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        }
+      }
     }
   }
 }

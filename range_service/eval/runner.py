@@ -23,6 +23,11 @@ A run folder holds:
   VRAM sampled during the run) and ``report`` (offered vs accepted actions, response latency,
   timeouts and fallbacks, model calls, glances, FN-1 continuity) per agent (G3d, D-69).
   ``summary.json`` holds no prompt or memory text: it is the file to share.
+
+A run folder holds one run (G3f, D-75): a folder that still holds an earlier run's files is
+cleared of them first (``clear_previous_run``), because several files are appended to as the run
+goes (decision records, prompts, link traffic) and a second run into the same folder used to pool
+both runs' calls (the owner's 2026-11-19 baseline rows).
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -62,6 +68,39 @@ RENDER_PRESETS: dict[str, dict[str, Any]] = {
 DEFAULT_RESOLUTION = "1920x1080"
 
 
+# What a run writes into its folder (G3f, D-75): only these are removed from a folder that holds an
+# earlier run, so a folder given with --out never loses anything else.
+RUN_DIRS = ("sidecar", "slot_snapshots")
+RUN_FILE_SUFFIXES = (".jsonl", ".json", ".log")
+
+
+def holds_a_run(run_dir: Path) -> bool:
+    return any((run_dir / n).exists() for n in ("journal.jsonl", "run_manifest.json", "summary.json", "sidecar"))
+
+
+def clear_previous_run(run_dir: Path, keep: tuple[Path, ...] = ()) -> list[str]:
+    """Remove an earlier run's files from ``run_dir`` (G3f, D-75), so a new run never appends to
+    them. Removes only what a run writes there: the ``sidecar/`` and ``slot_snapshots/`` folders
+    and top-level ``.jsonl``, ``.json`` and ``.log`` files. Refuses (RunError) if a path in
+    ``keep`` (a replay source) would be removed. Returns what it removed."""
+    if not run_dir.is_dir() or not holds_a_run(run_dir):
+        return []
+    targets = [run_dir / d for d in RUN_DIRS if (run_dir / d).exists()]
+    targets += sorted(p for p in run_dir.iterdir() if p.is_file() and p.suffix in RUN_FILE_SUFFIXES)
+    for k in keep:
+        k = k.resolve()
+        for t in targets:
+            if k == t.resolve() or t.resolve() in k.parents:
+                raise RunError(f"{k} is in the run folder {run_dir}, which would be cleared for the new run: "
+                               "replay from a copy, or run into another folder")
+    for t in targets:
+        if t.is_dir():
+            shutil.rmtree(t)
+        else:
+            t.unlink()
+    return [t.name for t in targets]
+
+
 @dataclass
 class RunOptions:
     scenario_id: str
@@ -85,6 +124,7 @@ class RunOptions:
     npc_load_prompts: list[dict[str, Any]] = field(default_factory=list)
     resolution: str | None = None      # rendered runs: WIDTHxHEIGHT (default 1920x1080) (G3d)
     render_preset: str = "v0"          # rendered runs: a RENDER_PRESETS name (G3d)
+    conditions: Any = None             # G3f: runmodels.Conditions (Robot R's layout and answer, the GPU guard)
     frame_stats: bool | None = None    # None = on for rendered runs; True also records headless frames
     sample_vram: bool | None = None    # None = for LIVE, rendered or llama runs (nvidia-smi once a second)
     presence: str | None = None        # G3e (D-74): the presence dial for every robot (subtle/default/performative/0..1)
@@ -366,13 +406,18 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     run_id = f"{opts.scenario_id.lower()}_{seed}_{stamp}"
     run_dir = opts.out_dir or (REPO / "runs" / run_id)
+    keep = tuple(Path(spec.split(":", 1)[1]) for spec in (opts.model, opts.npc_model) if spec.startswith("replay:"))
+    cleared = clear_previous_run(run_dir, keep)
+    if cleared:
+        print(f"NOTE  {run_dir} held an earlier run; removed its files first: {', '.join(cleared[:6])}"
+              f"{' ...' if len(cleared) > 6 else ''}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
     details: dict[str, Any] = {}
     tokenizer = None
     try:
         models = models_from_specs(opts.model, opts.npc_model, run_dir=run_dir, seed=seed, prewarm=opts.prewarm,
-                                   snapshots=opts.snapshots)
+                                   snapshots=opts.snapshots, conditions=opts.conditions)
     except (ValueError, ProviderError) as exc:
         raise RunError(str(exc)) from exc
     try:
@@ -441,6 +486,21 @@ async def run_scenario(opts: RunOptions) -> RunResult:
                             "fallback": next((e["reason"] for e in models.events if e["event"] == "OPTION_C_FALLBACK"), None)}
     summary["promotions"] = promotion_summary(promotions)
     summary["npc_load_calls"] = len(load_records)
+    # G3f (D-75 to D-78): the conditions this run used, what the GPU guard held back, and Robot R's
+    # calls broken down by outcome and cost (counts and timings only).
+    from range_service.eval.live_diag import robot_breakdown   # noqa: PLC0415
+
+    summary["conditions"] = dict(models.conditions)
+    summary["gpu_guard"] = dict(models.guard.stats, npc_cap=models.guard.npc_cap) if models.guard is not None else None
+    if models.simgpu is not None:
+        summary["simgpu"] = {"busy_s": round(models.simgpu.busy_s, 1), "peak_concurrency": models.simgpu.peak_concurrency}
+    records_path = run_dir / "sidecar" / "decision_records.jsonl"
+    recs = [json.loads(x) for x in records_path.read_text(encoding="utf-8").splitlines() if x.strip()] \
+        if records_path.is_file() else []
+    delivery_path = run_dir / "sidecar" / "delivery.jsonl"
+    deliv = [json.loads(x) for x in delivery_path.read_text(encoding="utf-8").splitlines() if x.strip()] \
+        if delivery_path.is_file() else []
+    summary["robot_calls"] = robot_breakdown(recs, deliv)
     summary["event_loop_lag_ms"] = sidecar.loop_lag_summary()
     if details.get("pulse"):
         from range_service.eval.pulse_metrics import pulse_summary   # noqa: PLC0415

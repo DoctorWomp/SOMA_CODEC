@@ -478,7 +478,7 @@ def _sent(run_dir: Path, agent: str) -> list[dict]:
     return out
 
 
-PULSE_SCENARIOS = ("SB06_LONG_WAIT", "SB07_EMPTY_HALL", "SB08_PERIPHERAL_SPEAKER")
+PULSE_SCENARIOS = ("SB06_LONG_WAIT", "SB07_EMPTY_HALL", "SB08_PERIPHERAL_SPEAKER", "SB10_GLANCE_WHILE_WALKING")
 
 
 def pulse_specs() -> tuple[dict[str, dict], dict[str, dict]]:
@@ -543,6 +543,8 @@ def pulse_checks(results: dict) -> tuple[list[str], str]:
                 problems.append("SB-08: Robot R should answer the question addressed to it")
             if [a for a in speech if a["tick"] < 660 * 6]:
                 problems.append("SB-08: Robot R spoke before it was addressed (talk between visitors is not for it)")
+        if scenario_id == "SB10_GLANCE_WHILE_WALKING":
+            problems += glance_walk_checks(r.run_dir)
         notes.append(f"{scenario_id} {r.journal_sha256[:12]}")
     fake = [results["SB06_fake_0"], results["SB06_fake_1"], results["SB06_fake_replay"]]
     if len({r.journal_sha256 for r in fake}) != 1:
@@ -552,6 +554,61 @@ def pulse_checks(results: dict) -> tuple[list[str], str]:
         _, found = check_agent_records(r.run_dir)
         problems += [f"SB06 fake: {p}" for p in found]
     return problems, "; ".join(notes) + f"; SB06 fake model {(fake[0].journal_sha256 or '')[:12]} x2 and replayed"
+
+
+def glance_walk_checks(run_dir: Path, robot: str = "robot_r", side_tick: int = 55 * 6, behind_tick: int = 150 * 6,
+                       behind: str = "visitor_b") -> list[str]:
+    """G3f (SB-10, D-72): walking a straight path, Robot R glances at the side speaker with its head
+    without breaking stride; for the voice from behind (beyond the neck) the head stops at its limit
+    and the heading is kept; the body turns toward that person only once Robot R stands."""
+    import math   # noqa: PLC0415
+
+    from range_service.eval.runner import read_journal
+
+    journal = read_journal(run_dir / "journal.jsonl")
+    poses = sorted((e["tick_id"], e["payload"]["observer_pose"]) for e in journal
+                   if e["kind"] == "OBSERVATION_DELIVERED" and e["actor_id"] == robot)
+    other = {e["tick_id"]: e["payload"]["observer_pose"] for e in journal
+             if e["kind"] == "OBSERVATION_DELIVERED" and e["actor_id"] == behind}
+    if len(poses) < 10:
+        return ["SB-10: too few observation packets for Robot R"]
+    heading = poses[0][1]["yaw_rad"]
+    moving = [t for (t, a), (_, b) in zip(poses, poses[1:]) if math.hypot(b["x"] - a["x"], b["z"] - a["z"]) > 0.005]
+    stopped_at = max(moving) if moving else 0
+    problems = []
+
+    def turn(pose):
+        return abs(math.degrees(math.atan2(math.sin(pose["yaw_rad"] - heading), math.cos(pose["yaw_rad"] - heading))))
+    walking = [(t, q) for t, q in poses if t <= stopped_at]
+    if any(turn(q) > 3.0 for _, q in walking):
+        worst = max(walking, key=lambda tq: turn(tq[1]))
+        problems.append(f"SB-10: the body turned {turn(worst[1]):.1f} deg while walking (tick {worst[0]}); the head should glance")
+    start = (min(moving) if moving else 0) + 120                  # after 2 s of getting up to speed
+    for t0 in range(start, stopped_at - 120, 60):                  # never stops on the way: >= 0.5 m every second
+        a = next(q for t, q in poses if t >= t0)
+        b = next((q for t, q in poses if t >= t0 + 60), None)
+        if b is not None and math.hypot(b["x"] - a["x"], b["z"] - a["z"]) < 0.5:
+            problems.append(f"SB-10: Robot R broke its stride near tick {t0}")
+            break
+    near_side = [q for t, q in poses if side_tick <= t <= side_tick + 60 and t <= stopped_at]
+    if not any(abs(q.get("head_yaw_rad", 0.0)) >= math.radians(30) for q in near_side):
+        problems.append("SB-10: no head glance toward the side speaker within 1 s while walking")
+    near_behind = [q for t, q in poses if behind_tick <= t <= behind_tick + 60 and t <= stopped_at]
+    if not near_behind or not any(abs(q.get("head_yaw_rad", 0.0)) >= math.radians(75) for q in near_behind):
+        problems.append("SB-10: for the voice from behind the head should turn to its limit while walking")
+    end_t, end = poses[-1]
+    b = other.get(max(t for t in other if t <= end_t)) if other else None
+    if b is None:
+        problems.append("SB-10: no packets for the visitor behind")
+    else:
+        want = math.atan2(-(b["x"] - end["x"]), -(b["z"] - end["z"]))
+        off = abs(math.degrees(math.atan2(math.sin(end["yaw_rad"] - want), math.cos(end["yaw_rad"] - want))))
+        if off > 20.0:
+            problems.append(f"SB-10: after stopping, the body should face the person who spoke from behind (off by {off:.0f} deg)")
+    first_turn = next((t for t, q in poses if turn(q) > 3.0), None)
+    if first_turn is not None and first_turn <= stopped_at:
+        problems.append(f"SB-10: the body turned at tick {first_turn}, before Robot R stopped (tick {stopped_at})")
+    return problems
 
 
 def ambient_checks(run_dir: Path, robot: str = "robot_r") -> list[str]:

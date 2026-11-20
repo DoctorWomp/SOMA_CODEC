@@ -13,11 +13,14 @@
     uv run python tools/run_scenario.py SB06_LONG_WAIT --no-pulse    # the same run with the pulse off (G3d)
     uv run python tools/compare_runs.py runs/<run A> runs/<run B>      # side by side, from the summaries
     uv run python tools/run_scenario.py SB06_LONG_WAIT --watch --presence subtle   # the presence dial (G3e)
+    uv run python tools/run_scenario.py SB04_POLITE_BID --mode live --model fake-gpu --npc-load 3 --gpu-guard on
+        # G3f: Robot R (F3) and NPCs (N3) on a simulated shared GPU, with a condition (D-75 to D-78)
 
 Modes: STEPPED (default) holds the world at each sample until every agent has answered, so a
 run is exactly repeatable; LIVE never waits (use it to watch responsiveness). No model is ever
 downloaded: --model takes none (Demo policy), fake, fake-slow:MS, fake-malformed, replay:FILE,
-llama, llama:MODEL or llama-attach:PORT (G3b). --npc-model (G3c-1) chooses what drives visitors
+llama, llama:MODEL or llama-attach:PORT (G3b), or fake-gpu[:PROFILE] (G3f: a fake model on a
+simulated GPU shared with the NPCs, agents/simgpu.py). --npc-model (G3c-1) chooses what drives visitors
 promoted to C1/C2: auto (default) follows --model (none keeps the templates; fake and replay
 drive NPCs too; llama starts the NPC server from configs/inference.yaml, Option C).
 
@@ -34,7 +37,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from range_service.agents.runmodels import Conditions  # noqa: E402
 from range_service.eval.runner import RunError, RunOptions, run_scenario  # noqa: E402
+from tools.bakeoff import PROMPT_SET, load_set  # noqa: E402
 from tools.godot_check import find_godot  # noqa: E402
 
 
@@ -57,6 +62,15 @@ def main(argv: list[str] | None = None) -> int:
                         help="record frame times in a headless run too (always on with --watch)")
     parser.add_argument("--no-prewarm", action="store_true",
                         help="never pre-warm NPC persona prefixes (measures cold promotion latency)")
+    parser.add_argument("--focal-layout", default=None, choices=["ONE_MESSAGE", "SYSTEM_PREFIX"],
+                        help="G3f (D-76): Robot R's prompt layout (default: configs/inference.yaml focal.prompt_layout)")
+    parser.add_argument("--focal-answer", default=None, choices=["FULL", "SHORT"],
+                        help="G3f (D-77): Robot R's answer limits (default: configs/inference.yaml focal.answer)")
+    parser.add_argument("--gpu-guard", default=None, choices=["on", "off"],
+                        help="G3f (D-78): focal-first GPU guard in Option C (default: configs/inference.yaml gpu_guard)")
+    parser.add_argument("--npc-cap", type=int, default=None, help="G3f: real NPC calls allowed while Robot R thinks")
+    parser.add_argument("--npc-load", type=int, default=0, metavar="STREAMS",
+                        help="keep STREAMS synthetic NPC calls running on the NPC server (as the bake-off's LIVE_LOAD)")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--body", action="append", default=[], metavar="AVATAR=BODY")
     parser.add_argument("--out", type=Path, default=None, help="run folder (default: runs/<scenario>_<seed>_<time>)")
@@ -81,7 +95,11 @@ def main(argv: list[str] | None = None) -> int:
                       godot_args=args.godot_arg, posing=not args.no_pose, npc_model=args.npc_model,
                       prewarm=False if args.no_prewarm else None, pulse="off" if args.no_pulse else args.pulse,
                       resolution=args.resolution, render_preset=args.render_preset,
-                      frame_stats=True if args.frame_stats else None, presence=args.presence)
+                      frame_stats=True if args.frame_stats else None, presence=args.presence,
+                      conditions=Conditions(args.focal_layout, args.focal_answer,
+                                            None if args.gpu_guard is None else args.gpu_guard == "on", args.npc_cap),
+                      npc_load_streams=args.npc_load,
+                      npc_load_prompts=[i for i in load_set(PROMPT_SET)[0] if i.get("role") == "NPC"] if args.npc_load else [])
     try:
         result = asyncio.run(run_scenario(opts))
     except RunError as exc:
@@ -121,6 +139,17 @@ def main(argv: list[str] | None = None) -> int:
         v = render["vram"]
         print(f"  peak VRAM during the run: {v['peak_mib']} MiB" + (f" ({v['reason']})" if v.get("reason") else
                                                                      f" ({v['samples']} samples)"))
+    rc = s.get("robot_calls") or {}
+    if rc.get("calls"):
+        o = rc["outcomes"]
+        print(f"  Robot R calls ({', '.join(f'{k} {v}' for k, v in s.get('conditions', {}).items())}): {rc['calls']}; "
+              f"valid {o['VALID_FIRST_TRY']} + {o['VALID_AFTER_REPAIR']} repaired; timeouts {o['TIMEOUT_AT_MODEL']} at the model, "
+              f"{o['TIMEOUT_IN_QUEUE']} in the queue; invalid {o['INVALID_OUTPUT']} {rc['invalid_kinds']}; "
+              f"p50/p95 {rc['total_ms_p50']}/{rc['total_ms_p95']} ms (queue {rc['queue_ms_p50']}, prefill {rc['prefill_ms_p50']}, "
+              f"gen {rc['generation_ms_p50']}); prompt tokens p50 {rc['prompt_tokens_p50']}, cache share {rc['cache_share']}, "
+              f"generated p50 {rc['generated_tokens_p50']}; other server busy {rc['other_server_busy_share']}")
+    if s.get("gpu_guard"):
+        print(f"  GPU guard: {s['gpu_guard']}")
     for agent_id, r in (s.get("report") or {}).items():
         lat = r["response_latency_ms"]
         print(f"  report {agent_id}: actions {r['actions']['accepted']}/{r['actions']['offered']} accepted, "

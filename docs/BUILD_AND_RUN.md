@@ -177,6 +177,18 @@ uv run python tools/soak.py
 
 A rendered run (`--watch`) records frame times and peak VRAM in `summary.json` (`render`); every run has a per-agent `report` (offered vs accepted actions, response latency, timeouts, fallbacks, model calls, glances, FN-1). `compare_runs.py` prints two or more runs side by side. `soak.py` runs SB-09 (21 simulated minutes) and writes `soak_summary.json`. Summaries hold counts only; run folders hold raw prompts and memories and stay under the git-ignored `runs/` and `results/`. `tools/check.py` runs its scenario runs side by side (`RANGE_CHECK_JOBS=N` to change how many at once, D-68).
 
+**Robot R on time under load (G3f, D-75 to D-83):**
+
+```bash
+uv run python tools/bakeoff.py diagnose
+uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE LIVE_LOAD --focal-layout SYSTEM_PREFIX --focal-answer SHORT --gpu-guard on
+uv run python tools/run_scenario.py SB04_POLITE_BID --mode live --model fake-gpu --npc-load 3 --gpu-guard on
+uv run python tools/contention_sim.py
+uv run python tools/run_scenario.py SB10_GLANCE_WHILE_WALKING --watch
+```
+
+`diagnose` breaks Robot R's calls in existing bake-off run folders down by outcome and cost (folders the pre-G3f harness reused are split run by run). The live and offline bake-off take three named conditions: `--focal-layout SYSTEM_PREFIX` (Robot R's persona prefix as a system message), `--focal-answer SHORT` (shorter reason and speech), `--gpu-guard on [--npc-cap N]` (the NPC server holds new calls while a Robot R call is in flight); defaults are in `configs/inference.yaml` (`focal`, `gpu_guard`). `--model fake-gpu` runs Robot R (F3 speeds) and NPCs (N3) on a simulated shared GPU; `contention_sim.py` runs the condition matrix on it faster than real time: a model of the mechanism, not a measurement. SB-10 shows a glance while walking.
+
 **Presence and expression (G3e, D-72 to D-74):** `uv run python tools/run_scenario.py SB06_LONG_WAIT --watch --presence subtle` (or `default`, `performative`, or a number from 0 to 1) sets the presence dial for every robot. The humanoids' head is world state now: they glance with the head while walking, and their sight cone follows it.
 
 **The pulse (G3c-2, D-61):** SB-06, SB-07 and SB-08 run the pulse protocol (robots that stay visibly present between decisions): `uv run python tools/run_scenario.py SB06_LONG_WAIT --watch`. It is on whenever a scenario asks for it or a model drives Robot R; `--pulse on|off` overrides. A run folder adds `pulse.jsonl` and a `pulse` section in `summary.json`; settings are in `configs/pulse.yaml`. LIVE runs now run in real time (one SB-04 is 90 s).

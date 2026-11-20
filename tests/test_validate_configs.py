@@ -40,7 +40,8 @@ def test_example_configs_are_valid():
     assert set(config_set.items["bodies"]) == {
         "legged_humanoid", "wheeled_humanoid", "quadruped", "quadruped_arm", "human_walker"}
     assert set(config_set.items["scenarios"]) == {"SB04_POLITE_BID", "SB05_RAMP_VS_STAIRS", "SB06_LONG_WAIT",
-                                                  "SB07_EMPTY_HALL", "SB08_PERIPHERAL_SPEAKER", "SB09_SOAK"}
+                                                  "SB07_EMPTY_HALL", "SB08_PERIPHERAL_SPEAKER", "SB09_SOAK",
+                                                  "SB10_GLANCE_WHILE_WALKING"}
     assert "H0" in config_set.items["presets"]
 
 
@@ -88,6 +89,7 @@ def test_genuinely_missing_file_is_reported(config_copy):
         "configs/scenarios/SB06_LONG_WAIT.yaml: cast.visitor_z.persona 'visitor_x' not found in configs/personas/",
         "configs/scenarios/SB08_PERIPHERAL_SPEAKER.yaml: cast.visitor_q.persona 'visitor_x' not found in configs/personas/",
         "configs/scenarios/SB09_SOAK.yaml: cast.visitor_x.persona 'visitor_x' not found in configs/personas/",
+        "configs/scenarios/SB10_GLANCE_WHILE_WALKING.yaml: cast.visitor_s.persona 'visitor_x' not found in configs/personas/",
     ]
 
 
@@ -119,7 +121,7 @@ def test_spawn_outside_map_is_reported(config_copy):
 def test_command_line_exit_codes(config_copy):
     ok = subprocess.run([sys.executable, str(TOOL)], capture_output=True, text=True, cwd=REPO)
     assert ok.returncode == 0, ok.stdout + ok.stderr
-    assert "All 45 config file(s) are valid." in ok.stdout
+    assert "All 46 config file(s) are valid." in ok.stdout
     _edit(config_copy / "personas" / "visitor_y.yaml", "patience: 85", "patience: 120")
     bad = subprocess.run([sys.executable, str(TOOL), str(config_copy)], capture_output=True, text=True, cwd=REPO)
     assert bad.returncode == 1
