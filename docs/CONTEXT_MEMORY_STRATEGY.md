@@ -61,7 +61,7 @@ This order serves two purposes. The engine's prefix cache reuses everything up t
 
 C1 reactive NPCs use only sections 1, 2, 7 (last turn) and 9: about 0.5K tokens. C0 uses no model. *Amended at G3c-2 (D-60, measured on the owner's NPC bake-off): C1 also gets the argument formats in section 1 and a minimal section 8 (who it perceives nearby, from its own senses), about 0.78K tokens in all; without them small models invented arguments and target ids.*
 
-Budgets are starting values. They are measured with the real tokenizer, not estimated.
+Budgets are starting values. They are measured with the real tokenizer, not estimated. *G3g (D-88): the total counted is the whole prompt as sent (section headers included); if the never-cut sections and the latest turn do not fit, the latest turn is shortened (never dropped) and marked; C1's split was re-measured with the Qwen3.5 tokenizer (guardrails with the pulse's activity format 403 tokens), its total staying 0.78K.*
 
 ### 4.2 Memory updates at boundaries
 

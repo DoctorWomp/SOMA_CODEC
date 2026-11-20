@@ -65,6 +65,10 @@ from range_service.configs import load_and_check  # noqa: E402
 from range_service.eval import bakeoff as bk  # noqa: E402
 from range_service.eval import live_diag  # noqa: E402
 from range_service.models import registry as reg  # noqa: E402
+from range_service.agents import lean  # noqa: E402
+from range_service.eval import tokens  # noqa: E402
+
+PULSE_MAX_REVIEW_S = 600   # configs/pulse.yaml pulse.max_review_after_s, as a live run offers it
 
 REPO = Path(__file__).resolve().parent.parent
 PROMPT_SET_V1 = REPO / "bakeoff" / "prompts_v1.jsonl"
@@ -179,12 +183,45 @@ def npc_prefix(item: dict, focal_layout: str = "ONE_MESSAGE") -> str | None:
     return head if sep else None
 
 def condition_key(c: dict) -> tuple:
-    """An offline condition's identity: model, KV cache and Robot R's layout and answer (G3f)."""
-    return (c["label"], c["kv"], c.get("focal_layout", "ONE_MESSAGE"), c.get("focal_answer", "FULL"))
+    """An offline condition's identity: model, KV cache and Robot R's layout, answer (G3f) and
+    whether its prompts offer an activity (G3g)."""
+    return (c["label"], c["kv"], c.get("focal_layout", "ONE_MESSAGE"), c.get("focal_answer", "FULL"),
+            bool(c.get("focal_activity")))
+
+
+def focal_item(item: dict, focal_answer: str, activity: bool) -> dict:
+    """A prompt-set item as Robot R gets it under an answer condition (G3g, D-85): only the
+    answer-format lines of its prompt change (prompts_v3 holds FULL prompts without the pulse's
+    activity format). With ``activity`` the prompt offers an activity, as with the pulse on in a
+    live run. NPC items are never changed."""
+    if item.get("role") == "NPC" or (focal_answer != "LEAN" and not activity):
+        return item
+    prompt = lean.rewrite_prompt(item["prompt"], focal_answer, activity)
+    choices = dict(item.get("choices") or {})
+    if activity:
+        choices["activity"] = PULSE_MAX_REVIEW_S
+    return dict(item, prompt=prompt, prompt_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(), choices=choices)
+
+
+async def answer_pieces(provider, text: str) -> list[str] | None:
+    """The model's own tokenization of ``text`` as token pieces (llama-server ``/tokenize`` with
+    ``with_pieces``), or None when the server does not give pieces."""
+    from range_service.agents import localhttp   # noqa: PLC0415
+
+    try:
+        reply = await localhttp.request(provider.port, "POST", "/tokenize",
+                                        {"content": text, "add_special": False, "with_pieces": True}, provider.api_key)
+        data = reply.json() if reply.status == 200 else None
+    except localhttp.HttpError:
+        return None
+    toks = data.get("tokens") if isinstance(data, dict) else None
+    if not isinstance(toks, list) or not all(isinstance(x, dict) and isinstance(x.get("piece"), str) for x in toks):
+        return None
+    return [x["piece"] for x in toks]
 
 
 async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, limit: int | None,
-                         focal_layout: str = "ONE_MESSAGE", focal_answer: str = "FULL") -> dict:
+                         focal_layout: str = "ONE_MESSAGE", focal_answer: str = "FULL", activity: bool = False) -> dict:
     setup = build_llama(entry["id"], kv_cache_type=kv, inference=inf,
                         log_path=RESULTS / f"server_{entry['label']}_{kv}.log")
     setup.gateway.answer = focal_answer
@@ -199,11 +236,15 @@ async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, lim
     todo = limited(items, limit)
     try:
         for n, item in enumerate(todo, start=1):
+            item = focal_item(item, focal_answer, activity)
             result = await setup.gateway.decide(agent_id=item["agent_id"], tier=item["tier"], prompt=item["prompt"],
                                                 prompt_sha256=item["prompt_sha256"], max_tokens=item["max_tokens"],
                                                 allowed_actions=item["allowed_actions"], tick=item["based_on_tick_id"],
                                                 prefix=npc_prefix(item, focal_layout), choices=item.get("choices"))
             s = bk.score_item(item, result)
+            if s.get("answer_text"):
+                pieces = await answer_pieces(setup.provider, s["answer_text"])
+                s["field_tokens"] = tokens.account(s["answer_text"], pieces) if pieces is not None else None
             scored.append(s)
             progress.update(f"  {entry['label']} {kv}: {n}/{len(todo)} ({'ok' if s['final_valid'] else s['fallback']})")
     finally:
@@ -211,6 +252,7 @@ async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, lim
         await setup.gateway.stop()
     return {"label": entry["label"], "id": entry["id"], "model": entry["model"], "quant": entry["quant"],
             "qat": entry["qat"], "kv": kv, "focal_layout": focal_layout, "focal_answer": focal_answer,
+            "focal_activity": activity,
             "sha256": setup.model.sha256, "load_s": load_s,
             "vram_mib": vram, "vram_note": note, "summary": bk.summarize_condition(scored),
             "summary_by_role": bk.summarize_by_role(scored), "items": scored}
@@ -247,7 +289,8 @@ def cmd_offline(args: argparse.Namespace) -> int:
     for entry in entries:
         for kv in args.kv:
             try:
-                cond = asyncio.run(_run_condition(entry, kv, items, inf, args.limit, args.focal_layout, args.focal_answer))
+                cond = asyncio.run(_run_condition(entry, kv, items, inf, args.limit, args.focal_layout, args.focal_answer,
+                                                  args.activity == "on"))
             except ProviderError as exc:
                 print(f"  {entry['label']} {kv}: FAILED: {exc}")
                 continue
@@ -290,17 +333,20 @@ def conditions_suffix(c: dict) -> str:
     parts = []
     if c.get("prompt_layout") == "SYSTEM_PREFIX":
         parts.append("sysprefix")
-    if c.get("answer") == "SHORT":
-        parts.append("short")
+    if c.get("answer") in ("SHORT", "LEAN"):
+        parts.append(c["answer"].lower())
     if c.get("gpu_guard"):
-        parts.append(f"guard{c.get('npc_cap', 0)}")
+        parts.append(f"guard{c.get('npc_cap', 0)}" + ("dec" if c.get("guard_hold") == "DECISIONS" else ""))
+    if c.get("salvage") is False:
+        parts.append("nosalvage")
     return "".join(f"_{p}" for p in parts)
 
 
 def live_key(row: dict) -> tuple:
     c = row.get("conditions") or {}
     return (row["label"], row["mode"], row.get("npc_label"), row.get("pulse", True), c.get("prompt_layout", "ONE_MESSAGE"),
-            c.get("answer", "FULL"), bool(c.get("gpu_guard")), c.get("npc_cap", 0) if c.get("gpu_guard") else 0)
+            c.get("answer", "FULL"), bool(c.get("gpu_guard")), c.get("npc_cap", 0) if c.get("gpu_guard") else 0,
+            c.get("guard_hold", "ALL") if c.get("gpu_guard") else "ALL", c.get("salvage", True) is not False)
 
 
 def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, object]]) -> dict:
@@ -383,6 +429,13 @@ def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, obje
             "harness": HARNESS, "pooled_runs_split": pooled_runs,
             "conditions": dict(runs[-1][1].summary.get("conditions") or {}),
             "gpu_guard_stats": runs[-1][1].summary.get("gpu_guard"),
+            # G3g (D-87): GPU memory other programs held before the servers started (largest of the repeats),
+            # and the smallest free memory after both servers started.
+            "vram_other_mib": max((x for x in (((r.summary.get("vram_hygiene") or {}).get("other_programs_mib"))
+                                               for _, r in runs) if x is not None), default=None),
+            "vram_free_after_mib": min((x for x in (((r.summary.get("vram_hygiene") or {}).get("free_after_servers_mib"))
+                                                    for _, r in runs) if x is not None), default=None),
+            "vram_warnings": sum(1 for _, r in runs if (r.summary.get("vram_hygiene") or {}).get("warning")),
             "robot": live_diag.robot_breakdown(all_records, all_delivery)}
 
 
@@ -403,7 +456,8 @@ def cmd_live(args: argparse.Namespace) -> int:
     from range_service.agents.runmodels import Conditions   # noqa: PLC0415
 
     conditions = Conditions(args.focal_layout, args.focal_answer,
-                            None if args.gpu_guard is None else args.gpu_guard == "on", args.npc_cap)
+                            None if args.gpu_guard is None else args.gpu_guard == "on", args.npc_cap,
+                            args.guard_hold, False if args.no_salvage else None)
     suffix = conditions_suffix(conditions.resolve(_inf()))
     for name in args.models:
         entry = reg.catalog_entry(catalog, name)
@@ -465,6 +519,146 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------- tokens (G3g, D-84) ----------
+
+def item_schema(item: dict, answer: str = "FULL") -> dict:
+    from range_service.agents.output_schema import ALL_CHANNELS, answer_schema   # noqa: PLC0415
+
+    c = item.get("choices") or {}
+    limits = {"FULL": "FOCAL", "SHORT": "FOCAL_SHORT", "LEAN": "FOCAL_LEAN"}[answer]
+    return answer_schema(tuple(item["allowed_actions"]), tuple(c["targets"]) if c.get("targets") is not None else None,
+                         tuple(c.get("channels", ALL_CHANNELS)), limits,
+                         tuple(c["gestures"]) if c.get("gestures") is not None else None,
+                         tuple(c["expressions"]) if c.get("expressions") is not None else None,
+                         int(c["activity"]) if c.get("activity") else 0)
+
+
+async def _generate(provider, item: dict, schema: dict) -> dict:
+    """One answer with the generated token pieces (``logprobs``) and the server's counts."""
+    body = provider._body(item["prompt"], item["max_tokens"], schema, -1)
+    body["logprobs"] = True
+    body["top_logprobs"] = 1          # llama-server b12443 returns the generated tokens only with at least 1
+    data = await provider._post(body)
+    choice = data["choices"][0]
+    text = choice["message"]["content"]
+    content = (choice.get("logprobs") or {}).get("content") or []
+    pieces = [x.get("token") for x in content if isinstance(x, dict) and isinstance(x.get("token"), str)]
+    canonical = await answer_pieces(provider, text)
+    timings = data.get("timings") or {}
+    return {"text": text, "finish": choice.get("finish_reason"), "generated": timings.get("predicted_n"),
+            "generation_ms": round(timings["predicted_ms"]) if isinstance(timings.get("predicted_ms"), (int, float)) else None,
+            "pieces": pieces if len(pieces) == len(content) and pieces else None,
+            "whitespace_tokens": sum(1 for x in pieces if x and not x.strip()) if pieces else None,
+            "canonical": len(canonical) if canonical is not None else None,
+            "fields": tokens.account(text, pieces) if pieces else (tokens.account(text, canonical) if canonical else None)}
+
+
+def tokens_summary(rows: list[dict]) -> dict:
+    """With vs without maxLength: generated tokens for the same text, and against the text's own
+    tokenization (generated - canonical = tokens the grammar may have forced)."""
+    same = [r for r in rows if r["limited"]["text"] == r["unlimited"]["text"]]
+
+    def stat(vals):
+        vals = [v for v in vals if v is not None]
+        return {"n": len(vals), "sum": sum(vals), "p50": _p(vals, 0.5)} if vals else {"n": 0}
+    out = {"n": len(rows), "same_text": len(same)}
+    for name in ("limited", "unlimited"):
+        rs = [r[name] for r in rows]
+        out[name] = {"generated": stat([r["generated"] for r in rs]),
+                     "extra_vs_canonical": stat([r["generated"] - r["canonical"] for r in rs
+                                                 if r["generated"] is not None and r["canonical"] is not None]),
+                     "cut_off": sum(1 for r in rs if r["finish"] == "length"),
+                     "whitespace_tokens": stat([r.get("whitespace_tokens") for r in rs]),
+                     "generation_ms": stat([r["generation_ms"] for r in rs]),
+                     "fields": tokens.summarize([r["fields"] for r in rs if r["fields"]])}
+    out["same_text_generated_diff"] = stat([r["limited"]["generated"] - r["unlimited"]["generated"] for r in same
+                                            if r["limited"]["generated"] is not None and r["unlimited"]["generated"] is not None])
+    return out
+
+
+def tokens_lines(results: dict) -> list[str]:
+    out = ["# Robot R's answers: tokens per field, and the grammar's string limits (bakeoff.py tokens, G3g D-84)", "",
+           f"Engine: {results.get('engine')} · prompt set: {results.get('prompt_set')} · temperature 0 · "
+           f"activity offered: {results.get('activity')} · answer format: {results.get('answer', 'FULL')}", "",
+           "## With and without maxLength (the same prompts, the same schema otherwise)", "",
+           "| Model | Prompts | Same text both ways | Generated tokens with / without maxLength (sum) | "
+           "For the same text: with − without (sum) | Generated − own tokenization: with / without (sum) | "
+           "Cut off at the cap: with / without | Whitespace-only tokens with / without (sum) | "
+           "Generation ms p50 with / without |",
+           "|---|---|---|---|---|---|---|---|---|"]
+    for m in results["models"]:
+        s = m["summary"]
+        lim, unl = s["limited"], s["unlimited"]
+        out.append(f"| {m['label']} {m['model']} | {s['n']} | {s['same_text']} | {lim['generated'].get('sum', '–')} / "
+                   f"{unl['generated'].get('sum', '–')} | {s['same_text_generated_diff'].get('sum', '–')} | "
+                   f"{lim['extra_vs_canonical'].get('sum', '–')} / {unl['extra_vs_canonical'].get('sum', '–')} | "
+                   f"{lim['cut_off']} / {unl['cut_off']} | {lim['whitespace_tokens'].get('sum', '–')} / "
+                   f"{unl['whitespace_tokens'].get('sum', '–')} | {lim['generation_ms'].get('p50', '–')} / "
+                   f"{unl['generation_ms'].get('p50', '–')} |")
+    out += ["", f"## What each field costs (answers as in a run: the {results.get('answer', 'FULL')} schema, with maxLength)", "",
+            "| Model | Answers | Tokens p50 / mean | " + " | ".join(f"{f} mean (share)" for f in tokens.FIELDS) + " |",
+            "|---|---|---|" + "---|" * len(tokens.FIELDS)]
+    for m in results["models"]:
+        f = m["summary"]["limited"]["fields"]
+        if not f.get("n"):
+            continue
+        cells = [f"{f['by_field'][k]['mean']} ({f['by_field'][k]['share']:.0%})" for k in tokens.FIELDS]
+        out.append(f"| {m['label']} {m['model']} | {f['n']} | {f['tokens_p50']} / {f['tokens_mean']} | " + " | ".join(cells) + " |")
+    out += ["", "Generated tokens are the server's count; pieces come from the answer's own logprobs (what was generated), "
+            "or the model's tokenization of the text where logprobs give none. \"Generated − own tokenization\" above 0 "
+            "means the grammar made the model write the text in more, smaller tokens than its tokenizer would. "
+            "Counts only; answers stay in tokens.json."]
+    return out
+
+
+def cmd_tokens(args: argparse.Namespace) -> int:
+    from range_service.agents.output_schema import _without_max_length as without_max_length   # noqa: PLC0415
+
+    catalog = reg.load_catalog()
+    registry = reg.Registry.load()
+    entries = [reg.catalog_entry(catalog, m) for m in args.models]
+    missing = [e["label"] for e in entries if not registry.find(e["id"])]
+    if missing:
+        print(f"Not on this machine: {', '.join(missing)}. Run tools/models.py plan.")
+        return 1
+    items, set_sha = load_set(args.set)
+    robot = [focal_item(i, args.answer, args.activity == "on") for i in items if i.get("role", "ROBOT_R") == "ROBOT_R"]
+    robot = robot[: args.limit] if args.limit else robot
+    inf = load_inference()
+    out = {"created": time.strftime("%Y-%m-%d %H:%M"), "engine": ENGINE, "prompt_set": args.set.name,
+           "prompt_set_sha256": set_sha, "activity": args.activity, "answer": args.answer, "models": []}
+
+    async def run(entry: dict) -> dict:
+        setup = build_llama(entry["id"], kv_cache_type=args.kv, inference=inf,
+                            log_path=RESULTS / f"server_{entry['label']}_{args.kv}_tokens.log")
+        await setup.gateway.start()
+        rows = []
+        progress = bk.Progress()
+        try:
+            for n, item in enumerate(robot, start=1):
+                schema = item_schema(item, args.answer)
+                row = {"item_id": item["item_id"], "limited": await _generate(setup.provider, item, schema),
+                       "unlimited": await _generate(setup.provider, item, without_max_length(schema))}
+                rows.append(row)
+                progress.update(f"  {entry['label']}: {n}/{len(robot)}")
+        finally:
+            progress.done()
+            await setup.gateway.stop()
+        return {"label": entry["label"], "model": entry["model"], "quant": entry["quant"], "kv": args.kv,
+                "summary": tokens_summary(rows), "rows": rows}
+
+    for entry in entries:
+        out["models"].append(asyncio.run(run(entry)))
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    stem = "tokens" if args.answer == "FULL" else f"tokens_{args.answer.lower()}"
+    (RESULTS / f"{stem}.json").write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    md = tokens_lines(out)
+    (RESULTS / f"{stem}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    print("\n".join(md))
+    print(f"\nWritten: {RESULTS / (stem + '.md')} (paste it back) and {stem}.json")
+    return 0
+
+
 def cmd_report(_args: argparse.Namespace) -> int:
     results = _load_results()
     if not results["offline"] and not results["live"]:
@@ -489,8 +683,19 @@ def main(argv: list[str] | None = None) -> int:
     p_off.add_argument("--limit", type=int, default=None, help="only the first N prompts of each role (smoke tests)")
     p_off.add_argument("--focal-layout", default="ONE_MESSAGE", choices=["ONE_MESSAGE", "SYSTEM_PREFIX"],
                        help="G3f (D-76): Robot R's prompts as one message (as measured) or with the prefix as a system message")
-    p_off.add_argument("--focal-answer", default="FULL", choices=["FULL", "SHORT"],
-                       help="G3f (D-77): Robot R's answer limits")
+    p_off.add_argument("--focal-answer", default="FULL", choices=["FULL", "SHORT", "LEAN"],
+                       help="G3f (D-77), G3g (D-85): Robot R's answer format")
+    p_off.add_argument("--activity", default="off", choices=["on", "off"],
+                       help="G3g: Robot R's prompts offer an activity, as with the pulse on in a live run")
+    p_tok = sub.add_parser("tokens", help="G3g (D-84): the same prompts with and without maxLength in the grammar")
+    p_tok.add_argument("--models", nargs="+", required=True)
+    p_tok.add_argument("--kv", default="q8_0", choices=["f16", "q8_0"])
+    p_tok.add_argument("--set", type=Path, default=PROMPT_SET)
+    p_tok.add_argument("--limit", type=int, default=None, help="only the first N of Robot R's prompts")
+    p_tok.add_argument("--answer", default="FULL", choices=["FULL", "SHORT"],
+                       help="the answer format whose string limits are compared (SHORT: reason <= 60 characters, D-77)")
+    p_tok.add_argument("--activity", default="on", choices=["on", "off"],
+                       help="offer an activity, as with the pulse on (default on: as Robot R answers in a live run)")
     p_live = sub.add_parser("live")
     p_live.add_argument("--models", nargs="+", required=True)
     p_live.add_argument("--modes", nargs="+", default=list(LIVE_MODES), choices=list(LIVE_MODES))
@@ -504,8 +709,13 @@ def main(argv: list[str] | None = None) -> int:
                         help="the pulse protocol off in every run (compare with the same command without it)")
     p_live.add_argument("--focal-layout", default=None, choices=["ONE_MESSAGE", "SYSTEM_PREFIX"],
                         help="G3f (D-76): Robot R's prompt layout (default: configs/inference.yaml)")
-    p_live.add_argument("--focal-answer", default=None, choices=["FULL", "SHORT"],
-                        help="G3f (D-77): Robot R's answer limits (default: configs/inference.yaml)")
+    p_live.add_argument("--focal-answer", default=None, choices=["FULL", "SHORT", "LEAN"],
+                        help="G3f (D-77), G3g (D-85): Robot R's answer format (default: configs/inference.yaml)")
+    p_live.add_argument("--guard-hold", default=None, choices=["ALL", "DECISIONS"],
+                        help="G3g (D-89): the GPU guard holds NPC calls during every Robot R call (ALL) or only its real "
+                             "decisions, not its pulse reviews (DECISIONS); default: configs/inference.yaml")
+    p_live.add_argument("--no-salvage", action="store_true",
+                        help="G3g (D-86): never use a cut-off answer's complete actions (for comparison)")
     p_live.add_argument("--gpu-guard", default=None, choices=["on", "off"],
                         help="G3f (D-78): focal-first GPU guard on the NPC server (default: configs/inference.yaml)")
     p_live.add_argument("--npc-cap", type=int, default=None,
@@ -516,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return {"build-set": cmd_build_set, "offline": cmd_offline, "live": cmd_live, "diagnose": cmd_diagnose,
-                "report": cmd_report}[args.command](args)
+                "report": cmd_report, "tokens": cmd_tokens}[args.command](args)
     except reg.ModelError as exc:
         print(f"error: {exc}")
         return 1

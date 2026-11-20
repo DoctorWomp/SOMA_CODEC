@@ -67,8 +67,36 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-57 | G3b-1 as built: llama-server, model catalog and registry, provider | APPROVED (owner, 2026-11-16) |
 | D-58 | G3b-2 as built: priority scheduler (Option B) and the bake-off tool | APPROVED (owner, 2026-11-16) |
 | D-59 | G3c-1 as built: two model servers, model-driven NPCs, persona snapshots and pre-warming | APPROVED (owner, 2026-11-17) |
-| D-60 | Usable model-driven NPCs and real-time LIVE runs (G3c-2 part A) | PROPOSED (2026-11-17) |
-| D-61 | The pulse protocol as built: activities, intent monitor, presence loop, pulse triage, survey (G3c-2 part B) | PROPOSED (2026-11-18) |
+| D-60 | Usable model-driven NPCs and real-time LIVE runs (G3c-2 part A) | APPROVED (owner, 2026-11-19) |
+| D-61 | The pulse protocol as built: activities, intent monitor, presence loop, pulse triage, survey (G3c-2 part B) | APPROVED (owner, 2026-11-19) |
+| D-62 | HORIZON operational architecture: one observer per avatar (design constraints) | PROPOSED (2026-11-18); owner approval pending the G3e watch |
+| D-63 | One deadline per decision; the stale window derived from it; a relevance check before sending | APPROVED (owner, 2026-11-19) |
+| D-64 | Memory follows what the world accepted | APPROVED (owner, 2026-11-19) |
+| D-65 | Pulse metrics measure real responses; the presence loop's gaze ends when the world's does | APPROVED (owner, 2026-11-19) |
+| D-66 | FN-1: a goodbye the partner could hear, before leaving | APPROVED (owner, 2026-11-19) |
+| D-67 | The idle budget counts attempted work, at admission | APPROVED (owner, 2026-11-19) |
+| D-68 | Faster tools/check.py: scenario runs side by side | APPROVED (owner, 2026-11-19) |
+| D-69 | Measurement tooling: rendered client numbers, pulse on/off, per-run report | APPROVED (owner, 2026-11-19) |
+| D-70 | Soak check: SB-09 and tools/soak.py; memory grows with heard speech | APPROVED (owner, 2026-11-19) |
+| D-71 | Color shifting: intensity through pattern, a brief resolved tease only | APPROVED (owner, 2026-11-18) |
+| D-72 | Head-anchored sensing: the head is host-owned world state | PROPOSED (2026-11-18); owner approval pending the G3e watch |
+| D-73 | The ambient state display | PROPOSED (2026-11-18); owner approval pending the G3e watch |
+| D-74 | Presence motion and the amplitude dial | PROPOSED (2026-11-18); owner approval pending the G3e watch |
+| D-75 | Robot R's missed deadlines: the diagnosis, and a bake-off that cannot pool runs | APPROVED (owner, 2026-11-20) |
+| D-76 | Robot R's persona prefix as a system message; the prefix matches the prompt again | APPROVED in part (owner, 2026-11-20): the fix; SYSTEM_PREFIX stays off |
+| D-77 | Shorter Robot R answers (condition `focal.answer: SHORT`) | REJECTED as the default (owner, 2026-11-20); a comparison condition only |
+| D-78 | Focal-first GPU guard (condition `gpu_guard`) | APPROVED as an off-by-default condition (owner, 2026-11-20); refined by D-89 |
+| D-79 | Model choice: F3 stays Robot R's default for now | APPROVED (owner, 2026-11-20) |
+| D-80 | The deadline stays 4 s | APPROVED (owner, 2026-11-20) |
+| D-81 | Raw heard speech is bounded (D-70 as approved) | APPROVED (owner, 2026-11-20) |
+| D-82 | Attention while walking: the head, not the body; a look on arrival (SB-10) | APPROVED (owner, 2026-11-20) |
+| D-83 | A simulated shared GPU for measuring contention in the cloud | APPROVED (owner, 2026-11-20) |
+| D-84 | What Robot R's answer costs, field by field; the grammar's string limits measured | PROPOSED (2026-11-20) |
+| D-85 | Robot R's LEAN answer format (condition `focal.answer: LEAN`) | PROPOSED (2026-11-20) |
+| D-86 | Salvage a cut-off answer whose actions are complete | PROPOSED (2026-11-20) |
+| D-87 | The target counts fallback decisions; every run records what else was on the GPU | PROPOSED (2026-11-20) |
+| D-88 | Assembly never exceeds a tier budget | PROPOSED (2026-11-20) |
+| D-89 | The GPU guard for real decisions only (`gpu_guard.hold: DECISIONS`) | PROPOSED (2026-11-20) |
 
 ---
 
@@ -946,7 +974,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 
 
 ## D-62 — HORIZON operational architecture: one observer per avatar (design constraints)
-**Status:** PROPOSED (2026-11-18), G3d. Records [HORIZON_OPERATIONAL_ARCHITECTURE.md](HORIZON_OPERATIONAL_ARCHITECTURE.md) (proposed for engineering review, merged in DoctorWomp/SOMA_CODEC#25). Docs and tests only: no HORIZON layer is built here.
+**Status:** PROPOSED (2026-11-18), G3d; the owner (2026-11-20) approves it once the G3e watch looks right, and that watch's result is not in the G3g files, so it stays PROPOSED until confirmed. Records [HORIZON_OPERATIONAL_ARCHITECTURE.md](HORIZON_OPERATIONAL_ARCHITECTURE.md) (proposed for engineering review, merged in DoctorWomp/SOMA_CODEC#25). Docs and tests only: no HORIZON layer is built here.
 
 - **Adopted now as design constraints** (every new piece of runtime state must follow them):
   - **One logical HORIZON observer per avatar**, with state scoped to the run and the observer. Nothing in one agent's runtime state is shared with or readable by another: memory, tracks, caches (persona prefixes), pulse state, staged and sent requests. Shared: immutable code, read-only configuration, model weights, and the scheduler (attributable per observer).
@@ -1034,7 +1062,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **What G3e builds of it:** only the first rule. The ambient display (D-73) and presence motion (D-74) vary pattern and brightness, never hue; the expression contract has no hue-shifting pattern, and `SWEEP` moves a single palette color. The tease needs Prism's reading of a playful, mutual context, so it is **G5** and is not built; nothing today can produce it.
 
 ## D-72 — Head-anchored sensing: the head is host-owned world state (amends D-54 and D-56 for the head)
-**Status:** PROPOSED (2026-11-18), G3e part 1. FIELD_NOTES FN-6. Changes "the rig is presentation only" for the head: a robot's head yaw and pitch are now world state, like its position. Every other joint stays presentation (D-54).
+**Status:** PROPOSED (2026-11-18), G3e part 1; approved by the owner (2026-11-20) once the G3e watch looks right (not yet confirmed: stays PROPOSED). FIELD_NOTES FN-6. Changes "the rig is presentation only" for the head: a robot's head yaw and pitch are now world state, like its position. Every other joint stays presentation (D-54).
 
 - **Body config `head` block** (contract `body` 2.0, optional, backward-compatible): `neck`, `yaw_limit_deg` (at most 85, D-54), `pitch_limit_deg` {min (down), max (up)}, `turn_speed_deg_s`. The **legged and wheeled humanoids** get a neck: yaw ±80°, pitch −40° to +25°, 180°/s. The **quadruped and quadruped_arm** say `neck: false`: their sensor head is fixed to the body (D-56), which turns instead. People keep no head state until rig step C. `tools/validate_configs.py` refuses a neck on a quadruped, a neck missing a limit or speed, limits beyond the rig's Neck joint (the rig must show every head pose unclamped), and a second head speed in the rig block.
 - **In the world** (`avatar.gd`): every physics tick, after the body moved, the head turns toward its gaze target (or back to the front) at the neck's speed, clamped to its limits. Deterministic, so stepped runs stay byte-exact.
@@ -1047,7 +1075,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **Journals (each scenario three times, one with random sidecar delays: one journal each):** see the G3e result in G3_PLAN. SB-04 (scripted), SB-05 and SB-07 change **only** by the two head fields now in every robot packet (byte-identical once those are removed): the scripted SB-04 hash moves (`d9401c3edd17` → `50048b7e3d42`) necessarily, because the head pose is in the packet as asked. SB-06, SB-08 and the fake-model SB-04 run the pulse, whose glances are `LOOK_AT`s: on main they turned Robot R's body, now its head, so the body keeps facing forward, body-relative bearings and ranges in its packets shift, and some visibility follows the head (in SB-08 Robot R sees the peripheral speaker one sample earlier).
 
 ## D-73 — The ambient state display
-**Status:** PROPOSED (2026-11-18), G3e part 2. FIELD_NOTES FN-5; EXPRESSION_PRINCIPLES §9.
+**Status:** PROPOSED (2026-11-18), G3e part 2; approved by the owner (2026-11-20) once the G3e watch looks right (not yet confirmed: stays PROPOSED). FIELD_NOTES FN-5; EXPRESSION_PRINCIPLES §9.
 
 - **States, from the agent's own state only** (`AgentRuntime.ambient_state`), in order: **THINKING** (a decision's model call is in flight), **CONSIDERING** (a pulse review is in flight, or its last model answer could not be used; Prism's HELD_OPEN joins this state at G5), **LISTENING** (a conversation is open and it is not speaking), **WAITING** (activity `WAIT_FOR`), **ATTENDING** (anything else). Only agents with the pulse on and a Beacon have one.
 - **Catalog data:** five entries `configs/expressions/ambient_*.yaml` with an `ambient` block: the state, a glyph loop for the visor (`visor_frames`) and for the quadruped's strip (`strip_frames`), and `frame_hz` **at most 3** (the contract caps it). Waiting `(   )…(...)` calm blue slow pulse; thinking `( | ) ( / ) ( - ) ( \ )` neutral white `SWEEP` (a new 0.5 Hz pattern: the light moves across the display in its one palette color, D-71); considering `(o_ )`↔`( _o)` purple slow pulse; listening `o_o` calm steady; attending `._.` with no light. `tools/validate_configs.py` requires a loop for every glyph form, no gesture, one entry per state. **Models are never offered ambient expressions**: the model-facing expression list leaves them out, so prompts are unchanged.
@@ -1056,7 +1084,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **Tests:** Python (`tests/test_ambient.py`): one change per state change, the light-change limit, waiting on a promise, thinking while a model call is in flight, the override and return, a refused change asked again later, the yield to a decision, no display for people, models never see ambient ids. Godot: `test_ambient_display_loops_and_rates` (held until replaced; a second change within 1/3 s refused; a visitor in front perceives `waiting_loop` and the calm light; the loop has ≥ 3 frames and changes at most 3 times a second on both bodies; the sweep peaks at most 3 times a second at any amplitude). SB-06 in `tools/godot_check.py`: a visitor perceives the waiting display within its sight rules, the display changes when the activity changes, every change is at least 1/3 s apart and none was refused.
 
 ## D-74 — Presence motion and the amplitude dial
-**Status:** PROPOSED (2026-11-18), G3e part 3. FIELD_NOTES FN-7; EXPRESSION_PRINCIPLES §5, §9.
+**Status:** PROPOSED (2026-11-18), G3e part 3; approved by the owner (2026-11-20) once the G3e watch looks right (not yet confirmed: stays PROPOSED). FIELD_NOTES FN-7; EXPRESSION_PRINCIPLES §5, §9.
 
 - **Presence motion, on the ambient display only** (a chosen expression shows exactly as authored): seeded, irregular-looking **blinks** every 3–6 s on a still face, small **eye shifts** on the visor (a new offset every 2–5 s, eased over 0.4 s), slow **light breathing** (0.25 Hz) on a steady light, and slight **head adjustments** (a new offset every 3–6 s, eased, at most 3° yaw and 2° pitch). All rendering only and seeded per avatar and run.
 - **Head adjustments stay presentation-only** (the rig adds them on top of the simulated head): moving the world's head by a few degrees would move the sight cone and could flicker tracks in and out at its edge, a perception artifact. So they never touch the world; the head as world state (D-72) is turned only by `LOOK_AT` and gaze targets.
@@ -1065,7 +1093,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **Tests:** `test_presence_dial_scales_amplitude_never_rate` (at 0.2, 0.5 and 1.0, eye shift, breathing and head adjustment each grow with the dial, more than twice from 0.2 to 1.0; blinks and face changes stay far under 3 Hz at every setting; head adjustments at most 3.6°); `test_presence_motion_never_changes_the_world` (the dial at 0 and at 1 writes the same journal while the rig's head moves differently); Python tests of the baseline order, the presets and the validation.
 
 ## D-75 — Robot R's missed deadlines: the diagnosis, and a bake-off that cannot pool runs
-**Status:** PROPOSED (2026-11-19), G3f part 1 and 3. From the owner's bake-off results of 2026-11-18/19 (results.md, results.json; prompts_v3 `8b47570792f2`). Full tables: [gates/G3_PLAN.md](gates/G3_PLAN.md) "G3f". Owner steps: [gates/G3f_OWNER_CHECKLIST.md](gates/G3f_OWNER_CHECKLIST.md).
+**Status:** APPROVED (owner, 2026-11-20); proposed 2026-11-19, G3f part 1 and 3. From the owner's bake-off results of 2026-11-18/19 (results.md, results.json; prompts_v3 `8b47570792f2`). Full tables: [gates/G3_PLAN.md](gates/G3_PLAN.md) "G3f". Owner steps: [gates/G3f_OWNER_CHECKLIST.md](gates/G3f_OWNER_CHECKLIST.md).
 
 - **Diagnosis.** GPU contention between the two model servers dominates: Robot R never timed out alone (0 of 165 calls, F3 and F1, LIVE and STEPPED), and timed out in 11–19% of its LIVE calls with an NPC server and 41–77% under NPC load. Its queue is not the cause (pinned slot; NPC queue p50 0 ms); the shared GPU doubles generation time (N3 984 → 2040 ms under load). Long answers amplify it (generation is the larger part of a call). Cache reuse for Robot R is likely poor (one-message prompts on sliding-window/hybrid models, D-59) but was not recorded. Invalid outputs (8–36% of calls, also without contention) are a second, separate problem whose kind was not recorded.
 - **Harness defect found and fixed: pooled runs.** Live run folders were named without the NPC model and never cleared, and the sidecar appends to `decision_records.jsonl`, so the 2026-11-19 baseline rows (F3 alone LIVE and STEPPED, F1 + N3 LIVE, F3 + S1 LIVE and LIVE_LOAD) included the earlier F3 + N3 runs' calls (counts match exactly by subtraction; p50/p95 are not recoverable). Now: `run_scenario` clears an earlier run's files from a folder it is given (only what a run writes: `sidecar/`, `slot_snapshots/`, top-level `.jsonl`/`.json`/`.log`; never a replay source inside it); live folders are named by NPC model and condition; `live_row` splits any file that still holds several runs and keeps the last (`pooled_runs_split`). Rows carry `harness: g3f`. Tests: `tests/test_focal_conditions.py` (split, clearing, the replay-source refusal).
@@ -1074,14 +1102,14 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **results.md:** rows from the pre-G3c-2 harness (no `repeats`; not real time) are left out with a note (kept in results.json); pre-G3f rows that share a run folder with an earlier row are marked POOLED and left out of the target table; a Robot R breakdown table; a G3f target table (p95 < 4000 ms and timeouts ≤ 5% in LIVE and LIVE_LOAD, NPC timeouts beside). **Display bug fixed:** every float ≤ 1 printed as a percentage (a 0.0 ms queue read "0%", 0.03 ms headless frames "3%", 0.0 NPC calls/min "0%"); now only shares do.
 
 ## D-76 — Robot R's persona prefix as a system message (condition `focal.prompt_layout: SYSTEM_PREFIX`); the prefix matches the prompt again
-**Status:** PROPOSED (2026-11-19), G3f. D-59 sent NPC prompts this way and deferred it for Robot R.
+**Status:** APPROVED in part (owner, 2026-11-20): the defect fix (the persona prefix matches the prompt) is approved; the SYSTEM_PREFIX condition stays **off** and is not made the default (the owner's G3f run measured no gain: Robot R's cache share 50% with it vs 51% without). Proposed 2026-11-19, G3f. D-59 sent NPC prompts this way and deferred it for Robot R.
 
 - **Defect found and fixed (reproduced first):** with the pulse on (since G3c-2, every run with a model) the prompt's guardrails carry the activity format but `AgentRuntime.persona_prefix` was built without it, so **no prompt started with its persona prefix**. NPC prompts therefore went as one message, not system + user, and the snapshots and pre-warms (T5, T6) cached a prefix the real prompts never used, while promotions reported WARM/RESTORED by key. The prefix now uses the same guardrails (`tests/test_focal_conditions.py::test_with_the_pulse_on_every_prompt_starts_with_its_persona_prefix`, failing on main). No journal changes (the prefix only shapes the request to llama-server).
 - **The condition:** `configs/inference.yaml` `focal.prompt_layout` ONE_MESSAGE (default, as measured from G3b to G3e) or SYSTEM_PREFIX (Robot R's guardrails + identity as a system message, the rest as the user message). The prompt text and its hash are the same; only the message split differs. Live: `--focal-layout`; offline: `--focal-layout` on Robot R's prompts, a separate condition (the row key and agreement references include it), so prompts_v1–v3 results stay comparable.
 - **Expected effect** (llama-server b12443 reuses a sliding-window/hybrid model's cache from message starts, D-59): the ~700-token prefix reused instead of prefilled every call, about 0.3 s less per F3 call alone. On the simulated GPU (D-83): F3's prefill p50 780 → 490 ms in LIVE; alone it meets the target in LIVE, not under load. **Owner's PC decides** (cache share and prefill p50 in the new Robot R table, and validity offline): if it holds, SYSTEM_PREFIX becomes Robot R's default.
 
 ## D-77 — Shorter Robot R answers (condition `focal.answer: SHORT`)
-**Status:** PROPOSED (2026-11-19), G3f.
+**Status:** REJECTED as the default (owner, 2026-11-20); kept only as a comparison condition. Proposed 2026-11-19, G3f. The owner's run: SHORT made answers **longer**: Robot R's generated tokens p50 about 125 → 166 (F3 + N3 LIVE: 122 → 166), more cut-off answers (TRUNCATED 3 → 7 calls) and more timeouts (10/48 → 12/46). D-85 (LEAN) is the follow-up.
 
 - FULL (default) keeps G3b–G3e's limits: reason_summary ≤ 300 characters, speech ≤ 500, promise text ≤ 200. **SHORT:** reason ≤ 60, speech ≤ 200, promise ≤ 80 (`output_schema.TIER_LIMITS["FOCAL_SHORT"]`), in the constrained answer only; the prompt is unchanged. reason_summary is logged and never fed back (CONTEXT_MEMORY_STRATEGY §6), so the runtime loses nothing; speech of 200 characters is two spoken sentences. The 200-token output cap stays.
 - Not trimmed: the activity (the pulse uses it), the promise fields, the action list. Live: `--focal-answer`; offline: `--focal-answer`.
@@ -1089,7 +1117,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **Owner's PC decides:** generated tokens per call (now recorded) and Robot R validity and promises offline on prompts_v3 at SHORT vs FULL.
 
 ## D-78 — Focal-first GPU guard (condition `gpu_guard`)
-**Status:** PROPOSED (2026-11-19), G3f. Off by default until the owner's PC measures it.
+**Status:** APPROVED as an off-by-default condition (owner, 2026-11-20); its refinement is D-89. Proposed 2026-11-19, G3f. The owner's run: no cap met the target with N3 (cap 0 LIVE 14% timeouts, cap 1 12%; LIVE_LOAD 32% and 81%).
 
 - **Rule** (`scheduler.FocalGuard`, set on the NPC server's scheduler in Option C): while a Robot R call is in flight (any of its calls, pulse reviews included), the NPC server starts **no background call** (NPC pulse reviews, pre-warms) and **real NPC calls only while fewer than `npc_cap` calls are in flight on it** (default 0). The bake-off's synthetic LIVE_LOAD calls count as real calls, so LIVE_LOAD measures the guard against a busy NPC server. Held calls keep their place and their own deadlines (a call that could only answer late is dropped before the model and the NPC WAITs, as any late call, T25); running calls are never interrupted. When Robot R's call ends the queue is served at once. Counts per run: `summary.json` `gpu_guard` (deferred, deferred background, Robot R calls).
 - Live: `--gpu-guard on|off`, `--npc-cap N`; `run_scenario.py` the same. Never active in Option B (one server).
@@ -1098,19 +1126,19 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - Tests: `tests/test_focal_conditions.py` (background held first, one real call under cap 1, no pre-warm while Robot R thinks, the queue served when its call ends; a held call still times out at its own deadline; Robot R's gateway marks the guard only during its calls; a guard that cannot apply, Option B, is recorded as off).
 
 ## D-79 — Model choice: F3 stays Robot R's default for now
-**Status:** PROPOSED (2026-11-19), G3f. A decision for the owner after the G3f PC run.
+**Status:** APPROVED (owner, 2026-11-20: F3 stays); proposed 2026-11-19, G3f.
 
 - On the simulated GPU (D-83), F1 meets the target under load with any one condition and F3 needs two (SHORT + guard). The stand-in is kinder to F1 in plain LIVE than the owner's run (0% vs 11% timeouts), so this ranks, it does not decide.
 - F1 (Qwen3.5-9B Q4_K_M) times out less than F3 under the same NPC load (LIVE with N3 11% vs 19%; LIVE_LOAD 41% vs 77%), and alone its p95 is 2447 ms. But it **does not meet the target either** with N3 (11% LIVE), its Robot R quality on prompts_v3 is unmeasured (only N3, N1 and S1 ran offline on v3), and in STEPPED it gave more invalid output than F3 (29% vs 11% of calls). So no switch is proposed on today's evidence.
 - **Criteria for switching** (checklist §5–§6): F1 meets the target in LIVE and LIVE_LOAD with the chosen conditions where F3 does not, at Robot R final validity ≥ 95% and promises (behavior) no lower than F3's on prompts_v3.
 
 ## D-80 — The deadline stays 4 s
-**Status:** PROPOSED (2026-11-19), G3f. Recorded as a last resort, not built.
+**Status:** APPROVED (owner, 2026-11-20); proposed 2026-11-19, G3f. Recorded as a last resort, not built.
 
 - Raising Robot R's deadline cannot meet the target (p95 under 4 s) by definition; it only trades timeouts for slower answers. If the owner ever wants it: up to 6 s it **does not move the world's stale window** (D-63: `STALE_AFTER_TICKS` = (longest tier deadline 6000 + 500) ms in ticks = 390, set by C2); above 6 s the window grows with it (one line in `configs/inference.yaml`; `tests/test_decision_deadline.py` derives the Godot constant and fails if they drift). No change proposed.
 
 ## D-81 — Raw heard speech is bounded (D-70 as approved)
-**Status:** PROPOSED (2026-11-19) as built; the rule itself is the owner's decision on D-70 (2026-11-19). CONTEXT_MEMORY_STRATEGY §8 has its row.
+**Status:** APPROVED (owner, 2026-11-20) as built; proposed 2026-11-19; the rule itself is the owner's decision on D-70 (2026-11-19). CONTEXT_MEMORY_STRATEGY §8 has its row.
 
 - `AgentMemory.summarized` (called when a conversation's episode card is written): every raw heard item from its participants without an expiry gets `expires_at_ms` = now + `RAW_HEARD_RETENTION_MS` (600 000, 10 minutes). Raw heard = REPORTED, untrusted speech in the episodic or relational ledger, not itself a correction.
 - **Cap:** at most `MAX_RAW_HEARD` (40) active per agent; beyond it the oldest NORMAL-importance one expires at once (`RAW_HEARD_CAP` event); if all the rest are protected, the store stays over the cap and says so (`RAW_HEARD_OVER_CAP`).
@@ -1120,7 +1148,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **The soak's memory check is now per kind:** raw heard speech and uncapped items must stop growing; capped stores must stay within their caps (raw heard 40, episode cards 50, open promises 8). Before D-81 the total was the check, because raw heard speech had no bound; now every growing store has one, and episode cards rise steadily toward their cap of 50 by design (Robot R 27 after 21 minutes), so the total keeps rising until the cards reach their cap (about 40 minutes at this rate). The new check still fails main's soak run, for the reason D-70 reported (raw heard 45, over 40 and still growing).
 
 ## D-82 — Attention while walking: the head, not the body; a look on arrival (SB-10)
-**Status:** PROPOSED (2026-11-19), G3f part 5. FIELD_NOTES FN-6; builds on D-72.
+**Status:** APPROVED (owner, 2026-11-20); proposed 2026-11-19, G3f part 5. FIELD_NOTES FN-6; builds on D-72.
 
 - **Found by SB-10:** the Demo policy answered speech addressed to it with `TURN_TO` the speaker, which turns the body and would break a walk. Now, **while en route** (its own accepted `MOVE_TO` destination not reached, or still moving: the packet carries no speed, so the runtime compares its own positions), it answers with `LOOK_AT` (head first, D-72), also for a kept promise; standing, `TURN_TO` as before. SB-04 to SB-08 are unchanged (nobody speaks to a walking robot there).
 - **A look on arrival:** speech addressed to it that it could only glance at while walking (a voice behind it, beyond the neck) is looked at again when it stops, within 20 s (`ARRIVAL_LOOK` in the pulse log, a gaze interval for the pulse metrics). A standing body turns for a target beyond the neck (D-72), so the body turns toward that person only once Robot R stands.
@@ -1128,8 +1156,62 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - A model driving Robot R may still choose `TURN_TO` while walking; the watched SB-10 run with F3 shows whether it does (G3e checklist).
 
 ## D-83 — A simulated shared GPU for measuring contention in the cloud
-**Status:** PROPOSED (2026-11-19), G3f. Measurement tooling only.
+**Status:** APPROVED (owner, 2026-11-20); proposed 2026-11-19, G3f. Measurement tooling only.
 
 - `range_service/agents/simgpu.py`: a fake model provider on one simulated GPU. Servers with work share the GPU equally (two processes time-slice one GPU); within a server, k busy slots each run at 1/(1 + 0.3 (k − 1)) (batching is cheap, not free); work = uncached prompt tokens / prompt tok/s + generated tokens / gen tok/s with each model's speeds from the owner's offline bake-off; cache reuse only from message starts (D-59); answers are the Demo policy's plus a reason as long as the model's verbosity (250 characters) and the schema allow, plus 30 tokens of overhead (calibrated to ~135 tokens for Robot R, as F1's timings imply). Cancelled calls leave the GPU at once (llama-server notices within its polling interval, so real timeouts cost a bit more).
 - `--model fake-gpu[:PROFILE]` (NPCs `fake-gpu:N3` by default) runs a scenario with the real schedulers, slots and deadlines of `configs/inference.yaml` on it (option `C_SIM`); `--npc-load N` adds LIVE_LOAD's synthetic NPC streams. `tools/contention_sim.py` runs the real gateway, schedulers and guard on it faster than real time with a seeded workload from the owner's SB-04 rates and prints the condition matrix.
 - **It is a model of the mechanism, not a measurement of the owner's GPU:** it shows which condition helps and roughly how much under its stated assumptions. Its baseline is harsher than the owner's (all Robot R calls under LIVE_LOAD timed out vs the owner's 77%).
+
+## D-84 — What Robot R's answer costs, field by field; the grammar's string limits measured
+**Status:** PROPOSED (2026-11-20), G3g item 1. Measurement tooling, and a finding that shapes D-85.
+
+- **Tool:** `tools/bakeoff.py tokens --models F3 F1 [--answer SHORT] [--activity on|off] [--limit N]` sends each of Robot R's prompts_v3 prompts twice, with the schema as a run sends it and with the same schema without any `maxLength`, at temperature 0, and asks llama-server for the generated tokens (`logprobs`; b12443 returns them only with `top_logprobs` ≥ 1). It reports: whether the text is the same both ways; generated tokens both ways; generated tokens minus the text's own tokenization (`/tokenize` with pieces: above 0 means the model wrote the text in more tokens than its tokenizer would); answers cut off at the cap; white-space-only tokens; and tokens per field (`range_service/eval/tokens.py`: actions, args, speech, promise, activity, wake, reason, space, other; each token goes to the field of its first character, white-space-only tokens to `space`). Writes `tokens.md` (counts only) and `tokens.json` (with the answers). `--activity on` (the default) offers the activity as a live run does; prompts_v3 was built without it.
+- **The offline bake-off** now records for Robot R's prompts the answer text, generated tokens, cut-off and salvaged answers and tokens per field; results.md has a table "Robot R's answers: tokens per answer and per field" with the LEAN targets (D-85).
+- **Measured in the cloud** (llama-server b12443 built from the pinned commit, CPU; T1 = Qwen3.5-0.8B, the smoke model, **not** a bake-off candidate; 8 of Robot R's prompts, activity offered). FULL: all 8 answers were the **same text with and without `maxLength`, with the same tokens** (988 / 988); generated tokens exceeded the text's own tokenization by exactly one per answer (the end-of-text token): no fragmentation of strings by the limit. SHORT (reason ≤ 60 characters, the limit that binds): 6 of 8 texts changed, and the limited answers used **68 tokens more than their own tokenization** (10 without the limit): in 3 of 8 the grammar ended the reason mid-sentence and the model then wrote **20 single-space tokens** before the closing brace (the JSON grammar allows white space there), +19 to +21 tokens each; white-space-only tokens 254 vs 194. The reason itself got shorter (12.9 vs 21.6 tokens per answer) but the answers barely did (978 vs 988 tokens). This is the mechanism that fits the owner's SHORT result (generated tokens p50 up from about 125 to 166, more cut-offs).
+- **Per field (T1, FULL, activity offered but never used by T1; 123.5 tokens per answer on average):** args 28%, reason 18% (21.6 tokens), speech 17%, actions 16%, **white space 20%** (24.2 tokens: T1 writes its JSON pretty-printed, with line breaks and indentation), other 2%. The `space` field shows this per model from now on.
+- **So:** a string limit costs nothing while it does not bind and tokens when it does; LEAN keeps text limits out of the grammar (checked after parsing) and asks for one line (D-85). The owner's PC repeats both runs with F3 and F1 (G3g checklist §2); D-85's choice is revisited if F3 or F1 behave differently.
+
+## D-85 — Robot R's LEAN answer format (condition `focal.answer: LEAN`)
+**Status:** PROPOSED (2026-11-20), G3g item 2. A named condition, off by default (FULL) until the owner's PC measures it.
+
+- **What changes** (FOCAL only; `range_service/agents/lean.py`, `output_schema.TIER_LIMITS["FOCAL_LEAN"]`): **no `reason_summary`** (it is logged only and never fed back, CONTEXT_MEMORY_STRATEGY §6; the schema does not offer it); a **compact, optional activity, last**: `{"kind", "target_id"?, "commitment_id"?, "review_s"?, "within_m"?, "wake"?: ["addressed", "target_lost", ...]}`, written out in full (`lean.expand`) before any check, so the pulse, the records and the metrics see the same activity as before; a targeted kind without `target_id` takes the person the answer's actions name; without an activity the runtime derives one (D-61). **No character limits in the grammar** (D-84): speech and promise text are checked against the contract (500 and 200 characters) after parsing. The answer-format lines of the guardrails say the same, and ask for the JSON **on one line**. Nothing the runtime uses is lost: actions, promise fields and every activity field the pulse reads are kept.
+- **Unchanged:** the actions and their argument formats, the promise rule's wording, the 200-token output cap, NPC prompts. Salvage (D-86) applies as for FULL (in LEAN the activity comes after the actions).
+- **Offline:** `bakeoff.py offline --focal-answer LEAN --activity on` rewrites only the answer-format lines of Robot R's prompts_v3 prompts (`lean.rewrite_prompt`; tested to differ from the FULL prompt in nothing else); `--activity on` without LEAN gives FULL as a live run sends it. **Live:** `--focal-answer LEAN` (bake-off, `run_scenario.py`, `soak.py`).
+- **Targets offline on prompts_v3** (Robot R's prompts; results.md prints them): final valid ≥ 98%, promises kept (behavior) ≥ 95% and (flag) ≥ 60% (F3's FULL baseline), generated tokens p50 ≤ 70, no answer at the cap.
+- **Cloud smoke (T1 on a CPU, 8 Robot R prompts):** see G3_PLAN "G3g" (plumbing; a 0.8B model says nothing about F3's quality).
+- **Tests:** `tests/test_lean_answers.py` (schema: no reason, no `maxLength`, the compact activity last; `expand`; Robot R's prompt carries the LEAN lines and starts with its persona prefix, its chosen compact activity is recorded in full and passes the contract; NPC prompts unchanged; the offline rewrite changes only the format lines).
+- **Owner's PC decides** (G3g checklist §3–§6): if LEAN meets its offline targets on F3 and helps the D-87 target live, it becomes Robot R's default.
+
+## D-86 — Salvage a cut-off answer whose actions are complete
+**Status:** PROPOSED (2026-11-20), G3g item 3. On by default (`configs/inference.yaml` `salvage: true`; `--no-salvage` for a comparison run).
+
+- **Why:** under one deadline per decision (D-63) there is never time to repair, so every unusable answer became a WAIT fallback. In the owner's G3f run "after repair" was 0 in every row, and 6 of F3's 30 calls with Robot R alone were cut off at the 200-token cap (all 6 of its fallbacks). With FULL answers the actions come first and `reason_summary` and the activity after them, so a cut-off answer often holds a complete, valid list of actions.
+- **Rule** (`gateway.complete_fields`, `gateway.salvage`): only when the server says the answer stopped at the output cap (`finish_reason: length`) and the answer as written could not be used. The answer's top-level fields are read value by value; a field whose value did not close is dropped, and so is everything after it. If `actions` is complete, its list closed and every action passes the same checks as any answer (contracts, allowed actions, the runtime's FN-1 and activity rules), those actions are used. A cut-off activity is dropped and the runtime derives one (D-61, recorded DERIVED). **Never a partial action:** a cut inside an action, or with the list still open after a complete first action, is not salvaged (the usual repair-or-WAIT path follows).
+- **Records:** the call's outcome is VALID with `salvaged: {dropped: [field], actions: n}` (optional field in `decision_record` model calls; contract version unchanged). Robot R's breakdown counts `salvaged` (results.md shows it beside valid first try, and in the target table).
+- Applies to every tier (an NPC's cut-off answer is salvaged the same way). No journal changes: fake and stand-in models never stop at the cap.
+- **Tests:** `tests/test_lean_answers.py` (the reason cut off: the actions used, recorded and contract-valid, the activity derived; a cut inside an action, at three points, and an open list after a complete action: not salvaged; invalid actions, an answer not at the cap, or salvage off: not salvaged).
+
+## D-87 — The target counts fallback decisions; every run records what else was on the GPU
+**Status:** PROPOSED (2026-11-20), G3g items 4 and 7.
+
+- **Target (results.md "Target (G3g, D-87)"):** Robot R p95 < 4 s **and** its fallback decisions (a timeout or an unusable answer: both end in WAIT) at most **5% alone** (no NPC model) and at most **10% with an NPC model**, in LIVE and LIVE_LOAD. The owner proposed the 10% for LIVE with N3; LIVE_LOAD is reported against the same 10% until the owner sets another. G3f's timeout target stays beside it as a column, with Robot R's timeouts, salvaged answers and NPC timeouts. Re-reported on the owner's G3f results, F3 alone met G3f's timeout target (0/30) but has 6/30 (20%) fallback decisions (all cut-off answers); no row meets the new target.
+- **VRAM hygiene:** every run's `summary.json` has `vram_hygiene`: GPU memory in use **before any model server starts** (`other_programs_mib`), after they started, the card's total, and the free memory left; a WARNING (printed, and "(below the reserve)" in results.md) when that free memory is below `vram.reserve_mib` (2048). Without nvidia-smi (the cloud) the values are null with the reason. Live rows show "other programs / free after" beside peak VRAM. [OWNER_SETUP_WINDOWS.md](OWNER_SETUP_WINDOWS.md) explains how to find GPU memory users in Task Manager and the NVIDIA "CUDA - Sysmem Fallback Policy" setting for llama-server.exe.
+- **Why:** in the G3f run peak GPU memory was 15.3–15.9 GB of 16.4 GB with F3 + N3, about 4.3 GB of it not the models; Windows' system-memory fallback may have inflated contention. The owner's baseline rerun after freeing ~4 GB is the comparison this makes visible.
+
+## D-88 — Assembly never exceeds a tier budget
+**Status:** PROPOSED (2026-11-20), G3g item 5. Amends D-51 and the C1 split of D-60; CONTEXT_MEMORY_STRATEGY §4.1 and T18 unchanged in intent.
+
+- **Found by the owner's soak (2026-11-20, real models):** visitor_y's C1 context reached 824 tokens against its 780 budget. **Reproduced** (`tests/test_agent_context.py::test_c1_context_never_exceeds_its_budget_with_a_long_latest_turn`, failing on main): Robot R says a long sentence to a C1 visitor; step 6 cuts every section it may and the never-cut sections plus the latest turn still do not fit. Two causes: (1) the recorded total was the sum of the sections, without the `## SECTION` headers and blank lines the prompt carries (about 25 tokens for C1), so the check could pass while the prompt was over; (2) with the pulse on (D-61), C1's guardrails carry the activity format, which C1's 780 (D-60) never had room for: 377 tokens estimated against a 360 section budget, **403 with the Qwen3.5 tokenizer** (measured in the cloud with T1, N3's family), and observation lines count about 2x the estimate there (ids and numbers).
+- **Fix:** the total is now the whole prompt as sent, counted with the agent's tokenizer, and step 6 uses it. **Step 7:** if it is still over, the latest turn is **shortened, never dropped** (its time, speaker and "untrusted" label stay; the words are cut to fit and marked `…" (shortened to fit)`; cut reason `LATEST_TURN_SHORTENED`). If the never-cut sections alone are over (a budget too small for that agent), the record says `NEVER_CUT_OVER_BUDGET`, never silently; a test keeps every configured agent clear of it.
+- **C1's split re-measured:** GUARDRAILS 360 → 410 (the measured 403), CONVERSATION 80 → 45 (C1 keeps only the latest turn, which its section budget never cuts) and DECISION 90 → 75 (measured 68–70). **The total stays 780**, and no prompt changes from this split (those three sections are never cut by their own budgets).
+- **Measured with the real tokenizer (cloud, T1's /tokenize, SB-09 visitor_y):** C1 with a 60-, 200- and 480-character latest turn: 698, 731 and 732 tokens (the last with OBSERVATIONS cut, the turn kept whole); C2 1100–1298 of 1900.
+- **Test of room:** for every agent of every scenario at each tier it can think at, its own pulse-on guardrails counted 1.15x denser than the estimate, with identity, decision and headers at their budgets, leave at least 100 tokens for the latest turn and what it perceives.
+- **The soak check** (`tools/soak.py`): a capped store below its cap passes, the trend reported as a NOTE (owner, 2026-11-20); it fails only over its cap. The same for prompt tokens: assembly never exceeds the tier budget, so a context that grew but stayed within its budget is a NOTE; over the budget fails. (The second is my extension of the owner's rule to prompts, for the same reason; easy to revert.)
+
+## D-89 — The GPU guard for real decisions only (`gpu_guard.hold: DECISIONS`)
+**Status:** PROPOSED (2026-11-20), G3g item 6. The guard stays off by default (D-78, owner 2026-11-20).
+
+- **Option:** `configs/inference.yaml` `gpu_guard.hold`: **ALL** (as G3f built it: every Robot R call holds NPC calls) or **DECISIONS** (only Robot R's real decisions hold them; its background pulse reviews, the lowest priority by design (D-61), never make a visitor wait). Live: `--guard-hold ALL|DECISIONS`; `run_scenario.py` the same. Default ALL.
+- **How:** Robot R's gateway tells the guard whether a call is a background review (`FocalGuard.focal_begin(background)`); with DECISIONS a review is counted (`focal_reviews_not_held` in `summary.json` `gpu_guard`) but does not hold anything. Run folders and row keys carry the setting (`_guard1dec`).
+- **Tests:** `tests/test_lean_answers.py` (with DECISIONS an NPC call starts during Robot R's pulse review and waits during its decision; with ALL it waits during both; the gateway passes `background`).
+- **Owner's PC decides** (G3g checklist §5): F3 + N3 LIVE and LIVE_LOAD with LEAN and the guard at cap 1 in both settings.

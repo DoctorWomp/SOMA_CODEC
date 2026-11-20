@@ -29,6 +29,7 @@ from typing import Any
 
 from range_service import contracts
 
+from . import lean
 from .activity import answer_schema_part as activity_part
 from .gateway import MAX_ACTIONS, PROMISE_ACTIONS
 
@@ -118,7 +119,10 @@ TIER_LIMITS: dict[str, tuple[int, int, int]] = {"FOCAL": (MAX_ACTIONS, 300, 500)
                                                 "C1": (2, 80, 160),
                                                 # G3f (D-77): Robot R's SHORT answer condition. reason_summary is
                                                 # logged only (never fed back, CONTEXT_MEMORY_STRATEGY §6).
-                                                "FOCAL_SHORT": (MAX_ACTIONS, 60, 200)}
+                                                "FOCAL_SHORT": (MAX_ACTIONS, 60, 200),
+                                                # G3g (D-85): LEAN has no reason_summary (0); speech keeps the
+                                                # contract's 500, checked after parsing (lean.GRAMMAR_TEXT_LIMITS).
+                                                "FOCAL_LEAN": (MAX_ACTIONS, 0, 500)}
 # How long a promise's own text may be, per limits key (FULL keeps the contract's 200).
 COMMITMENT_MAX = {"FOCAL_SHORT": 80}
 LIMIT_KEYS = tuple(TIER_LIMITS)
@@ -254,6 +258,20 @@ def answer_schema(allowed_actions: tuple[str, ...], targets: tuple[str, ...] | N
             props["fulfills_commitment"] = {"type": "boolean"}
         choices.append({"type": "object", "properties": props, "required": ["action", "args"],
                         "additionalProperties": False})
+    if tier == "FOCAL_LEAN":
+        # G3g (D-85): no reason_summary, a compact activity last, and (D-84) text limits checked after
+        # parsing instead of as maxLength in the grammar.
+        if not lean.GRAMMAR_TEXT_LIMITS:
+            choices = _without_max_length(choices)
+        return {
+            "type": "object",
+            "properties": {
+                "actions": {"type": "array", "minItems": 1, "maxItems": max_actions, "items": {"anyOf": choices}},
+                **({"activity": lean.schema_part(targets, activity_max_review_s)} if activity_max_review_s else {}),
+            },
+            "required": ["actions"],
+            "additionalProperties": False,
+        }
     return {
         "type": "object",
         "properties": {
@@ -264,6 +282,15 @@ def answer_schema(allowed_actions: tuple[str, ...], targets: tuple[str, ...] | N
         "required": ["actions"],
         "additionalProperties": False,
     }
+
+
+def _without_max_length(node: Any) -> Any:
+    """The same schema with no ``maxLength`` on any string (G3g, D-84/D-85)."""
+    if isinstance(node, list):
+        return [_without_max_length(n) for n in node]
+    if not isinstance(node, dict):
+        return node
+    return {k: _without_max_length(v) for k, v in node.items() if not (k == "maxLength" and node.get("type") == "string")}
 
 
 def _restrict_text_and_channels(node: Any, channels: tuple[str, ...], text_max: int) -> Any:

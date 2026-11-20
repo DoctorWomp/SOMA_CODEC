@@ -132,6 +132,11 @@ def score_item(item: dict[str, Any], result: Any) -> dict[str, Any]:
         if t.get("generation_ms") and first.get("generated_tokens") else None,
         "total_ms": t.get("total_ms"),
         "actions": actions,
+        # G3g (D-84 to D-86): what the answer cost, and whether it was cut off at the output cap.
+        "generated_tokens": first.get("generated_tokens"),
+        "cut_off": any("cut off at the" in (c.get("error") or "") or bool(c.get("salvaged")) for c in calls[:1]),
+        "salvaged": any(bool(c.get("salvaged")) for c in calls),
+        "answer_text": first.get("response_text") if item.get("role", "ROBOT_R") == "ROBOT_R" else None,
     }
 
 
@@ -160,7 +165,26 @@ def summarize_condition(items: list[dict[str, Any]]) -> dict[str, Any]:
         "prompt_tps_median": _median([i["prompt_tps"] for i in items]),
         "gen_tps_median": _median([i["gen_tps"] for i in items]),
         "latency_ms_p50": _median([i["total_ms"] for i in items]),
+        # G3g (D-84, D-85): generated tokens per answer (first call), answers cut off at the output cap,
+        # answers whose complete actions were salvaged (D-86), and the cost per field.
+        "generated_tokens_p50": _median([i.get("generated_tokens") for i in items]),
+        "generated_tokens_p95": _p95([i.get("generated_tokens") for i in items]),
+        "cut_off": sum(1 for i in items if i.get("cut_off")),
+        "salvaged": sum(1 for i in items if i.get("salvaged")),
+        "fields": _fields([i.get("field_tokens") for i in items]),
     }
+
+
+def _p95(values: list[float | None]) -> float | None:
+    vals = sorted(v for v in values if v is not None)
+    return float(vals[min(len(vals) - 1, int(round(0.95 * (len(vals) - 1))))]) if vals else None
+
+
+def _fields(rows: list[dict[str, Any] | None]) -> dict[str, Any] | None:
+    from range_service.eval.tokens import summarize   # noqa: PLC0415
+
+    rows = [r for r in rows if r]
+    return summarize(rows) if rows else None
 
 
 def summarize_by_role(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -207,6 +231,42 @@ def gpu_memory_used_mib() -> int | None:
         return None
     first = out.strip().splitlines()[0].strip() if out.strip() else ""
     return int(first) if first.isdigit() else None
+
+
+def gpu_memory_mib() -> tuple[int | None, int | None, str | None]:
+    """(used, total, None) on the first GPU from nvidia-smi, or (None, None, why not). G3g (D-87)."""
+    exe = _smi()
+    if exe is None:
+        return None, None, "nvidia-smi not found (no NVIDIA GPU or driver)"
+    try:
+        out = subprocess.run([exe, "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, None, f"nvidia-smi failed: {exc}"[:200]
+    parts = [x.strip() for x in (out.strip().splitlines() or [""])[0].split(",")]
+    if len(parts) == 2 and all(x.isdigit() for x in parts):
+        return int(parts[0]), int(parts[1]), None
+    return None, None, "nvidia-smi gave no memory figures"
+
+
+def vram_hygiene(before: tuple, after: tuple, reserve_mib: int, servers: bool) -> dict[str, Any]:
+    """G3g (D-87): what else was on the GPU before any model server started ("other programs"),
+    and whether the free memory after the servers started is below the reserve (Godot and
+    headroom). On Windows, memory short of the reserve can push the driver into its system-memory
+    fallback, which slows both servers (docs/OWNER_SETUP_WINDOWS.md)."""
+    used0, total, why = before
+    used1, total1, why1 = after
+    out: dict[str, Any] = {"other_programs_mib": used0, "gpu_total_mib": total or total1, "reserve_mib": reserve_mib,
+                           "after_servers_mib": used1 if servers else None, "free_after_servers_mib": None,
+                           "warning": None, "note": why or why1}
+    if servers and used1 is not None and (total or total1):
+        free = (total or total1) - used1
+        out["free_after_servers_mib"] = free
+        if free < reserve_mib:
+            out["warning"] = (f"only {free} MiB of GPU memory free after the model servers started, below the "
+                              f"{reserve_mib} MiB reserve; other programs held {used0} MiB before they started. "
+                              "Close GPU programs (Task Manager, GPU memory column) and see OWNER_SETUP_WINDOWS.md")
+    return out
 
 
 VRAM_DELTA_NOTE = ("measured as the change in total GPU memory from before the server started to after it was "
@@ -276,11 +336,19 @@ def pct(v: Any) -> str:
     return "–" if v is None else f"{v:.0%}"
 
 
-def offline_cond(c: dict[str, Any]) -> str:
-    """Robot R's layout and answer condition of an offline row, when not the measured default (G3f)."""
+def offline_cond(c: dict[str, Any], role: str = "ROBOT_R") -> str:
+    """Robot R's layout, answer and activity condition of an offline row, when not the measured
+    default (G3f, G3g). NPC rows of such a run say so too (G3g display fix: the NPC table repeated F3
+    and F1 without their labels): the conditions change Robot R's prompts only."""
     parts = [x for x in (c.get("focal_layout", "ONE_MESSAGE"), c.get("focal_answer", "FULL"))
              if x not in ("ONE_MESSAGE", "FULL")]
-    return f" [{', '.join(parts)}]" if parts else ""
+    if c.get("focal_activity"):
+        parts.append("activity")
+    if not parts:
+        return ""
+    if role != "ROBOT_R":
+        return f" [run with Robot R {', '.join(parts)}; NPC prompts unchanged]"
+    return f" [{', '.join(parts)}]"
 
 
 def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
@@ -310,7 +378,7 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
             s = (c.get("summary_by_role") or {}).get(role) or c["summary"]
             ag = c.get("agreement_precision")
             akv = c.get("agreement_kv")
-            lines.append(f"| {c['label']} {c['model']}{offline_cond(c) if role == 'ROBOT_R' else ''} | "
+            lines.append(f"| {c['label']} {c['model']}{offline_cond(c, role)} | "
                          f"{c['quant']}{' QAT' if c['qat'] else ''} | {c['kv']} | {s['n']} | "
                          f"{pct(s['valid_before_repair'])} | {pct(s['repair_rate'])} | {pct(s['final_valid'])} | "
                          f"{pct(s['valid_action_rate'])} | {pct(s['commitments_kept'])} / {pct(s.get('commitments_kept_behavior'))} | "
@@ -318,6 +386,7 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
                          f"{f(s['prompt_tps_median'])} | {f(s['gen_tps_median'])} | {f(s['latency_ms_p50'])} | "
                          f"{c['vram_mib'] if c['vram_mib'] is not None else '– (' + str(c['vram_note']) + ')'} |")
         lines.append("")
+    lines += answer_cost_lines(offline)
     live_all = results.get("live", [])
     # G3f (D-75): rows from the pre-G3c-2 harness did not run in real time (void); rows of the
     # pre-G3f harness whose run folder an earlier row had used pooled that run's calls.
@@ -355,16 +424,21 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
                 f"{f(r.get('vram_focal_mib'))} / {f(r.get('vram_npc_mib'))} |")
         lines += ["", "### Pulse, render, frame pacing and peak VRAM (G3d)", "",
                   "| Robot R model | NPC model | Mode | Pulse | Render | NPC calls/min | Frame p50 / p95 / p99 ms | "
-                  "Frame spikes | Frame target p95 <= 16.7 ms | Peak VRAM MiB (sampled during the run) |",
-                  "|---|---|---|---|---|---|---|---|---|---|"]
+                  "Frame spikes | Frame target p95 <= 16.7 ms | Peak VRAM MiB (sampled during the run) | "
+                  "Other programs before the servers / free after them MiB |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|"]
         for r in live:
             target = "–" if r.get("frame_p95_ms") is None or r.get("frame_headless") else \
                 ("met" if r["frame_p95_ms"] <= 16.75 else "NOT met")
-            lines.append(f"| {r['label']} | {r.get('npc_label', '–')} | {r['mode']} | {'on' if r.get('pulse', True) else 'off'} | "
+            hyg = "–" if r.get("vram_other_mib") is None and r.get("vram_free_after_mib") is None else \
+                f"{f(r.get('vram_other_mib'))} / {f(r.get('vram_free_after_mib'))}" + \
+                (" (below the reserve)" if r.get("vram_warnings") else "")
+            lines.append(f"| {r['label']}{cond_text(r)} | {r.get('npc_label', '–')} | {r['mode']} | {'on' if r.get('pulse', True) else 'off'} | "
                          f"{r.get('render') or 'headless'} | {f(r.get('npc_calls_per_min'))} | "
                          f"{f(r.get('frame_p50_ms'))} / {f(r.get('frame_p95_ms'))} / {f(r.get('frame_p99_ms'))} | "
                          f"{f(r.get('frame_spikes'))} | {target} | "
-                         f"{f(r.get('vram_peak_mib')) if r.get('vram_peak_mib') is not None else '– (' + str(r.get('vram_peak_note')) + ')'} |")
+                         f"{f(r.get('vram_peak_mib')) if r.get('vram_peak_mib') is not None else '– (' + str(r.get('vram_peak_note')) + ')'} | "
+                         f"{hyg} |")
         lines += render_tax_lines(live, f) + pulse_ab_lines(live, f) + robot_lines(live, f) + target_lines(live, f, pooled)
         lines += ["", "Modes: LIVE (pre-warm and snapshots on), LIVE_COLD (both off), LIVE_LOAD (pre-warm on, plus "
                   "synthetic NPC calls on all NPC slots but one, to measure Robot R under NPC load), STEPPED. Since "
@@ -381,6 +455,57 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
               "– = not measured (see results.json for the reason)."]
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, md_path
+
+
+# G3g (D-85): the LEAN targets on prompts_v3, Robot R's prompts (F3's FULL baseline of 2026-11-20).
+LEAN_TARGETS = {"final_valid": 0.98, "commitments_kept_behavior": 0.95, "commitments_kept": 0.60,
+                "generated_tokens_p50": 70, "cut_off": 0}
+
+
+def lean_target(s: dict[str, Any]) -> tuple[bool | None, list[str]]:
+    """Whether a Robot R offline summary meets the LEAN targets, and which ones it misses."""
+    t = LEAN_TARGETS
+    missed = []
+    for key in ("final_valid", "commitments_kept_behavior", "commitments_kept"):
+        if s.get(key) is None or s[key] < t[key]:
+            missed.append(f"{key} {pct(s.get(key))} < {t[key]:.0%}")
+    g = s.get("generated_tokens_p50")
+    if g is None or g > t["generated_tokens_p50"]:
+        missed.append(f"generated tokens p50 {fmt(g)} > {t['generated_tokens_p50']}")
+    if s.get("cut_off") is None or s["cut_off"] > t["cut_off"]:
+        missed.append(f"{fmt(s.get('cut_off'))} answers at the cap")
+    if g is None:
+        return None, missed
+    return not missed, missed
+
+
+def answer_cost_lines(offline: list[dict[str, Any]]) -> list[str]:
+    """G3g (D-84, D-85): Robot R's answers on the offline set: tokens per answer and per field, cut-off
+    answers, salvaged answers, and the LEAN targets."""
+    from range_service.eval.tokens import FIELDS   # noqa: PLC0415
+
+    rows = [c for c in offline if (c.get("summary_by_role") or {}).get("ROBOT_R", {}).get("generated_tokens_p50") is not None]
+    if not rows:
+        return []
+    out = ["## Robot R's answers: tokens per answer and per field (G3g)", "",
+           "| Model | Generated tokens p50 / p95 | At the cap (salvaged) | " + " | ".join(f"{f} p50 / share" for f in FIELDS)
+           + " | LEAN targets |", "|---|---|---|" + "---|" * len(FIELDS) + "---|"]
+    for c in rows:
+        s = c["summary_by_role"]["ROBOT_R"]
+        fields = (s.get("fields") or {}).get("by_field") or {}
+        cells = [f"{fmt(fields[f]['p50'])} / {pct(fields[f]['share'])}" if f in fields else "–" for f in FIELDS]
+        met, missed = lean_target(s)
+        verdict = "–" if met is None else ("met" if met else "NOT met: " + "; ".join(missed))
+        out.append(f"| {c['label']} {c['model']}{offline_cond(c)} | {fmt(s['generated_tokens_p50'])} / "
+                   f"{fmt(s.get('generated_tokens_p95'))} | {fmt(s.get('cut_off'))} ({fmt(s.get('salvaged'))}) | "
+                   + " | ".join(cells) + f" | {verdict} |")
+    out += ["", "Generated tokens: the server's count for the first call of each prompt. Per field: the model's own "
+            "tokenization of the answer, each token counted for the field of its first character (actions = action "
+            "names and the list's JSON; args = arguments other than speech; speech = SPEAK/REQUEST_CLARIFICATION text; "
+            "promise = commitment, fulfills_commitment; activity; wake = wake conditions; reason = reason_summary; "
+            "other = braces and spaces between fields). LEAN targets (D-85): final valid >= 98%, promises kept "
+            "(behavior) >= 95% and (flag) >= 60%, generated tokens p50 <= 70, no answer at the cap.", ""]
+    return out
 
 
 TARGET_P95_MS = 4000          # G3f target: Robot R p95 under the 4 s deadline ...
@@ -406,7 +531,9 @@ def cond_text(r: dict) -> str:
     if c.get("answer", "FULL") != "FULL":
         parts.append(f"answer {c['answer']}")
     if c.get("gpu_guard"):
-        parts.append(f"GPU guard cap {c.get('npc_cap', 0)}")
+        parts.append(f"GPU guard cap {c.get('npc_cap', 0)}" + (", decisions only" if c.get("guard_hold") == "DECISIONS" else ""))
+    if c.get("salvage") is False:
+        parts.append("no salvage")
     return f" [{', '.join(parts)}]" if parts else ""
 
 
@@ -427,7 +554,8 @@ def robot_lines(live: list[dict], f) -> list[str]:
         kinds = ", ".join(f"{k} {v}" for k, v in b["invalid_kinds"].items()) or "–"
         why = ", ".join(f"{k} {v}" for k, v in b["fallbacks_by_reason"].items()) or "–"
         out.append(f"| {r['label']}{cond_text(r)} | {r.get('npc_label', '–')} | {r['mode']} | {b['calls']} | "
-                   f"{o['VALID_FIRST_TRY']} / {o['VALID_AFTER_REPAIR']} | {o['TIMEOUT_AT_MODEL']} / {o['TIMEOUT_IN_QUEUE']} | "
+                   f"{o['VALID_FIRST_TRY']} / {o['VALID_AFTER_REPAIR']}{' (' + str(b['salvaged']) + ' salvaged)' if b.get('salvaged') else ''} | "
+                   f"{o['TIMEOUT_AT_MODEL']} / {o['TIMEOUT_IN_QUEUE']} | "
                    f"{o['INVALID_OUTPUT']} ({kinds}) | {sum(b['fallbacks_by_reason'].values())} ({why}) | {b['dropped_before_send']} | "
                    f"{f(b['queue_ms_p50'])} / {f(b['prefill_ms_p50'])} / {f(b['generation_ms_p50'])} | "
                    f"{f(b['prefill_ms_p95'])} / {f(b['generation_ms_p95'])} | {f(b['prompt_tokens_p50'])} / {f(b['prompt_tokens_p95'])} | "
@@ -443,20 +571,44 @@ def robot_lines(live: list[dict], f) -> list[str]:
     return out
 
 
+# G3g (D-87): the target counts what the world sees: Robot R's fallback decisions (a timeout or an
+# unusable answer both end in WAIT), not only timeouts. Proposed shares (owner, 2026-11-20).
+TARGET_FALLBACK_ALONE = 0.05      # Robot R alone (no NPC model)
+TARGET_FALLBACK_WITH_NPC = 0.10   # with an NPC model (LIVE; LIVE_LOAD reported against the same share)
+
+
+def fallback_share(r: dict) -> tuple[int | None, int | None]:
+    """(fallback decisions, decisions) of Robot R in a live row; from the G3f breakdown where there is one."""
+    b = r.get("robot")
+    if b:
+        return sum((b.get("fallbacks_by_reason") or {}).values()), b.get("decisions")
+    return None, None
+
+
 def target_lines(live: list[dict], f, pooled: dict[int, str]) -> list[str]:
-    """G3f target: Robot R p95 < 4000 ms and timeouts <= 5% in LIVE and LIVE_LOAD, NPC timeouts beside."""
+    """G3g target (D-87): Robot R p95 < 4000 ms and its fallback decisions at most 5% alone, 10% with an
+    NPC model, in LIVE and LIVE_LOAD; G3f's timeouts and the NPC timeouts beside."""
     rows = [r for r in live if r["mode"] in ("LIVE", "LIVE_LOAD") and id(r) not in pooled]
     if not rows:
         return []
-    out = ["", f"### G3f target: Robot R p95 < {TARGET_P95_MS} ms and timeouts <= {TARGET_TIMEOUT_SHARE:.0%} "
-           "(LIVE, LIVE_LOAD; pooled rows left out)", "",
-           "| Robot R model | NPC model | Mode | Robot R p95 ms | Robot R timeouts | Target | NPC timeouts |",
-           "|---|---|---|---|---|---|---|"]
+    out = ["", f"### Target (G3g, D-87): Robot R p95 < {TARGET_P95_MS} ms and fallback decisions (timeouts + unusable "
+           f"answers, each a WAIT) <= {TARGET_FALLBACK_ALONE:.0%} alone, <= {TARGET_FALLBACK_WITH_NPC:.0%} with an NPC "
+           "model (LIVE, LIVE_LOAD; pooled rows left out)", "",
+           "| Robot R model | NPC model | Mode | Robot R p95 ms | Robot R fallback decisions | Robot R timeouts (calls) | "
+           "Salvaged answers | Target | G3f target (timeouts <= 5%) | NPC timeouts |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         share = r["timeouts"] / r["decisions"] if r["decisions"] else None
-        met = r["p95_ms"] is not None and r["p95_ms"] < TARGET_P95_MS and share is not None and share <= TARGET_TIMEOUT_SHARE
+        g3f = r["p95_ms"] is not None and r["p95_ms"] < TARGET_P95_MS and share is not None and share <= TARGET_TIMEOUT_SHARE
+        fb, dec = fallback_share(r)
+        alone = r.get("npc_label") in (None, "none", "–")
+        limit = TARGET_FALLBACK_ALONE if alone else TARGET_FALLBACK_WITH_NPC
+        fshare = fb / dec if fb is not None and dec else None
+        met = None if fshare is None else (r["p95_ms"] is not None and r["p95_ms"] < TARGET_P95_MS and fshare <= limit)
+        salvaged = (r.get("robot") or {}).get("salvaged")
         out.append(f"| {r['label']}{cond_text(r)} | {r.get('npc_label', '–')} | {r['mode']} | {f(r['p95_ms'])} | "
-                   f"{r['timeouts']}/{r['decisions']} ({pct(share)}) | {'met' if met else 'NOT met'} | "
+                   f"{'–' if fb is None else f'{fb}/{dec} ({pct(fshare)})'} | {r['timeouts']}/{r['decisions']} ({pct(share)}) | "
+                   f"{f(salvaged)} | {'–' if met is None else ('met' if met else 'NOT met')} | {'met' if g3f else 'NOT met'} | "
                    f"{f(r.get('npc_timeouts'))}/{f(r.get('npc_calls'))} |")
     return out
 

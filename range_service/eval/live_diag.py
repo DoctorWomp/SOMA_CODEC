@@ -94,8 +94,11 @@ def robot_breakdown(records: list[dict[str, Any]], delivery: list[dict[str, Any]
                 "INVALID_OUTPUT": 0, "PROVIDER_ERROR": 0, "OTHER": 0}
     invalid_kinds: dict[str, int] = {}
     not_repaired = 0
+    salvaged = 0
     for c in calls:
         o = c.get("outcome")
+        if c.get("salvaged"):
+            salvaged += 1                  # G3g (D-86): cut off, its complete actions used (also VALID)
         if o == "VALID":
             outcomes["VALID_AFTER_REPAIR" if c.get("attempt") == 1 else "VALID_FIRST_TRY"] += 1
         elif o == "TIMEOUT":
@@ -135,6 +138,8 @@ def robot_breakdown(records: list[dict[str, Any]], delivery: list[dict[str, Any]
     return {
         "calls": len(calls), "decisions": len(recs), "decisions_pulse_review": len(pulse_recs),
         "outcomes": outcomes, "invalid_kinds": dict(sorted(invalid_kinds.items())), "invalid_not_repaired": not_repaired,
+        "salvaged": salvaged,
+        "fallbacks": sum(fallbacks.values()),
         "fallbacks_by_reason": dict(sorted(fallbacks.items())),
         "timeouts_on_pulse_reviews": sum(1 for r in pulse_recs for c in r["model_calls"] if c.get("outcome") == "TIMEOUT"),
         "dropped_before_send": dropped_before_send,

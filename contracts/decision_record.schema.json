@@ -489,6 +489,30 @@
           "description": "G3c-2 (D-60): in Option C, how long the other model server had a call in flight during this call (both share one GPU).",
           "type": "integer",
           "minimum": 0
+        },
+        "salvaged": {
+          "description": "G3g (D-86): the answer was cut off at the output cap but its actions list was complete and valid, so those actions were used (outcome VALID). dropped: the top-level field that was cut off (empty if it stopped between fields); actions: how many actions were used.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dropped",
+            "actions"
+          ],
+          "properties": {
+            "dropped": {
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "string",
+                "maxLength": 40
+              }
+            },
+            "actions": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            }
+          }
         }
       }
     }

@@ -7,14 +7,14 @@
 Runs SB09_SOAK with Robot R and the visitors deciding through the model path (the fake model by
 default: Robot R plus C1/C2 NPCs), then splits the run into 5-minute windows and checks:
 
-- **prompt tokens per decision**: per agent and tier, never over the tier budget, and flat once the
-  sections have filled: the largest context in the last full window is at most 5% above the full
-  window before it (contexts grow in the first minutes while facts, episodes and conversation
-  fill their budgets; that is expected and reported);
+- **prompt tokens per decision**: per agent and tier, never over the tier budget (the whole prompt,
+  G3g D-88). Growth of the largest context in the last full window (more than 5% above the window
+  before) is reported as a NOTE: assembly never exceeds the budget, so a context below it is bounded;
 - **memory per agent**, counted per window from each item's own times, by kind (G3f, D-81):
-  *raw heard speech* (REPORTED speech in the episodic and relational ledgers, bounded by retention
-  and a cap) and *everything else that has no cap* must stop growing: the last full window's count
-  at most 10% (+2 items) above the one before; *capped stores* must stay within their caps: raw heard
+  *everything that has no cap* must stop growing: the last full window's count at most 10% (+2 items)
+  above the one before; *raw heard speech* (REPORTED speech in the episodic and relational ledgers,
+  bounded by retention and a cap) growing like that is reported as a NOTE while it stays below its
+  cap (G3g, owner 2026-11-20); *capped stores* must stay within their caps: raw heard
   at most 40, episode cards at most 50 (cards grow until the cap, then the lowest-scored is evicted:
   growth below the cap is expected), open promises at most 8. The total and the count per store at
   the end are reported. (Before D-81 raw heard speech had no cap or expiry, so the total was the
@@ -93,6 +93,7 @@ def soak_summary(run_dir: Path, tick_hz_world: int = 60) -> dict:
         tokens.setdefault(key, {})
         tokens[key][w] = max(tokens[key].get(w, 0), r["context"]["total_tokens"])
     full = windows - 1 if end_ms % WINDOW_MS else windows      # the last window may be short
+    notes: list[str] = []
     for key, per in tokens.items():
         tier = key.split(":")[1]
         budget = sum(BUDGETS[tier].values())
@@ -100,7 +101,10 @@ def soak_summary(run_dir: Path, tick_hz_world: int = 60) -> dict:
             problems.append(f"{key}: a context of {max(per.values())} tokens is over the {tier} budget {budget}")
         seen = [per[w] for w in range(full) if w in per]
         if len(seen) >= 2 and seen[-1] > seen[-2] * 1.05:
-            problems.append(f"{key}: largest context still growing in the last full window ({seen[-2]} -> {seen[-1]} tokens)")
+            # G3g (D-88): assembly never exceeds the tier budget (the whole prompt counted), so a context
+            # below it is bounded: the trend is reported, it fails only over the budget (checked above).
+            notes.append(f"{key}: largest context grew in the last full window ({seen[-2]} -> {seen[-1]} tokens), "
+                         f"within its {tier} budget {budget}")
 
     # Memory per agent: active items at the end of each window, from each item's own times.
     mem: dict[str, dict] = {}
@@ -132,12 +136,18 @@ def soak_summary(run_dir: Path, tick_hz_world: int = 60) -> dict:
         mem[aid] = {"active_items_per_window": counts, "active_by_kind_per_window": kinds, "stored_items_total": len(items),
                     "open_promises_end": open_promises, "episode_cards_end": cards,
                     "active_by_store_end": dict(sorted(by_store.items()))}
+        caps = {"raw_heard": MAX_RAW_HEARD, "episode_cards": MAX_EPISODE_CARDS, "promises": MAX_OPEN_COMMITMENTS}
         for name in ("raw_heard", "uncapped"):
             body = kinds[name][:full]
             if len(body) >= 2 and body[-1] > body[-2] * 1.10 + 2:
-                problems.append(f"{aid}: {name.replace('_', ' ')} items still growing in the last full window {body} "
-                                f"(at the end, by store: {dict(sorted(by_store.items()))})")
-        caps = {"raw_heard": MAX_RAW_HEARD, "episode_cards": MAX_EPISODE_CARDS, "promises": MAX_OPEN_COMMITMENTS}
+                msg = (f"{aid}: {name.replace('_', ' ')} items still growing in the last full window {body} "
+                       f"(at the end, by store: {dict(sorted(by_store.items()))})")
+                if name in caps and max(kinds[name], default=0) <= caps[name]:
+                    # G3g (owner, 2026-11-20): a capped store below its cap is bounded by the cap; the trend
+                    # is reported, the store fails only over its cap (checked below).
+                    notes.append(f"{msg}; below its cap of {caps[name]}")
+                else:
+                    problems.append(msg)
         for name, cap in caps.items():
             if max(kinds[name], default=0) > cap:
                 problems.append(f"{aid}: {max(kinds[name])} {name.replace('_', ' ')} items, over the cap of {cap}")
@@ -169,7 +179,8 @@ def soak_summary(run_dir: Path, tick_hz_world: int = 60) -> dict:
             "prompt_tokens_max_per_window": {k: [v.get(w) for w in range(windows)] for k, v in sorted(tokens.items())},
             "memory": mem, "growth_per_window": growth, "file_bytes": sizes,
             "decisions": len(records), "model_calls": sum(len(r["model_calls"]) for r in records),
-            "fallbacks": sum(1 for r in records if r["fallback"]), "problems": problems, "ok": not problems}
+            "fallbacks": sum(1 for r in records if r["fallback"]), "problems": problems, "notes": notes,
+            "ok": not problems}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -179,9 +190,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", default="stepped", choices=["stepped", "live"])
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--check", type=Path, default=None, help="only check an existing soak run folder")
+    parser.add_argument("--focal-answer", default=None, choices=["FULL", "SHORT", "LEAN"],
+                        help="G3g (D-85): Robot R's answer format (default: configs/inference.yaml focal.answer)")
     args = parser.parse_args(argv)
     run_dir = args.check
     if run_dir is None:
+        from range_service.agents.runmodels import Conditions
         from range_service.eval.runner import RunError, RunOptions, run_scenario
         from tools.godot_check import find_godot
 
@@ -191,7 +205,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         try:
             result = asyncio.run(run_scenario(RunOptions(SCENARIO, godot, mode=args.mode.upper(), model=args.model,
-                                                         out_dir=args.out, timeout_s=7200)))
+                                                         out_dir=args.out, timeout_s=7200,
+                                                         conditions=Conditions(answer=args.focal_answer))))
         except RunError as exc:
             print(f"FAIL  {exc}")
             return 1
@@ -209,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
     for name, counts in s["growth_per_window"].items():
         print(f"  {name} per window: {counts}")
     print(f"  files: {s['file_bytes']}")
+    for n in s["notes"]:
+        print(f"  NOTE {n}")
     for p in s["problems"]:
         print(f"  PROBLEM {p}")
     print(f"{'OK' if s['ok'] else 'FAIL'}  summary: {run_dir / 'soak_summary.json'}")

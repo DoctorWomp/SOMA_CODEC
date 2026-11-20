@@ -369,6 +369,15 @@ async def _npc_load(models: RunModels, stream: int, prompts: list[dict[str, Any]
         await asyncio.sleep(0)
 
 
+def _reserve_mib() -> int:
+    from range_service.agents.inference import DEFAULT_VRAM, load_inference   # noqa: PLC0415
+
+    try:
+        return int(dict(DEFAULT_VRAM, **(load_inference().get("vram") or {}))["reserve_mib"])
+    except Exception:   # noqa: BLE001 - a summary field only; never fail a run for it
+        return int(DEFAULT_VRAM["reserve_mib"])
+
+
 def promotion_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Promotion latency, cold vs warm (G3c-1), split at G3c-2 (D-60) into: promotion -> first model
     call starts (decisions are event-driven, so this includes waiting for a trigger), the first
@@ -420,10 +429,18 @@ async def run_scenario(opts: RunOptions) -> RunResult:
                                    snapshots=opts.snapshots, conditions=opts.conditions)
     except (ValueError, ProviderError) as exc:
         raise RunError(str(exc)) from exc
+    from range_service.eval.bakeoff import gpu_memory_mib, vram_hygiene   # noqa: PLC0415
+
+    gpu_before = gpu_memory_mib()            # G3g (D-87): what other programs hold before any server starts
     try:
         await models.start()   # llama: load the model(s), warm them up (T1); Option C or the fallback to B
     except ProviderError as exc:
         raise RunError(str(exc)) from exc
+    servers = getattr(getattr(models.focal, "provider", None), "server", None) is not None or models.inference is not None
+    hygiene = vram_hygiene(gpu_before, gpu_memory_mib() if servers else (None, None, None),
+                           _reserve_mib(), servers)
+    if hygiene["warning"]:
+        print(f"WARNING  {hygiene['warning']}")
     for event in models.events:
         if event["event"] == "OPTION_C_FALLBACK":
             print(f"WARNING  NPC server not used, running Option B: {event['reason']}")
@@ -491,7 +508,9 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     from range_service.eval.live_diag import robot_breakdown   # noqa: PLC0415
 
     summary["conditions"] = dict(models.conditions)
-    summary["gpu_guard"] = dict(models.guard.stats, npc_cap=models.guard.npc_cap) if models.guard is not None else None
+    summary["gpu_guard"] = dict(models.guard.stats, npc_cap=models.guard.npc_cap, hold=models.guard.hold) \
+        if models.guard is not None else None
+    summary["vram_hygiene"] = hygiene
     if models.simgpu is not None:
         summary["simgpu"] = {"busy_s": round(models.simgpu.busy_s, 1), "peak_concurrency": models.simgpu.peak_concurrency}
     records_path = run_dir / "sidecar" / "decision_records.jsonl"

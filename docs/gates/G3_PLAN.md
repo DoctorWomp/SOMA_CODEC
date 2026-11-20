@@ -334,7 +334,7 @@ What these showed, diagnosed in G3c-2 (D-60): NPC answers failed because MOVE_TO
 - **Pulse metrics unchanged in kind:** zero zombie events and zero FN-1 violations in SB-06 to SB-08; SB-08's glance follows the voice in the same sample.
 - **Needs the owner's PC:** the watched runs ([G3e_OWNER_CHECKLIST.md](G3e_OWNER_CHECKLIST.md)): four scenarios at three dial settings with F3 + N3, with frame times and peak VRAM. None of those scenarios has Robot R walking while someone speaks; glancing while walking is covered by a headless test.
 
-## G3f — Robot R on time under load (draft PR; D-75 to D-83 PROPOSED; D-60, D-61, D-63 to D-70 APPROVED 2026-11-19)
+## G3f — Robot R on time under load (merged, DoctorWomp/SOMA_CODEC#29; owner decisions 2026-11-20 on D-75 to D-83: see DECISIONS.md)
 
 **Owner direction (2026-11-19):** diagnose Robot R's missed deadlines from the owner's bake-off before changing anything; build the fixes the evidence supports, each a named, configurable condition, measured in the cloud with stand-ins and fake slow models and marked for the PC; tidy the bake-off; build the approved D-70 memory bound; add a watchable glance-while-walking scenario (SB-10). **Target:** Robot R p95 under 4 s with timeouts at most 5% in LIVE and LIVE_LOAD, NPC timeouts reported beside it. Owner steps: [G3f_OWNER_CHECKLIST.md](G3f_OWNER_CHECKLIST.md).
 
@@ -442,6 +442,62 @@ The NPC cost shows here too: two of the visitors' seven calls timed out while he
 - **SB-10 (Demo policy, stepped):** Robot R walks at a steady 1.0 m/s with its heading unchanged (−90°) from start to stop; the side speaker gets a head glance (50–66°, checked within 1 s) and an answer; the voice from behind sends the head to its 80° limit, heading kept; Robot R stops at 21.9 s, then its body turns to face the visitor behind (−90° → 89°), and it looks at them. Before D-82 the body never turned after stopping (the speaker behind was never seen), and the Demo policy's `TURN_TO` would have turned the body mid-walk.
 - **Soak:** `tools/soak.py` OK (D-81 has the numbers).
 - **Needs the owner's PC** ([G3f_OWNER_CHECKLIST.md](G3f_OWNER_CHECKLIST.md)): `bakeoff.py diagnose` on the existing run folders (no rerun), the baseline rerun with the new instrumentation, each condition alone and together for F3 (and F1) in LIVE and LIVE_LOAD, the offline quality of SHORT and SYSTEM_PREFIX on prompts_v3, and the watched SB-10. The decisions to make with those numbers: D-76 to D-79.
+
+### G3f result (owner's PC, 2026-11-20)
+
+From the owner's results.md, diagnosis.md and soak_summary.json (llama.cpp b12443, prompts_v3 `8b47570792f2`, three real-time runs per row). Robot R's calls (calls include repairs; "fallbacks" are decisions that ended in WAIT):
+
+| Robot R | NPC | Condition | Mode | Calls | Timeouts | Invalid (kinds) | Fallback decisions | p95 ms | Prefill / gen p50 ms | Generated tokens p50 / p95 | Cache share |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| F3 | none | baseline | LIVE | 30 | 0 | 6 (TRUNCATED 6) | 6/30 (20%) | 3627 | 274 / 1971 | 121 / 200 | 52% |
+| F1 | none | baseline | LIVE | 41 | 1 | 5 (FN1_RULE 5) | 4/39 (10%) | 2427 | 174 / 1710 | 151 / 186 | 52% |
+| F3 | N3 | baseline | LIVE | 48 | 10 | 3 (TRUNCATED 3) | 13/48 (27%) | 4008 | 338 / 1998 | 122 / 200 | 50% |
+| F3 | N3 | baseline | LIVE_LOAD | 33 | 24 | 0 | 24/33 (73%) | 4009 | 454 / 3187 | 106 / 110 | 58% |
+| F3 | N3 | SYSTEM_PREFIX | LIVE | 44 | 3 | 2 | 5/44 (11%) | 3950 | 443 / 2064 | 122 / 172 | 50% |
+| F3 | N3 | SHORT | LIVE | 46 | 12 | 7 (TRUNCATED 7) | 19/46 (41%) | 4002 | 319 / 2971 | 166 / 200 | 51% |
+| F3 | N3 | guard cap 0 | LIVE | 49 | 7 | 7 (TRUNCATED 7) | 14/49 (29%) | 4008 | 426 / 2382 | 133 / 200 | 44% |
+| F3 | N3 | guard cap 1 | LIVE | 43 | 5 | 3 (TRUNCATED 3) | 8/43 (19%) | 3975 | 366 / 1881 | 104 / 200 | 49% |
+
+- **No condition met the G3f target with N3 running**; only Robot R alone did (F3 0/30 timeouts, F1 1/41). Under LIVE_LOAD every condition had 32–86% timeouts.
+- **Generation dominates** Robot R's call time (gen p50 ~2000 ms vs prefill ~300 ms; ~125 generated tokens, p95 at the 200-token cap). **20% of F3's calls were cut off even alone** (6/30).
+- **"After repair" is 0 in every row:** under one deadline per decision (D-63) there is never time to repair, so every invalid answer became a WAIT fallback.
+- **SYSTEM_PREFIX** gained nothing measurable (cache share 50% vs 51%); **SHORT** made answers longer (generated tokens p50 122 → 166) with more cut-offs and timeouts (D-77 rejected as default).
+- **GPU memory:** peak 15.3–15.9 GB of 16.4 GB with F3 + N3, about 4.3 GB of it not the models, so Windows' system-memory fallback may have inflated contention (a baseline rerun after freeing ~4 GB was attached).
+- **Soak (real models, 21 simulated minutes, 303 decisions, 54 fallbacks):** visitor_y's C1 context reached 824 tokens against its 780 budget; raw heard speech still growing below its cap (Robot R 13 / 22 / 26 / 32 of 40). Both are G3g item 5 (D-88).
+
+## G3g — Lean answers (draft PR; D-84 to D-89 PROPOSED)
+
+**Owner direction (2026-11-20):** measure what each field of Robot R's answer costs before changing it; a LEAN answer as a named condition; salvage cut-off answers whose actions are complete; a target that counts fallbacks; the C1 budget bug from the soak; the GPU guard for real decisions only; VRAM hygiene; the NPC-table label bug; the decisions index and a check for it. Owner steps: [G3g_OWNER_CHECKLIST.md](G3g_OWNER_CHECKLIST.md).
+
+| # | What | Decision | Proof (cloud) |
+|---|---|---|---|
+| 0 | Owner decisions on D-75 to D-83 recorded; DECISIONS.md index completed (it stopped at D-61, D-60/D-61 shown PROPOSED) | – | `tests/test_decisions_index.py` (failed on main: 2 stale rows, 22 missing) |
+| 1 | `bakeoff.py tokens`: tokens per field from the generated tokens, with and without `maxLength`; offline answers record text, tokens, cut-offs and fields | D-84 | T1 on a CPU (below) |
+| 2 | LEAN: no reason, compact optional activity last, no grammar text limits, one line | D-85 | `tests/test_lean_answers.py`; T1 smoke offline |
+| 3 | Salvage: a cut-off answer's complete, valid actions used; never a partial action | D-86 | `tests/test_lean_answers.py`, `tests/test_llama_provider.py` (stand-in server) |
+| 4 | Target: fallback decisions ≤ 5% alone, ≤ 10% with N3, p95 < 4 s | D-87 | `tests/test_lean_answers.py`, `tests/test_focal_conditions.py`; the owner's G3f rows re-reported |
+| 5 | The whole prompt counted; the latest turn shortened as the last step; C1's split re-measured; the soak check | D-88 | `tests/test_agent_context.py` (reproduced, failing on main); measured with the Qwen3.5 tokenizer |
+| 6 | `gpu_guard.hold: DECISIONS` | D-89 | `tests/test_lean_answers.py` |
+| 7 | `vram_hygiene` in every run summary; a warning below the reserve; OWNER_SETUP_WINDOWS | D-87 | runs in the cloud record null with the reason (no nvidia-smi) |
+| 8 | results.md: NPC-table rows carry their run's condition | – | `tests/test_lean_answers.py`, report on the owner's results.json |
+
+### Result
+
+- **Built:** items 0–8 as planned (D-84 to D-89). Two defects reproduced first and fixed: the DECISIONS.md index (now checked by `tests/test_decisions_index.py`) and the C1 budget overrun (D-88). One more found in review and fixed: a salvaged LEAN answer's complete compact activity was checked before it was written out in full.
+- **The grammar's string limits (D-84), measured in the cloud** with llama-server b12443 built from the pinned commit on a CPU and T1 (Qwen3.5-0.8B: the smoke model, never a bake-off candidate), 8 of Robot R's prompts_v3 prompts, activity offered (`bakeoff.py tokens --models T1 --limit 8`, with `--answer SHORT` for the second row):
+
+| Answer format | Same text with / without maxLength | Generated tokens with / without (sum) | Generated − own tokenization, with / without | White-space-only tokens with / without | Reason tokens per answer with / without |
+|---|---|---|---|---|---|
+| FULL (limits do not bind) | 8 / 8 | 988 / 988 | 10 / 10 (the end token) | 194 / 194 | 21.6 / 21.6 |
+| SHORT (reason ≤ 60 characters) | 2 / 8 | 978 / 988 | **68** / 10 | **254** / 194 | 12.9 / 21.6 |
+
+  A limit that does not bind changes nothing; one that binds ends the string mid-sentence and the model then writes up to 20 single-space tokens before the closing brace (+19 to +21 tokens in 3 of 8 answers). T1's FULL answers by field: args 28%, reason 18%, speech 17%, actions 16%, white space 20% (pretty-printed JSON), other 2%.
+- **LEAN, offline smoke** (T1, CPU, 8 Robot R prompts, activity offered; plumbing, not quality): generated tokens p50 / p95 **147 / 163 (FULL) → 56.5 / 70 (LEAN)**; white space 20% → 0% (T1 followed "on one line"); final valid 100% both; no answer at the cap; CPU latency p50 7.2 s → 3.9 s. Promises read 0% in both conditions (T1 on this subset); F3's quality is the owner's PC run.
+- **The owner's G3f rows against the D-87 target** (results.md regenerated from the attached results.json): no row meets it; F3 alone met G3f's timeout target (0/30) but has 6/30 (20%) fallback decisions, all cut-off answers, the case salvage (D-86) now turns into actions when the actions were complete.
+- **C1 contexts with the real Qwen3.5 tokenizer** (T1's `/tokenize`; N3's family; SB-09 visitor_y, a 60-, 200- and 480-character latest turn): 698, 731 and 732 tokens of 780 with the fix (the last with OBSERVATIONS cut, the turn kept whole); C2 1100–1298 of 1900. C1's guardrails with the pulse on: 403 tokens.
+- **Journals** (each scenario three times, one with random sidecar delays): **every scenario byte-identical to main**: SB-04 `50048b7e3d42`, SB-05 `3ef2e2e0e63c`, SB-06 `b5b29006cad4`, SB-07 `a486ddb7a471`, SB-08 `f1f631e031c1`, SB-10 `ab5964d77f57`, SB-04 with fake-model NPCs `a7854d66f268` (and replayed), SB-06 with the fake model `f7b4d221a195` (and replayed), SB-09 `09a8d071f381`. Nothing in G3g changes what the world sees with the fake model: LEAN is off by default, the fake model never stops at the cap, and the context fix only acts when a prompt is over its budget (no section was cut in any of the soak's 256 assembled contexts).
+- **Soak** (`tools/soak.py`, fake model, stepped): OK. 263 decisions, 0 fallbacks; prompt tokens (now the whole prompt, headers included) Robot R largest 2188 of 3750, visitor C1 734–736 and 679–700 of 780, C2 up to 1520 of 1900; raw heard Robot R 11 / 23 / 24 / 22 / 20 (cap 40). On the owner's real-model soak summary the new rules would turn the raw-heard growth (32 of 40) and visitor_y's C2 growth (1570 of 1900) into NOTEs, and keep the C1 824 > 780 a failure, which D-88 now prevents at assembly.
+- **Needs the owner's PC** ([G3g_OWNER_CHECKLIST.md](G3g_OWNER_CHECKLIST.md)): `bakeoff.py tokens` with F3 and F1 (FULL and SHORT); LEAN vs FULL offline for F3 and F1; F3 + N3 live with LEAN (LIVE, LIVE_LOAD), alone, and with the guard at cap 1 in both hold settings; F1 + N3 with LEAN; a real-model soak. The decisions to make with those numbers: D-84 to D-89.
 
 ## Out of scope for G3
 

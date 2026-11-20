@@ -171,8 +171,11 @@ def test_report_leaves_out_void_rows_and_marks_pooled_ones(tmp_path):
     assert "| F3 b (POOLED: with F3+N3 LIVE) |" in text and "| F3 a | N3 | LIVE |" in text
     assert "F3 c [SYSTEM_PREFIX, answer SHORT, GPU guard cap 0]" in text
     assert "### Robot R's calls: outcomes and where the time goes (G3f)" in text
-    target = text[text.index("### G3f target"):]
-    assert "F3 b" not in target and "| 3900.0 | 0/30 (0%) | met |" in target and "| 3500.0 | 1/30 (3%) | met |" in target
+    # G3g (D-87): the target table counts fallback decisions; G3f's timeout target stays as a column.
+    target = text[text.index("### Target (G3g"):]
+    assert "F3 b" not in target
+    assert "| 3900.0 | 0/1 (0%) | 0/30 (0%) | 0 | met | met |" in target           # with the G3f breakdown
+    assert "| 3500.0 | – | 1/30 (3%) | – | – | met |" in target                    # no breakdown: not judged
 
 
 def test_numbers_are_not_printed_as_percentages():

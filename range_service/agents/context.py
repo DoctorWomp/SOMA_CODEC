@@ -50,8 +50,11 @@ BUDGETS: dict[str, dict[str, int]] = {
            "EPISODES": 100, "CONVERSATION": 300, "OBSERVATIONS": 250, "DECISION": 100},
     # G3c-2 (D-60): C1 grew from 500 to 780 tokens. The argument formats (+210) and a minimal
     # OBSERVATIONS line from its own senses (+70: who is near, so it can name a real track).
-    "C1": {"GUARDRAILS": 360, "IDENTITY": 120, "COMMITMENTS": 60, "SETTING": 0, "FACTS": 0,
-           "EPISODES": 0, "CONVERSATION": 80, "OBSERVATIONS": 70, "DECISION": 90},
+    # G3g (D-88): with the pulse on, C1's guardrails carry the activity format: 377 estimated, 403 with
+    # the Qwen3.5 tokenizer (N3's family), over their 360. The total stays 780; the guardrails get 410,
+    # taken from CONVERSATION (C1 keeps only the latest turn, never cut by its section budget) and DECISION.
+    "C1": {"GUARDRAILS": 410, "IDENTITY": 120, "COMMITMENTS": 60, "SETTING": 0, "FACTS": 0,
+           "EPISODES": 0, "CONVERSATION": 45, "OBSERVATIONS": 70, "DECISION": 75},
 }
 # C1 raised from 60 to 100 at G3c-1 (D-59), and both NPC caps again at G3c-2 (D-60): most NPC
 # answers in the owner's bake-off were cut off. With the tier text limits in output_schema
@@ -60,6 +63,11 @@ BUDGETS: dict[str, dict[str, int]] = {
 OUTPUT_CAPS = {"FOCAL": 200, "C2": 220, "C1": 170}
 MAX_EPISODE_CARDS_IN_CONTEXT = 3
 RECENCY_HALF_LIFE_MS = 120_000
+
+
+def _render(texts: dict[str, str]) -> str:
+    """The prompt from its section texts: headers, blank lines between sections, empty ones left out."""
+    return "\n\n".join(f"## {name}\n{texts[name]}" for name in SECTIONS if texts[name])
 
 
 def tier_budget(tier: str) -> int:
@@ -259,6 +267,30 @@ class ContextAssembler:
             text = render(kept[:1], len(lines) - 1) if kept else render([], len(lines))
         return text, len(kept), n_cut
 
+    def _shorten_latest(self, texts: dict[str, str], budget: int) -> str | None:
+        """The CONVERSATION section cut to its latest turn, the turn's quoted words shortened as much
+        as needed (a binary search on characters) so the prompt fits ``budget``. None when the turn
+        has no quoted words."""
+        latest = texts["CONVERSATION"].split("\n")[-1]
+        start = latest.find(': "')
+        if start < 0 or not latest.endswith('"'):
+            return None
+        head, words = latest[:start + 3], latest[start + 3:-1]
+        mark = '…" (shortened to fit)'
+
+        def fits(n: int) -> bool:
+            return self.tok.count(_render(dict(texts, CONVERSATION=head + words[:n].rstrip() + mark))) <= budget
+        lo, hi = 0, len(words)
+        if fits(hi):
+            return head + words + '"'
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if fits(mid):
+                lo = mid
+            else:
+                hi = mid - 1
+        return head + words[:lo].rstrip() + mark
+
     # ---------- assembly ----------
 
     def assemble(self, *, guardrails: str, identity: Identity, memory: AgentMemory, ws: WorkingSet,
@@ -316,9 +348,11 @@ class ContextAssembler:
             cut_reasons.append({"section": "FACTS", "items": scope_cut, "reason": "SCOPE"})
 
         # Step 6: if a never-cut section overflowed, cut whole sections in CUT_ORDER until it fits.
+        # G3g (D-88): the total is the prompt as sent (section headers and blank lines included), counted
+        # with the agent's tokenizer; before, the sum of the sections left the headers out.
         total_budget = tier_budget(self.tier)
         for name in CUT_ORDER:
-            if sum(self.tok.count(t) for t in texts.values()) <= total_budget:
+            if self.tok.count(_render(texts)) <= total_budget:
                 break
             if not texts[name]:
                 continue
@@ -332,12 +366,27 @@ class ContextAssembler:
             steps.add("SECTION_CUT")
             cut_reasons.append({"section": name, "items": stats[name]["cut"], "reason": "TOTAL_BUDGET"})
 
-        prompt = "\n\n".join(f"## {name}\n{texts[name]}" for name in SECTIONS if texts[name])
+        # Step 7 (G3g, D-88): still over, so the never-cut sections and the latest turn do not fit together
+        # (a long sentence to a C1 agent, or a tokenizer denser than the estimate). The latest turn is
+        # shortened, never dropped: its speaker, time and label stay, and the cut is marked.
+        if self.tok.count(_render(texts)) > total_budget and texts["CONVERSATION"]:
+            short = self._shorten_latest(texts, total_budget)
+            if short is not None:
+                texts["CONVERSATION"] = short
+                steps.add("SECTION_CUT")
+                cut_reasons.append({"section": "CONVERSATION", "items": 0, "reason": "LATEST_TURN_SHORTENED"})
+        prompt = _render(texts)
         tokens = {name: self.tok.count(texts[name]) for name in SECTIONS}
+        total = self.tok.count(prompt)
+        if total > total_budget:
+            # Only the never-cut sections are left and they alone are over: a budget too small for this
+            # agent. Never silent: recorded, and tests/test_agent_context.py keeps every configured agent
+            # clear of it.
+            cut_reasons.append({"section": "GUARDRAILS", "items": 0, "reason": "NEVER_CUT_OVER_BUDGET"})
         record = {
             "tokenizer": self.tok.name,
             "budget_tokens": total_budget,
-            "total_tokens": sum(tokens.values()),
+            "total_tokens": total,
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
             "sections": [{"section": n, "tokens": tokens[n], "budget": budgets[n], "items": stats[n]["items"],
                           "cut_items": stats[n]["cut"], "never_cut": n in NEVER_CUT} for n in SECTIONS],
