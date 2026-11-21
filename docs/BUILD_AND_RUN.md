@@ -177,6 +177,16 @@ uv run python tools/soak.py
 
 A rendered run (`--watch`) records frame times and peak VRAM in `summary.json` (`render`); every run has a per-agent `report` (offered vs accepted actions, response latency, timeouts, fallbacks, model calls, glances, FN-1). `compare_runs.py` prints two or more runs side by side. `soak.py` runs SB-09 (21 simulated minutes) and writes `soak_summary.json`. Summaries hold counts only; run folders hold raw prompts and memories and stay under the git-ignored `runs/` and `results/`. `tools/check.py` runs its scenario runs side by side (`RANGE_CHECK_JOBS=N` to change how many at once, D-68).
 
+**The new LEAN default (G3h, D-110 to D-114):**
+
+```bash
+uv run python tools/bakeoff.py offline --models F3 F1 --kv q8_0 --set bakeoff/prompts_v4.jsonl --focal-answer LEAN
+uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE LIVE_LOAD --focal-answer LEAN
+uv run python tools/bakeoff.py build-set
+```
+
+Under LEAN, Robot R's prompts and answers name people by handle (P1, P2, ...; mapped back to the anonymous ids before anything leaves) and leave out defaults (SPEAK's channel when LOCAL, ids that would be null). An activity that breaks a rule is dropped and the actions kept (`activity_dropped` on the model call, `ACTIVITY_DROPPED` in the pulse log); decisions held by FN-1 are counted apart. `build-set` writes `bakeoff/prompts_v4.jsonl` (Robot R as LEAN sends it, the pulse on); prompts_v4 runs with `--focal-answer LEAN` only. The target table judges LIVE and reports LIVE_LOAD as a stress test.
+
 **Lean answers (G3g, D-84 to D-89):**
 
 ```bash

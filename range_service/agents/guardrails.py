@@ -61,12 +61,13 @@ def action_schema_text(allowed_actions: list[str], gestures: list[str], expressi
                        lean: bool = False) -> str:
     # G3c-2 (D-60): C1 lists the argument formats too. Without them, small models invented
     # arguments ("destination": "platform") in most C1 answers of the owner's bake-off.
-    from .lean import OUTPUT_FORMAT_LEAN   # noqa: PLC0415
+    from .lean import LEAN_SHAPES, OUTPUT_FORMAT_LEAN   # noqa: PLC0415
 
     lines = [OUTPUT_FORMAT_SHORT if short else (OUTPUT_FORMAT_LEAN if lean else OUTPUT_FORMAT), "Actions:"]
+    shapes = dict(ACTION_SHAPES, **LEAN_SHAPES) if lean else ACTION_SHAPES
     for action in allowed_actions:
-        if action in ACTION_SHAPES:
-            lines.append(f"{action} {ACTION_SHAPES[action]}")
+        if action in shapes:
+            lines.append(f"{action} {shapes[action]}")
     lines.append(f"Your gestures: {', '.join(gestures) if gestures else 'none'}.")
     if not short or expressions:
         lines.append(f"Your expressions: {', '.join(expressions) if expressions else 'none'}.")

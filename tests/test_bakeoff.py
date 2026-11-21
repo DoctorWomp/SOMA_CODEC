@@ -258,3 +258,30 @@ def test_progress_line_never_leaves_old_text_behind():
     last = out.getvalue().split("\r")[-1]
     assert last.rstrip("\n").rstrip() == "  F1 f16: 10/40 (ok)"
     assert len(last.rstrip("\n")) >= len("  F1 f16: 9/40 (PROVIDER_ERROR)")   # padded over the longer line
+
+
+def test_prompt_set_v4_is_robot_r_as_lean_sends_it_with_nothing_private():
+    """G3h (D-113): prompts_v4 holds Robot R's prompts as LEAN sends them (handles, D-111; compact
+    shapes, D-112; the pulse's activity offered), each with its handle map; v1-v3 unchanged."""
+    from range_service.agents.handles import HANDLE, TRACK
+    from tools.bakeoff import PROMPT_SET_V4
+
+    items, sha = load_set(PROMPT_SET_V4)
+    assert sha.startswith("7cc7a7cc27b8")                               # frozen: results name it
+    assert load_set(PROMPT_SET)[1].startswith("8b47570792f2")           # v3 unchanged (the owner's G3f/G3g sets)
+    robot = [i for i in items if i["role"] == "ROBOT_R"]
+    assert len(robot) >= 56 and all(i["answer_format"] == "LEAN" and i["handles"] for i in robot)
+    for i in robot:
+        assert not TRACK.search(i["prompt"]), i["item_id"]              # people by handle only
+        assert "People are named by handles" in i["prompt"] and i["choices"].get("activity")
+        assert all(HANDLE.match(t) and t in i["handles"] for t in i["choices"]["targets"])
+        assert len(set(i["handles"].values())) == len(i["handles"])     # one handle per track
+    promises = [i for i in robot if bk.promise_due(i)]
+    assert len(promises) >= 16 and all(set(bk.promised_to(i)) <= set(i["handles"].values()) for i in promises)
+    npc = [i for i in items if i["role"] == "NPC"]
+    assert npc and all("answer_format" not in i and "handles" not in i for i in npc)
+    secrets, owners = private_strings(), own_goal_owners()
+    for item in items:
+        for secret in secrets:
+            if secret in item["prompt"]:
+                assert item["role"] == "NPC" and is_own_goal(item["prompt"], secret, owners), item["item_id"]

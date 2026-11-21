@@ -8,7 +8,8 @@ its first character that is not white space.
 
 Fields (the owner's list): ``actions`` (the action names and the list's JSON), ``args`` (an
 action's arguments, apart from speech), ``speech`` (SPEAK and REQUEST_CLARIFICATION text),
-``promise`` (``commitment``, ``fulfills_commitment``), ``activity`` (kind, target, review time),
+``ids`` (G3h: tokens holding part of a person's id, a track id or a handle, wherever it is),
+``numbers`` (G3h: numeric literals in an action's arguments), ``promise`` (``commitment``, ``fulfills_commitment``), ``activity`` (kind, target, review time),
 ``wake`` (wake conditions), ``reason`` (``reason_summary``), ``space`` (tokens that are only white
 space: line breaks and indentation between JSON elements, which the grammar allows anywhere between
 them; G3g found them a large share of a small model's answer) and ``other`` (the outer braces,
@@ -20,10 +21,14 @@ Counts only: no answer text leaves this module except through the caller.
 from __future__ import annotations
 
 import json
+import re
 import statistics
 from typing import Any
 
-FIELDS = ("actions", "args", "speech", "promise", "activity", "wake", "reason", "space", "other")
+FIELDS = ("actions", "args", "ids", "numbers", "speech", "promise", "activity", "wake", "reason", "space", "other")
+# G3h (D-111): a person's id in an answer, wherever it is (args, the activity): an anonymous track id
+# or an observer-local handle (P1, P2, ...); and a numeric literal in an action's arguments.
+ID_VALUE = re.compile(r'"(anon_[a-z0-9]{10}|P[0-9]{1,4})"')
 _DEC = json.JSONDecoder()
 
 
@@ -91,11 +96,12 @@ def field_spans(text: str) -> list[tuple]:
             owner[i] = path
             return i + 1
         try:
-            _, j = _DEC.raw_decode(text, i)
+            v, j = _DEC.raw_decode(text, i)
         except ValueError:
             mark(i, n, path)                         # a string or number cut off: the rest is this field's
             raise _Cut from None
-        mark(i, j, path)
+        numeric = isinstance(v, (int, float)) and not isinstance(v, bool)
+        mark(i, j, path + ("#num",) if numeric else path)
         return j
 
     try:
@@ -117,6 +123,8 @@ def category(path: tuple) -> str:
         if len(path) >= 3 and path[2] in ("commitment", "fulfills_commitment"):
             return "promise"
         if len(path) >= 4 and path[2] == "args":
+            if path[-1] == "#num":
+                return "numbers"
             return "speech" if path[3] == "text" else "args"
         if len(path) >= 3 and path[2] == "args":
             return "args"
@@ -128,6 +136,10 @@ def account(text: str, pieces: list[str]) -> dict[str, Any]:
     """Tokens per field. ``pieces`` must spell ``text`` when joined; if they do not (byte-level
     pieces of a multi-byte character), counting stops at the first mismatch and says so."""
     owner = field_spans(text)
+    ids = [False] * len(text)
+    for m in ID_VALUE.finditer(text):
+        for k in range(m.start(1), m.end(1)):
+            ids[k] = True
     counts = dict.fromkeys(FIELDS, 0)
     pos = 0
     aligned = True
@@ -141,7 +153,11 @@ def account(text: str, pieces: list[str]) -> dict[str, Any]:
                 first += 1
             if first >= pos + len(piece):
                 first = pos
-            counts[category(owner[first]) if first < len(owner) else "other"] += 1
+            span = range(pos, min(pos + len(piece), len(text)))
+            if any(ids[k] for k in span):
+                counts["ids"] += 1                   # a token that holds part of a person's id
+            else:
+                counts[category(owner[first]) if first < len(owner) else "other"] += 1
             pos += len(piece)
         else:
             aligned = False

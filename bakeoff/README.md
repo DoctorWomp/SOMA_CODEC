@@ -30,3 +30,10 @@ The same composition as v2 (96 prompts: 56 Robot R, 40 NPC), rebuilt after the N
 - `max_tokens` follows the new output caps (C1 170, C2 220).
 
 v1 and v2 are unchanged: the owner's results name them (`ee2b7c03be96` and `476703d7d4a5`).
+
+## prompts_v4.jsonl (G3h, D-113)
+
+100 prompts (59 Robot R, 41 NPC), `7cc7a7cc27b8`, rebuilt with `uv run python tools/bakeoff.py build-set` (default `--focal-answer LEAN`, out `prompts_v4.jsonl`):
+- **Robot R's prompts as a LEAN run sends them**: the pulse on (the activity offered, the situation report in DECISION), the LEAN answer-format lines and compact argument shapes (D-85, D-112), and people named by **handle** (P1, P2, ..., D-111). Each Robot R item has `answer_format: "LEAN"` and `handles` (handle → anonymous id), used offline to read answers back and to score them; `reference` stays in anonymous ids. The 43 SB-04 decisions come from fake-model runs (one per body, the pulse on); the 16 promise situations are v3's, rewritten the same way.
+- **NPC prompts** as the runtime builds them now (the pulse on), anonymous ids, unchanged in kind.
+- Run it with `--focal-answer LEAN` (the offline command refuses FULL or SHORT on it); compare FULL on prompts_v3. v1 to v3 are unchanged.

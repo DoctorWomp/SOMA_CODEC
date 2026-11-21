@@ -77,6 +77,15 @@ def classify_error(error: str | None) -> str:
     return "OTHER"
 
 
+def activity_rule(error: str | None) -> str | None:
+    """G3h (D-110): which activity rule an ACTIVITY_RULE error broke (the kind only), else None."""
+    if classify_error(error) != "ACTIVITY_RULE":
+        return None
+    from range_service.agents.activity import rule_of   # noqa: PLC0415
+
+    return rule_of(error)
+
+
 def _pct(values: list[float], q: float) -> float | None:
     vals = sorted(v for v in values if v is not None)
     return float(vals[min(len(vals) - 1, int(round(q * (len(vals) - 1))))]) if vals else None
@@ -95,10 +104,18 @@ def robot_breakdown(records: list[dict[str, Any]], delivery: list[dict[str, Any]
     invalid_kinds: dict[str, int] = {}
     not_repaired = 0
     salvaged = 0
+    activity_rules: dict[str, int] = {}     # G3h (D-110): rule kinds of rejected activities (old runs)
+    activity_dropped: dict[str, int] = {}   # ... and of activities dropped with the actions kept
     for c in calls:
         o = c.get("outcome")
         if c.get("salvaged"):
             salvaged += 1                  # G3g (D-86): cut off, its complete actions used (also VALID)
+        if c.get("activity_dropped"):
+            rule = c["activity_dropped"].get("rule", "OTHER")
+            activity_dropped[rule] = activity_dropped.get(rule, 0) + 1
+        if o == "INVALID_OUTPUT" and activity_rule(c.get("error")):
+            rule = activity_rule(c.get("error")) or "OTHER"
+            activity_rules[rule] = activity_rules.get(rule, 0) + 1
         if o == "VALID":
             outcomes["VALID_AFTER_REPAIR" if c.get("attempt") == 1 else "VALID_FIRST_TRY"] += 1
         elif o == "TIMEOUT":
@@ -139,7 +156,11 @@ def robot_breakdown(records: list[dict[str, Any]], delivery: list[dict[str, Any]
         "calls": len(calls), "decisions": len(recs), "decisions_pulse_review": len(pulse_recs),
         "outcomes": outcomes, "invalid_kinds": dict(sorted(invalid_kinds.items())), "invalid_not_repaired": not_repaired,
         "salvaged": salvaged,
-        "fallbacks": sum(fallbacks.values()),
+        # G3h (D-110): held by FN-1 (stayed with the partner) is the right outcome, counted apart.
+        "fallbacks": sum(v for k, v in fallbacks.items() if k != "FN1_HELD"),
+        "held_by_fn1": fallbacks.get("FN1_HELD", 0),
+        "activity_rules_rejected": dict(sorted(activity_rules.items())),
+        "activity_dropped": dict(sorted(activity_dropped.items())),
         "fallbacks_by_reason": dict(sorted(fallbacks.items())),
         "timeouts_on_pulse_reviews": sum(1 for r in pulse_recs for c in r["model_calls"] if c.get("outcome") == "TIMEOUT"),
         "dropped_before_send": dropped_before_send,

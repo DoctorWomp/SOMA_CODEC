@@ -126,7 +126,8 @@
                 "TIMEOUT",
                 "INVALID_OUTPUT",
                 "PROVIDER_ERROR",
-                "REPLAY_DIVERGED"
+                "REPLAY_DIVERGED",
+                "FN1_HELD"
               ]
             }
           }
@@ -511,6 +512,38 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 3
+            }
+          }
+        },
+        "activity_dropped": {
+          "description": "G3h (D-110): the answer's actions were valid but its optional activity broke a rule, so the activity was dropped (the runtime derived one) and the actions kept. rule: which rule (counts only); detail: the rule's message.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rule",
+            "detail"
+          ],
+          "properties": {
+            "rule": {
+              "enum": [
+                "SHAPE",
+                "KIND",
+                "TARGET_NOT_PERCEIVED",
+                "COMMITMENT_NOT_OPEN",
+                "REVIEW_TIME",
+                "WAKE_LIST",
+                "WAKE_SHAPE",
+                "WAKE_RESERVED",
+                "WAKE_UNKNOWN",
+                "WAKE_DISTANCE",
+                "WAKE_VALUE",
+                "NEEDS_TARGET",
+                "OTHER"
+              ]
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 200
             }
           }
         }
