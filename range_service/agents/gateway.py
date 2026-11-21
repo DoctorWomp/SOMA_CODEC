@@ -173,6 +173,15 @@ class ReplayModel:
 
 
 @dataclass
+class ActivityDropped:
+    """Returned by a runtime check (G3h, D-110): the answer's actions are fine but its optional
+    activity broke a rule. The gateway keeps the actions, drops the activity (the runtime then
+    derives one, D-61) and checks the actions again without it."""
+    rule: str
+    error: str
+
+
+@dataclass
 class GatewayResult:
     actions: list[dict[str, Any]]                 # [{"action", "args"}] ready to become requests
     reason_summary: str | None
@@ -180,6 +189,7 @@ class GatewayResult:
     fallback: dict[str, str] | None = None
     activity: dict[str, Any] | None = None        # the answer's optional activity, as given (G3c-2)
     fallback_error: str | None = None             # why the last answer could not be used
+    activity_dropped: dict[str, str] | None = None   # G3h (D-110): the rule the dropped activity broke
 
 
 def answer_activity(text: str) -> dict[str, Any] | None:
@@ -495,13 +505,16 @@ class ModelGateway:
                      allowed_actions: list[str], tick: int, demo_hint: str | None = None,
                      prefix_key: str | None = None, prefix: str | None = None,
                      choices: dict[str, Any] | None = None, background: bool = False,
-                     check: Callable[[list[dict[str, Any]], dict[str, Any] | None], str | None] | None = None,
-                     started_at: float | None = None, evidence_ms: int | None = None) -> GatewayResult:
+                     check: Callable[[list[dict[str, Any]], dict[str, Any] | None], Any] | None = None,
+                     started_at: float | None = None, evidence_ms: int | None = None,
+                     handles: Any = None) -> GatewayResult:
         """``choices`` (G3c-2, D-60): what the agent may name now, for the constrained answer:
         ``targets`` (perceived track ids), ``channels``, ``gestures``, ``expressions``, and
         ``activity`` (G3c-2: the answer may carry an activity; its value is the longest review time).
         Absent keys keep the contract's full range. ``background``: a pulse review, scheduled after
-        every real call. ``check(actions, activity)`` is the runtime's policy check (activity rules,
+        every real call. ``handles`` (G3h, D-111): the agent's HandleMap when its prompt names people by
+        handle: the answer is mapped back to anonymous ids before it is checked, an unknown handle in an
+        action is invalid output, and repair notes are written in handles. ``check(actions, activity)`` is the runtime's policy check (activity rules,
         FN-1): an error gets the same one repair as invalid output. ``started_at``: when the decision
         started (``time.monotonic()``); the tier deadline counts from then (G3d, D-63)."""
         from .output_schema import ALL_CHANNELS, answer_schema   # noqa: PLC0415 (it imports this module)
@@ -547,12 +560,18 @@ class ModelGateway:
             text = response.text
             if self.answer == "LEAN" and tier == "FOCAL":
                 text = lean.expand(text)                    # G3g (D-85): the compact answer, as the runtime reads it
+            handle_error = None
+            if handles is not None:
+                text, handle_error = handles.answer_to_ids(text)
             actions, reason_summary, error = parse_output(text, allowed_actions, agent_id, tick, allow_activity)
+            if error is None and handle_error is not None:
+                error = handle_error
             activity = answer_activity(text) if error is None and allow_activity else None
+            dropped = None
             if error is None and check is not None:
-                error = check(actions or [], activity)
+                error, activity, dropped = _checked(check, actions or [], activity, call)
             if error is None:
-                return GatewayResult(actions or [], reason_summary, calls, activity=activity)
+                return GatewayResult(actions or [], reason_summary, calls, activity=activity, activity_dropped=dropped)
             if response.truncated and self.salvage:
                 # G3g (D-86): cut off at the output cap, but the actions were complete and valid:
                 # use them, drop the cut-off trailing field (the runtime derives an activity).
@@ -561,23 +580,46 @@ class ModelGateway:
                     s_text, dropped = saved
                     if self.answer == "LEAN" and tier == "FOCAL":
                         s_text = lean.expand(s_text)
+                    s_handle_error = None
+                    if handles is not None:
+                        s_text, s_handle_error = handles.answer_to_ids(s_text)
                     s_actions, s_reason, s_error = parse_output(s_text, allowed_actions, agent_id, tick, allow_activity)
+                    if s_error is None and s_handle_error is not None:
+                        s_error = s_handle_error
                     s_activity = answer_activity(s_text) if s_error is None and allow_activity else None
+                    s_dropped = None
                     if s_error is None and check is not None:
-                        s_error = check(s_actions or [], s_activity)
+                        s_error, s_activity, s_dropped = _checked(check, s_actions or [], s_activity, call)
                     if s_error is None:
                         call["salvaged"] = {"dropped": dropped, "actions": len(s_actions or [])}
-                        return GatewayResult(s_actions or [], s_reason, calls, activity=s_activity)
+                        return GatewayResult(s_actions or [], s_reason, calls, activity=s_activity,
+                                             activity_dropped=s_dropped)
             if response.truncated:
                 error = f"the answer was cut off at the {max_tokens}-token limit ({error})"
             call["outcome"], call["error"] = "INVALID_OUTPUT", error[:300]
             if attempt == 0:
-                repaired = prompt + "\n\n## REPAIR\n" + REPAIR_NOTE.format(error=error)
+                note_error = handles.rename(error) if handles is not None else error   # in the model's own names
+                repaired = prompt + "\n\n## REPAIR\n" + REPAIR_NOTE.format(error=note_error)
                 request = ModelRequest(agent_id, self._call_id(agent_id), tier, repaired,
                                        hashlib.sha256(repaired.encode("utf-8")).hexdigest(), max_tokens, 1, demo_hint,
                                        schema, prefix_key=prefix_key, prefix=prefix)
         return GatewayResult(fallback_actions(), None, calls, {"action": "WAIT", "reason": "INVALID_OUTPUT"},
                              fallback_error=calls[-1]["error"])
+
+
+def _checked(check: Callable[..., Any], actions: list[dict[str, Any]], activity: dict[str, Any] | None,
+             call: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None, dict[str, str] | None]:
+    """The runtime's check, with an invalid activity dropped instead of the answer (G3h, D-110):
+    (error, the activity to use, what was dropped). The actions are checked again without the
+    activity (FN-1 can depend on it), and the drop is recorded on the model call."""
+    result = check(actions, activity)
+    if not isinstance(result, ActivityDropped):
+        call.pop("activity_dropped", None)
+        return result, activity, None
+    dropped = {"rule": result.rule, "detail": result.error[:200]}
+    call["activity_dropped"] = dropped
+    again = check(actions, None)
+    return (again if isinstance(again, str) else None), None, dropped
 
 
 def tokenizer_for(gateway: ModelGateway | None):

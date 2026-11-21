@@ -104,6 +104,34 @@ def parse(raw: Any, *, now_ms: int, default_review_s: int, max_review_s: int,
     return Activity(kind, target, commitment, review, [dict(c) for c in wake], "CHOSEN", now_ms), None
 
 
+# G3h (D-110): the kind of rule an activity broke, from activity.parse's message (counts only: the
+# message can name a track, the kind never does). Order matters: the first match wins.
+RULES: tuple[tuple[str, str], ...] = (
+    ('must be an object with "kind"', "SHAPE"),
+    ("activity kind", "KIND"),
+    ("activity target", "TARGET_NOT_PERCEIVED"),
+    ("activity commitment", "COMMITMENT_NOT_OPEN"),
+    ('"review_after_s"', "REVIEW_TIME"),
+    ('"wake_if" must be a list', "WAKE_LIST"),
+    ("each wake condition", "WAKE_SHAPE"),
+    ("reserved for HORIZON", "WAKE_RESERVED"),
+    ("unknown wake condition", "WAKE_UNKNOWN"),
+    ('"target_within_m"', "WAKE_DISTANCE"),
+    ("must be true", "WAKE_VALUE"),
+    ("needs a target_id", "NEEDS_TARGET"),
+)
+RULE_KINDS = tuple(k for _, k in RULES) + ("OTHER",)
+
+
+def rule_of(error: str | None) -> str:
+    """The rule kind of an ``activity.parse`` error message (OTHER if none matches)."""
+    e = error or ""
+    for needle, kind in RULES:
+        if needle in e:
+            return kind
+    return "OTHER"
+
+
 def derive(actions: list[dict[str, Any]], *, now_ms: int, current: Activity | None, partner: str | None,
            promised: dict[str, str], default_review_s: int, has_task_goal: bool, post_duty: bool) -> Activity:
     """The activity implied by the actions when the answer names none (recorded DERIVED).

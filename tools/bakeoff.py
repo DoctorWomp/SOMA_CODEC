@@ -66,6 +66,7 @@ from range_service.eval import bakeoff as bk  # noqa: E402
 from range_service.eval import live_diag  # noqa: E402
 from range_service.models import registry as reg  # noqa: E402
 from range_service.agents import lean  # noqa: E402
+from range_service.agents.handles import HandleMap  # noqa: E402
 from range_service.eval import tokens  # noqa: E402
 
 PULSE_MAX_REVIEW_S = 600   # configs/pulse.yaml pulse.max_review_after_s, as a live run offers it
@@ -74,6 +75,7 @@ REPO = Path(__file__).resolve().parent.parent
 PROMPT_SET_V1 = REPO / "bakeoff" / "prompts_v1.jsonl"
 PROMPT_SET_V2 = REPO / "bakeoff" / "prompts_v2.jsonl"  # G3c-1: Robot R, NPCs and promise situations
 PROMPT_SET = REPO / "bakeoff" / "prompts_v3.jsonl"     # G3c-2: C1 formats and observations, answer choices
+PROMPT_SET_V4 = REPO / "bakeoff" / "prompts_v4.jsonl"  # G3h: the pulse on; Robot R as LEAN sends it (handles, D-113)
 RESULTS = REPO / "results" / "bakeoff"
 BODIES = ("wheeled_humanoid", "legged_humanoid", "quadruped", "quadruped_arm")
 
@@ -113,14 +115,19 @@ def cmd_build_set(args: argparse.Namespace) -> int:
     if problems:
         print("configs have problems; run tools/validate_configs.py")
         return 1
+    from range_service.agents.runmodels import Conditions   # noqa: PLC0415
+
     scenario = cs.items["scenarios"]["SB04_POLITE_BID"]
     items = []
+    lean_set = args.focal_answer == "LEAN"
     with tempfile.TemporaryDirectory(prefix="bakeoff_set_") as tmp:
         for body_id in args.bodies:
             out = Path(tmp) / body_id
-            print(f"SB-04 with Robot R as {body_id} (Demo policy and NPC templates through the fake model)...")
+            print(f"SB-04 with Robot R as {body_id} (Demo policy and NPC templates through the fake model"
+                  f"{', Robot R under LEAN' if lean_set else ''})...")
             asyncio.run(run_scenario(RunOptions("SB04_POLITE_BID", godot, model="fake", out_dir=out,
-                                                body_overrides={"robot_r": body_id}, timeout_s=900)))
+                                                body_overrides={"robot_r": body_id}, timeout_s=900,
+                                                conditions=Conditions(answer=args.focal_answer))))
             prompts = {}
             for line in (out / "sidecar" / "prompts.jsonl").read_text(encoding="utf-8").splitlines():
                 p = json.loads(line)
@@ -137,9 +144,14 @@ def cmd_build_set(args: argparse.Namespace) -> int:
                 body = cs.items["bodies"][agent_body_id]
                 available = sorted(expression_rules.available(body, cs.items["expressions"]))
                 demo = rec["model_calls"][0]["response_text"] or ""
+                entry = prompts[rec["decision_id"]]
+                hm = item_handles(entry)
+                if hm is not None:
+                    demo = hm.answer_to_ids(demo)[0]        # the reference in world ids, as the answer is read
                 actions, _, _ = parse_output(demo, persona["allowed_actions"], agent, rec["based_on_tick_id"])
-                prompt = prompts[rec["decision_id"]]["prompt"]
-                choices = prompts[rec["decision_id"]].get("choices")
+                prompt = entry["prompt"]
+                choices = entry.get("choices")
+                extra = {"answer_format": "LEAN", "handles": entry["handles"]} if hm is not None else {}
                 items.append({
                     "item_id": f"sb04_{body_id}_{rec['decision_id']}", "scenario": "SB04_POLITE_BID", "role": role,
                     "agent_id": agent, "tier": rec["tier"], "triggers": rec["triggers"], "body_id": agent_body_id,
@@ -149,9 +161,14 @@ def cmd_build_set(args: argparse.Namespace) -> int:
                     "choices": choices,
                     "reference": {"demo_answer": demo,
                                   "demo_fulfilled": any(a.get("fulfills_commitment") for a in actions or [])},
+                    **extra,
                 })
     # SB-05 has no NPCs (its cast is Robot R in three bodies), so it adds no NPC contexts.
-    items += promise_items(cs, tuple(args.bodies))
+    promises = promise_items(cs, tuple(args.bodies))
+    if lean_set:
+        # G3h (D-113): the promise situations as a LEAN run sends them (format lines, activity, handles).
+        promises = [dict(focal_item(i, "LEAN", True), answer_format="LEAN") for i in promises]
+    items += promises
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("".join(json.dumps(i, sort_keys=True) + "\n" for i in items), encoding="utf-8")
     print(f"Wrote {len(items)} prompts to {args.out}")
@@ -194,13 +211,32 @@ def focal_item(item: dict, focal_answer: str, activity: bool) -> dict:
     answer-format lines of its prompt change (prompts_v3 holds FULL prompts without the pulse's
     activity format). With ``activity`` the prompt offers an activity, as with the pulse on in a
     live run. NPC items are never changed."""
-    if item.get("role") == "NPC" or (focal_answer != "LEAN" and not activity):
-        return item
+    if item.get("role") == "NPC" or item.get("answer_format") == "LEAN" or (focal_answer != "LEAN" and not activity):
+        return item                     # prompts_v4 holds Robot R's prompts as a LEAN run sends them (G3h)
     prompt = lean.rewrite_prompt(item["prompt"], focal_answer, activity)
     choices = dict(item.get("choices") or {})
     if activity:
         choices["activity"] = PULSE_MAX_REVIEW_S
-    return dict(item, prompt=prompt, prompt_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(), choices=choices)
+    extra = {}
+    if focal_answer == "LEAN":
+        # G3h (D-111): people by handle, as a LEAN run names them; the item keeps the map to read answers back.
+        hm = HandleMap()
+        prompt = hm.rename(prompt)
+        if choices.get("targets") is not None:
+            choices["targets"] = [hm.handle(x) for x in choices["targets"]]
+        extra["handles"] = hm.snapshot()
+    return dict(item, prompt=prompt, prompt_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(), choices=choices,
+                **extra)
+
+
+def item_handles(item: dict):
+    """The HandleMap of an item whose prompt names people by handle (prompts_v4, or LEAN on v3), else None."""
+    if not item.get("handles"):
+        return None
+    hm = HandleMap()
+    for h, tid in sorted(item["handles"].items(), key=lambda kv: int(kv[0][1:])):
+        assert hm.handle(tid) == h
+    return hm
 
 
 async def answer_pieces(provider, text: str) -> list[str] | None:
@@ -240,7 +276,8 @@ async def _run_condition(entry: dict, kv: str, items: list[dict], inf: dict, lim
             result = await setup.gateway.decide(agent_id=item["agent_id"], tier=item["tier"], prompt=item["prompt"],
                                                 prompt_sha256=item["prompt_sha256"], max_tokens=item["max_tokens"],
                                                 allowed_actions=item["allowed_actions"], tick=item["based_on_tick_id"],
-                                                prefix=npc_prefix(item, focal_layout), choices=item.get("choices"))
+                                                prefix=npc_prefix(item, focal_layout), choices=item.get("choices"),
+                                                handles=item_handles(item))
             s = bk.score_item(item, result)
             if s.get("answer_text"):
                 pieces = await answer_pieces(setup.provider, s["answer_text"])
@@ -273,6 +310,10 @@ def cmd_offline(args: argparse.Namespace) -> int:
         print("No core model is registered yet. Run tools/models.py scan / download first.")
         return 1
     items, set_sha = load_set(args.set)
+    if any(i.get("answer_format") == "LEAN" for i in items) and args.focal_answer != "LEAN":
+        print(f"{args.set.name} holds Robot R's prompts as LEAN sends them (handles, D-113): run it with "
+              "--focal-answer LEAN, or compare FULL on prompts_v3")
+        return 1
     inf = load_inference()
     for tier in inf["tiers"].values():
         tier["deadline_ms"] = 120000          # offline: no deadline pressure; speed is measured instead
@@ -622,6 +663,9 @@ def cmd_tokens(args: argparse.Namespace) -> int:
         print(f"Not on this machine: {', '.join(missing)}. Run tools/models.py plan.")
         return 1
     items, set_sha = load_set(args.set)
+    if any(i.get("answer_format") == "LEAN" for i in items):
+        print(f"{args.set.name} holds LEAN prompts, which have no string limits to compare: use prompts_v3")
+        return 1
     robot = [focal_item(i, args.answer, args.activity == "on") for i in items if i.get("role", "ROBOT_R") == "ROBOT_R"]
     robot = robot[: args.limit] if args.limit else robot
     inf = load_inference()
@@ -674,8 +718,10 @@ def main(argv: list[str] | None = None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     p_set = sub.add_parser("build-set")
-    p_set.add_argument("--out", type=Path, default=PROMPT_SET)   # never overwrite prompts_v1 (results stay comparable)
+    p_set.add_argument("--out", type=Path, default=PROMPT_SET_V4)   # never overwrite v1-v3 (results stay comparable)
     p_set.add_argument("--bodies", nargs="+", default=list(BODIES))
+    p_set.add_argument("--focal-answer", default="LEAN", choices=["FULL", "LEAN"],
+                       help="G3h: Robot R's prompts as this answer format sends them (prompts_v4: LEAN, with handles)")
     p_off = sub.add_parser("offline")
     p_off.add_argument("--models", nargs="*", default=[])
     p_off.add_argument("--kv", nargs="+", default=["f16", "q8_0"], choices=["f16", "q8_0", "q4_0"])

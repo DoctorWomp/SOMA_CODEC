@@ -263,6 +263,7 @@ def answer_schema(allowed_actions: tuple[str, ...], targets: tuple[str, ...] | N
         # parsing instead of as maxLength in the grammar.
         if not lean.GRAMMAR_TEXT_LIMITS:
             choices = _without_max_length(choices)
+        choices = [_lean_defaults(c) for c in choices]      # G3h (D-112): defaults left out of answers
         return {
             "type": "object",
             "properties": {
@@ -282,6 +283,31 @@ def answer_schema(allowed_actions: tuple[str, ...], targets: tuple[str, ...] | N
         "required": ["actions"],
         "additionalProperties": False,
     }
+
+
+def _lean_defaults(node: Any) -> Any:
+    """G3h (D-112): in LEAN answers the defaults the runtime fills are left out: ``channel`` is not
+    required (LOCAL when absent, lean.expand), and a person id that may be null is offered only as a
+    person (leave it out for nobody); one that can only be null is not offered at all."""
+    if isinstance(node, list):
+        return [_lean_defaults(n) for n in node]
+    if not isinstance(node, dict):
+        return node
+    out = {k: _lean_defaults(v) for k, v in node.items()}
+    props = out.get("properties")
+    if isinstance(props, dict):
+        for name in TARGET_KEYS:
+            sub = props.get(name)
+            if not isinstance(sub, dict) or name in out.get("required", []):
+                continue
+            if sub == {"type": "null"}:
+                del props[name]
+            elif "anyOf" in sub and {"type": "null"} in sub["anyOf"]:
+                rest = [a for a in sub["anyOf"] if a != {"type": "null"}]
+                props[name] = rest[0] if len(rest) == 1 else {"anyOf": rest}
+        if "channel" in props and "channel" in out.get("required", []):
+            out["required"] = [r for r in out["required"] if r != "channel"]
+    return out
 
 
 def _without_max_length(node: Any) -> Any:

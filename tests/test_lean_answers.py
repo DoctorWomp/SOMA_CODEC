@@ -187,7 +187,11 @@ def test_rewrite_prompt_changes_only_the_answer_format_lines():
     assert all(OUTPUT_FORMAT in i["prompt"] and ACTIVITY_FORMAT not in i["prompt"] for i in robot)
     p = robot[0]["prompt"]
     lean_p = lean.rewrite_prompt(p, "LEAN", activity=True)
-    assert lean_p.replace(lean.OUTPUT_FORMAT_LEAN, OUTPUT_FORMAT).replace("\n" + lean.ACTIVITY_FORMAT_LEAN, "") == p
+    from range_service.agents.guardrails import ACTION_SHAPES
+    undone = lean_p.replace(lean.OUTPUT_FORMAT_LEAN, OUTPUT_FORMAT).replace("\n" + lean.ACTIVITY_FORMAT_LEAN, "")
+    for action, shape in lean.LEAN_SHAPES.items():           # G3h (D-112): LEAN's argument shapes
+        undone = undone.replace(f"\n{action} {shape}\n", f"\n{action} {ACTION_SHAPES[action]}\n")
+    assert undone == p and "SPEAK {\"text\"" in lean_p
     full_act = lean.rewrite_prompt(p, "FULL", activity=True)
     assert full_act.replace("\n" + ACTIVITY_FORMAT, "") == p
     head = full_act.split("\n\n## IDENTITY")[0]

@@ -43,7 +43,7 @@ def signature(action: dict[str, Any]) -> str:
 
 def offline_gate(actions: list[dict[str, Any]], item: dict[str, Any]) -> list[str]:
     """Problems the world's action gate would raise without needing the world (D-36, D-52)."""
-    tracks = set(TRACK.findall(item["prompt"]))
+    tracks = set(TRACK.findall(item["prompt"])) | set((item.get("handles") or {}).values())   # G3h: handles
     found = []
     for act in actions:
         args = act.get("args", {})
@@ -553,6 +553,8 @@ def robot_lines(live: list[dict], f) -> list[str]:
         o = b["outcomes"]
         kinds = ", ".join(f"{k} {v}" for k, v in b["invalid_kinds"].items()) or "–"
         why = ", ".join(f"{k} {v}" for k, v in b["fallbacks_by_reason"].items()) or "–"
+        if b.get("activity_dropped"):
+            kinds += "; activities dropped " + ", ".join(f"{k} {v}" for k, v in b["activity_dropped"].items())
         out.append(f"| {r['label']}{cond_text(r)} | {r.get('npc_label', '–')} | {r['mode']} | {b['calls']} | "
                    f"{o['VALID_FIRST_TRY']} / {o['VALID_AFTER_REPAIR']}{' (' + str(b['salvaged']) + ' salvaged)' if b.get('salvaged') else ''} | "
                    f"{o['TIMEOUT_AT_MODEL']} / {o['TIMEOUT_IN_QUEUE']} | "
@@ -578,11 +580,15 @@ TARGET_FALLBACK_WITH_NPC = 0.10   # with an NPC model (LIVE; LIVE_LOAD reported 
 
 
 def fallback_share(r: dict) -> tuple[int | None, int | None]:
-    """(fallback decisions, decisions) of Robot R in a live row; from the G3f breakdown where there is one."""
+    """(fallback decisions, decisions) of Robot R in a live row; from the G3f breakdown where there is one.
+    Decisions held by FN-1 (G3h, D-110) are not failures and are left out."""
     b = r.get("robot")
     if b:
-        return sum((b.get("fallbacks_by_reason") or {}).values()), b.get("decisions")
+        return sum(v for k, v in (b.get("fallbacks_by_reason") or {}).items() if k != "FN1_HELD"), b.get("decisions")
     return None, None
+
+
+STRESS_MODES = ("LIVE_LOAD",)   # G3h (owner, 2026-11-21): a stress test, reported, not judged
 
 
 def target_lines(live: list[dict], f, pooled: dict[int, str]) -> list[str]:
@@ -591,12 +597,14 @@ def target_lines(live: list[dict], f, pooled: dict[int, str]) -> list[str]:
     rows = [r for r in live if r["mode"] in ("LIVE", "LIVE_LOAD") and id(r) not in pooled]
     if not rows:
         return []
-    out = ["", f"### Target (G3g, D-87): Robot R p95 < {TARGET_P95_MS} ms and fallback decisions (timeouts + unusable "
+    out = ["", f"### Target (D-87, D-110): Robot R p95 < {TARGET_P95_MS} ms and fallback decisions (timeouts + unusable "
            f"answers, each a WAIT) <= {TARGET_FALLBACK_ALONE:.0%} alone, <= {TARGET_FALLBACK_WITH_NPC:.0%} with an NPC "
-           "model (LIVE, LIVE_LOAD; pooled rows left out)", "",
-           "| Robot R model | NPC model | Mode | Robot R p95 ms | Robot R fallback decisions | Robot R timeouts (calls) | "
-           "Salvaged answers | Target | G3f target (timeouts <= 5%) | NPC timeouts |",
-           "|---|---|---|---|---|---|---|---|---|---|"]
+           "model, judged in LIVE; LIVE_LOAD is a stress test, reported, not judged (owner, 2026-11-21). Decisions held "
+           "by FN-1 are counted apart, not as failures. Pooled rows left out", "",
+           "| Robot R model | NPC model | Mode | Robot R p95 ms | Robot R fallback decisions | Held by FN-1 | "
+           "Activities dropped (actions kept) | Robot R timeouts (calls) | Salvaged answers | Target | "
+           "G3f target (timeouts <= 5%) | NPC timeouts |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         share = r["timeouts"] / r["decisions"] if r["decisions"] else None
         g3f = r["p95_ms"] is not None and r["p95_ms"] < TARGET_P95_MS and share is not None and share <= TARGET_TIMEOUT_SHARE
@@ -605,10 +613,18 @@ def target_lines(live: list[dict], f, pooled: dict[int, str]) -> list[str]:
         limit = TARGET_FALLBACK_ALONE if alone else TARGET_FALLBACK_WITH_NPC
         fshare = fb / dec if fb is not None and dec else None
         met = None if fshare is None else (r["p95_ms"] is not None and r["p95_ms"] < TARGET_P95_MS and fshare <= limit)
-        salvaged = (r.get("robot") or {}).get("salvaged")
+        b = r.get("robot") or {}
+        salvaged = b.get("salvaged")
+        held = b.get("held_by_fn1", (b.get("fallbacks_by_reason") or {}).get("FN1_HELD")) if b else None
+        drops = sum((b.get("activity_dropped") or {}).values()) if b else None
+        if r["mode"] in STRESS_MODES:
+            verdict, g3f_cell = "stress: reported, not judged", "–"
+        else:
+            verdict, g3f_cell = ("–" if met is None else ("met" if met else "NOT met")), ("met" if g3f else "NOT met")
         out.append(f"| {r['label']}{cond_text(r)} | {r.get('npc_label', '–')} | {r['mode']} | {f(r['p95_ms'])} | "
-                   f"{'–' if fb is None else f'{fb}/{dec} ({pct(fshare)})'} | {r['timeouts']}/{r['decisions']} ({pct(share)}) | "
-                   f"{f(salvaged)} | {'–' if met is None else ('met' if met else 'NOT met')} | {'met' if g3f else 'NOT met'} | "
+                   f"{'–' if fb is None else f'{fb}/{dec} ({pct(fshare)})'} | {f(held)} | {f(drops)} | "
+                   f"{r['timeouts']}/{r['decisions']} ({pct(share)}) | "
+                   f"{f(salvaged)} | {verdict} | {g3f_cell} | "
                    f"{f(r.get('npc_timeouts'))}/{f(r.get('npc_calls'))} |")
     return out
 
@@ -621,20 +637,27 @@ def diagnosis_lines(rows: list[dict]) -> list[str]:
            "Each folder is split run by run (the pre-G3f harness appended later runs to a folder's records). "
            "Counts and timings only.", "",
            "| Folder | Run | Model / NPC | Calls | Valid 1st / repaired | Timeouts model / queue | Invalid (kinds) | "
+           "Activity rules: rejected / dropped (G3h) | Held by FN-1 | "
            "Queue / prefill / gen p50 ms | Gen p95 ms | Prompt tok p50 (context p50) | Cache share | Gen tok p50 / p95 / max | "
            "Other busy (timeouts) | NPC calls (timeouts) |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         o = r["outcomes"]
         kinds = ", ".join(f"{k} {v}" for k, v in r["invalid_kinds"].items()) or "–"
+        rules = (", ".join(f"{k} {v}" for k, v in (r.get("activity_rules_rejected") or {}).items()) or "–") + " / " + \
+            (", ".join(f"{k} {v}" for k, v in (r.get("activity_dropped") or {}).items()) or "–")
         out.append(f"| {r['run_dir']} | {r['segment']}/{r['segments']} | {f(r.get('model'))} / {f(r.get('npc_model'))} | "
                    f"{r['calls']} | {o['VALID_FIRST_TRY']} / {o['VALID_AFTER_REPAIR']} | {o['TIMEOUT_AT_MODEL']} / "
-                   f"{o['TIMEOUT_IN_QUEUE']} | {o['INVALID_OUTPUT']} ({kinds}) | {f(r['queue_ms_p50'])} / "
+                   f"{o['TIMEOUT_IN_QUEUE']} | {o['INVALID_OUTPUT']} ({kinds}) | {rules} | {f(r.get('held_by_fn1'))} | "
+                   f"{f(r['queue_ms_p50'])} / "
                    f"{f(r['prefill_ms_p50'])} / {f(r['generation_ms_p50'])} | {f(r['generation_ms_p95'])} | "
                    f"{f(r['prompt_tokens_p50'])} ({f(r['context_tokens_p50'])}) | {f(r['cache_share'])} | "
                    f"{f(r['generated_tokens_p50'])} / {f(r['generated_tokens_p95'])} / {f(r['generated_tokens_max'])} | "
                    f"{f(r['other_server_busy_share'])} ({f(r['other_server_busy_share_timeouts'])}) | "
                    f"{r['npc_calls']} ({r['npc_timeouts']}) |")
+    out += ["", "Activity rules (G3h, D-110): the kind of rule an answer's activity broke; *rejected* = the answer "
+            "was refused for it (before G3h), *dropped* = the activity was dropped and the actions kept. Kinds only, "
+            "no answer text."]
     return out
 
 

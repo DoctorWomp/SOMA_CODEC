@@ -172,10 +172,12 @@ def test_report_leaves_out_void_rows_and_marks_pooled_ones(tmp_path):
     assert "F3 c [SYSTEM_PREFIX, answer SHORT, GPU guard cap 0]" in text
     assert "### Robot R's calls: outcomes and where the time goes (G3f)" in text
     # G3g (D-87): the target table counts fallback decisions; G3f's timeout target stays as a column.
-    target = text[text.index("### Target (G3g"):]
+    # G3h (D-110, owner 2026-11-21): LIVE is judged; LIVE_LOAD is a stress test, reported, not judged;
+    # decisions held by FN-1 and activities dropped with the actions kept have their own columns.
+    target = text[text.index("### Target (D-87, D-110)"):]
     assert "F3 b" not in target
-    assert "| 3900.0 | 0/1 (0%) | 0/30 (0%) | 0 | met | met |" in target           # with the G3f breakdown
-    assert "| 3500.0 | – | 1/30 (3%) | – | – | met |" in target                    # no breakdown: not judged
+    assert "| 3900.0 | 0/1 (0%) | 0 | 0 | 0/30 (0%) | 0 | stress: reported, not judged | – |" in target
+    assert "| 3500.0 | – | – | – | 1/30 (3%) | – | – | met |" in target           # no breakdown: not judged
 
 
 def test_numbers_are_not_printed_as_percentages():

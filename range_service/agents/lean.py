@@ -44,8 +44,19 @@ OUTPUT_FORMAT_LEAN = (
     'Answer with one JSON object only, on one line: {"actions": [{"action": "...", "args": {...}}]} with 1 to 3 actions. '
     'A SPEAK, GESTURE or EXPRESS may add "commitment": "what you promise" or "fulfills_commitment": true. '
     'Your OPEN promises are listed under COMMITMENTS with an id. When an action keeps one (you now help, answer or '
-    'greet the person you promised), add "fulfills_commitment": true to that action.'
+    'greet the person you promised), add "fulfills_commitment": true to that action. '
+    'People are named by handles (P1, P2, ...). Leave out "channel" when it is LOCAL and any id that would be null; '
+    'coordinates to one decimal.'
 )
+# G3h (D-112): the argument shapes LEAN shows (the rest as guardrails.ACTION_SHAPES): no channel when LOCAL,
+# no "or null" ids (leave them out).
+LEAN_SHAPES = {
+    "SPEAK": '{"text": "...", "addressee_id": track}',
+    "GESTURE": '{"gesture": one of your gestures, "target_id": track}',
+    "EXPRESS": '{"expression_id": one of your expressions, "target_id": track}',
+    "YIELD": '{"to_id": track}',
+    "REQUEST_CLARIFICATION": '{"text": "...", "addressee_id": track}',
+}
 ACTIVITY_FORMAT_LEAN = (
     'After the actions you may add "activity": {"kind": CONVERSE|WAIT_FOR|ATTEND|SURVEY|TRAVEL_TO|ASSIST|OBSERVE|'
     'RETURN_TO_POST|REST, "target_id": track (default: the person your actions name), "review_s": s, "within_m": m, '
@@ -57,11 +68,12 @@ ACTIVITY_FORMAT_LEAN = (
 
 def schema_part(targets: tuple[str, ...] | None, max_review_s: int) -> dict[str, Any]:
     """The compact activity in a LEAN constrained answer (all fields but ``kind`` optional)."""
-    target: dict[str, Any] = {"anyOf": [{"enum": list(targets)}, {"type": "null"}]} if targets else {"type": "null"}
+    # G3h (D-112): a target is a person or left out (no null); with nobody perceived there is none to offer.
+    target: dict[str, Any] | None = {"enum": list(targets)} if targets else None
     if targets is None:
-        target = {"anyOf": [{"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"}, {"type": "null"}]}
+        target = {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"}
     return {"type": "object", "additionalProperties": False, "required": ["kind"],
-            "properties": {"kind": {"enum": list(PALETTE)}, "target_id": target,
+            "properties": {"kind": {"enum": list(PALETTE)}, **({"target_id": target} if target else {}),
                            "commitment_id": {"type": "string", "pattern": "^mem_[A-Za-z0-9_]{1,56}$"},
                            "review_s": {"type": "integer", "minimum": 5, "maximum": max_review_s},
                            "within_m": {"type": "number", "minimum": 0.5, "maximum": 30},
@@ -104,29 +116,61 @@ def expand_activity(lean: Any, actions: Any) -> Any:
     return full
 
 
+CHANNEL_ACTIONS = ("SPEAK",)          # actions whose channel defaults to LOCAL (D-112)
+POINT_KEYS = ("destination", "point")  # coordinates, to one decimal (D-112)
+
+
+def fill_defaults(actions: Any) -> Any:
+    """G3h (D-112): what a LEAN answer leaves out, filled in as the runtime reads it: SPEAK's
+    ``channel`` is LOCAL when absent; coordinates are kept to one decimal. Ids left out stay absent
+    (absent and null mean the same: nobody). Anything else as given."""
+    if not isinstance(actions, list):
+        return actions
+    for a in actions:
+        if not isinstance(a, dict) or not isinstance(a.get("args"), dict):
+            continue
+        args = a["args"]
+        if a.get("action") in CHANNEL_ACTIONS and "channel" not in args:
+            args["channel"] = "LOCAL"
+        for key in POINT_KEYS:
+            pt = args.get(key)
+            if isinstance(pt, dict):
+                for axis, v in pt.items():
+                    if isinstance(v, float):
+                        pt[axis] = round(v, 1)
+    return actions
+
+
 def expand(text: str) -> str:
-    """A LEAN answer's text with its compact activity written out in full; any other text as given."""
+    """A LEAN answer's text as the runtime reads it: its compact activity written out in full and
+    the defaults it left out filled in (D-112); any text that is not a JSON object as given."""
     body = text.strip()
     fenced = _FENCE.match(body)
     try:
         data = json.loads(fenced.group(1) if fenced else body)
     except ValueError:
         return text
-    if not isinstance(data, dict) or not isinstance(data.get("activity"), dict):
+    if not isinstance(data, dict):
         return text
-    data["activity"] = expand_activity(data["activity"], data.get("actions"))
+    if "actions" in data:
+        data["actions"] = fill_defaults(data["actions"])
+    if isinstance(data.get("activity"), dict):
+        data["activity"] = expand_activity(data["activity"], data.get("actions"))
     return json.dumps(data)
 
 
 def rewrite_prompt(prompt: str, answer: str, activity: bool) -> str:
     """An offline prompt (written with the FULL answer format) as Robot R would get it under
     ``answer`` (FULL, SHORT, LEAN) with or without the activity format (pulse on). Only the
-    answer-format lines change; the rest of the prompt is the same text."""
-    from .guardrails import ACTIVITY_FORMAT, OUTPUT_FORMAT   # noqa: PLC0415
+    answer-format lines change (with LEAN also the argument shapes it shows, D-112); the rest of the
+    prompt is the same text. Handles (D-111) are applied by the caller (tools/bakeoff.py)."""
+    from .guardrails import ACTION_SHAPES, ACTIVITY_FORMAT, OUTPUT_FORMAT   # noqa: PLC0415
 
     out = prompt
     if answer == "LEAN":
         out = out.replace(OUTPUT_FORMAT, OUTPUT_FORMAT_LEAN, 1)
+        for action, shape in LEAN_SHAPES.items():                  # G3h (D-112)
+            out = out.replace(f"\n{action} {ACTION_SHAPES[action]}\n", f"\n{action} {shape}\n", 1)
     has = ACTIVITY_FORMAT in out or ACTIVITY_FORMAT_LEAN in out
     if activity and not has:
         line = ACTIVITY_FORMAT_LEAN if answer == "LEAN" else ACTIVITY_FORMAT
