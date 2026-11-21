@@ -188,7 +188,7 @@ def test_t17_agents_keep_private_memories(tmp_path):
             await ws.send(envelope("link.heartbeat", {}))
             await asyncio.wait_for(ws.recv(), 2)
         await sidecar.stop()
-        return json.loads((tmp_path / "agent_memory.json").read_text())
+        return json.loads((tmp_path / "agent_memory.json").read_text(encoding="utf-8"))
     memory = run(go())
     legged, quad = memory["robot_legged"], memory["robot_quadruped"]
     assert len(legged) == 1 and legged[0]["scope"] == "ONE_TO_ONE" and legged[0]["shared_by"] == "anon_visitor0001"

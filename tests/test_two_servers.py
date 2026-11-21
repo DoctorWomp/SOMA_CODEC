@@ -51,7 +51,7 @@ PROMPT = PREFIX + "\n\n## COMMITMENTS\n(none open)\n\n## DECISION\nTime now: 12s
 def setup_env(tmp_path, monkeypatch):
     repo = str(Path(__file__).resolve().parent.parent)
     binary = tmp_path / "llama-server"
-    binary.write_text(FAKE_SERVER.format(python=sys.executable, repo=repo))
+    binary.write_text(FAKE_SERVER.format(python=sys.executable, repo=repo), encoding="utf-8")
     binary.chmod(0o755)
     files = {}
     for name in ("focal_model", "npc_model", "broken_npc"):
@@ -112,7 +112,7 @@ def test_option_c_two_servers_robot_on_focal_npcs_on_npc_server(setup_env):
     assert settings["vram.estimate_total_mib"] > 0
     # Both server logs exist, and neither holds a key.
     for name in ("focal", "npc"):
-        log = (tmp / "run" / f"llama_server_{name}.log").read_text()
+        log = (tmp / "run" / f"llama_server_{name}.log").read_text(encoding="utf-8")
         assert "--slot-save-path" in log if name == "npc" else "--slot-save-path" not in log
         assert iset.focal.provider.api_key not in log
 

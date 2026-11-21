@@ -114,7 +114,7 @@ def test_replay_from_a_file(tmp_path):
     recorded = robot(gateway=ModelGateway(FakeModel()))
     step(recorded, Scene().see(X, 15, 8.5).hear(X, "Where is the demo?").packet())
     path = tmp_path / "decision_records.jsonl"
-    path.write_text("".join(json.dumps(r) + "\n" for r in recorded.records))
+    path.write_text("".join(json.dumps(r) + "\n" for r in recorded.records), encoding="utf-8")
     for record in recorded.records:
         assert contracts.problems("decision_record", record) == []
     replayed = robot(gateway=gateway_from_spec(f"replay:{path}"))

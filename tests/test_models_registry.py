@@ -106,7 +106,7 @@ def test_scan_registers_files_in_place_and_matches_the_catalog(tmp_path):
     report = reg.scan(tmp_path / "lmstudio", registry, catalog)
     registry.save()
     assert len(report["added"]) == 2 and len(report["skipped"]) == 1 and len(report["unreadable"]) == 1
-    saved = yaml.safe_load((tmp_path / "registry.local.yaml").read_text())
+    saved = yaml.safe_load((tmp_path / "registry.local.yaml").read_text(encoding="utf-8"))
     by_id = {f["local_id"]: f for f in saved["files"]}
     assert by_id["qwen35_9b_q4km"]["path"] == known.resolve().as_posix()          # used in place, not copied
     assert by_id["qwen35_9b_q4km"]["catalog_id"] == "qwen35_9b_q4km"
@@ -237,7 +237,7 @@ def test_installer_deletes_a_windows_download_that_does_not_match_its_pin(tmp_pa
 def test_installer_checks_recorded_hashes(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(install_llama, "INSTALL_DIR", tmp_path)
     monkeypatch.setattr(install_llama, "RECORDED", tmp_path / "recorded_hashes.json")
-    (tmp_path / "recorded_hashes.json").write_text('{"llama-b12443-bin-ubuntu-x64.tar.gz": "' + "0" * 64 + '"}')
+    (tmp_path / "recorded_hashes.json").write_text('{"llama-b12443-bin-ubuntu-x64.tar.gz": "' + "0" * 64 + '"}', encoding="utf-8")
 
     def fake_download(url, dest):
         dest.write_bytes(b"tampered")
