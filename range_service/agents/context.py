@@ -295,7 +295,9 @@ class ContextAssembler:
 
     def assemble(self, *, guardrails: str, identity: Identity, memory: AgentMemory, ws: WorkingSet,
                  setting: list[str], goal: str, triggers: list[str], participants: set[str], topics: set[str],
-                 audience: disclosure.Audience) -> Assembled:
+                 audience: disclosure.Audience, rename: Any = None) -> Assembled:
+        """``rename`` (G3h, D-111): applied to every line before it is counted and fitted, so the
+        budget counts the text the model sees (Robot R's handles under LEAN: agents/handles.py)."""
         budgets = BUDGETS[self.tier]
         steps: set[str] = set()
         if any(s.place_since_ms < ws.now_ms for s in ws.tracks.values()):
@@ -326,6 +328,9 @@ class ContextAssembler:
             "OBSERVATIONS": _Section("OBSERVATIONS", observations, summary=lambda n: f"(+{n} others in view, no interaction)"),
             "DECISION": _Section("DECISION", [decision]),
         }
+        if rename is not None:
+            for name in SECTIONS:                       # in prompt order, so handles follow first appearance
+                sections[name].lines = [rename(line) for line in sections[name].lines]
         texts: dict[str, str] = {}
         stats: dict[str, dict[str, int]] = {}
         cut_reasons: list[dict[str, Any]] = []

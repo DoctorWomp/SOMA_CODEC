@@ -465,7 +465,7 @@ From the owner's results.md, diagnosis.md and soak_summary.json (llama.cpp b1244
 - **GPU memory:** peak 15.3–15.9 GB of 16.4 GB with F3 + N3, about 4.3 GB of it not the models, so Windows' system-memory fallback may have inflated contention (a baseline rerun after freeing ~4 GB was attached).
 - **Soak (real models, 21 simulated minutes, 303 decisions, 54 fallbacks):** visitor_y's C1 context reached 824 tokens against its 780 budget; raw heard speech still growing below its cap (Robot R 13 / 22 / 26 / 32 of 40). Both are G3g item 5 (D-88).
 
-## G3g — Lean answers (draft PR; D-84 to D-89 PROPOSED)
+## G3g — Lean answers (merged, DoctorWomp/SOMA_CODEC#30; owner decisions 2026-11-21 on D-84 to D-89: see DECISIONS.md)
 
 **Owner direction (2026-11-20):** measure what each field of Robot R's answer costs before changing it; a LEAN answer as a named condition; salvage cut-off answers whose actions are complete; a target that counts fallbacks; the C1 budget bug from the soak; the GPU guard for real decisions only; VRAM hygiene; the NPC-table label bug; the decisions index and a check for it. Owner steps: [G3g_OWNER_CHECKLIST.md](G3g_OWNER_CHECKLIST.md).
 
@@ -498,6 +498,69 @@ From the owner's results.md, diagnosis.md and soak_summary.json (llama.cpp b1244
 - **Journals** (each scenario three times, one with random sidecar delays): **every scenario byte-identical to main**: SB-04 `50048b7e3d42`, SB-05 `3ef2e2e0e63c`, SB-06 `b5b29006cad4`, SB-07 `a486ddb7a471`, SB-08 `f1f631e031c1`, SB-10 `ab5964d77f57`, SB-04 with fake-model NPCs `a7854d66f268` (and replayed), SB-06 with the fake model `f7b4d221a195` (and replayed), SB-09 `09a8d071f381`. Nothing in G3g changes what the world sees with the fake model: LEAN is off by default, the fake model never stops at the cap, and the context fix only acts when a prompt is over its budget (no section was cut in any of the soak's 256 assembled contexts).
 - **Soak** (`tools/soak.py`, fake model, stepped): OK. 263 decisions, 0 fallbacks; prompt tokens (now the whole prompt, headers included) Robot R largest 2188 of 3750, visitor C1 734–736 and 679–700 of 780, C2 up to 1520 of 1900; raw heard Robot R 11 / 23 / 24 / 22 / 20 (cap 40). On the owner's real-model soak summary the new rules would turn the raw-heard growth (32 of 40) and visitor_y's C2 growth (1570 of 1900) into NOTEs, and keep the C1 824 > 780 a failure, which D-88 now prevents at assembly.
 - **Needs the owner's PC** ([G3g_OWNER_CHECKLIST.md](G3g_OWNER_CHECKLIST.md)): `bakeoff.py tokens` with F3 and F1 (FULL and SHORT); LEAN vs FULL offline for F3 and F1; F3 + N3 live with LEAN (LIVE, LIVE_LOAD), alone, and with the guard at cap 1 in both hold settings; F1 + N3 with LEAN; a real-model soak. The decisions to make with those numbers: D-84 to D-89.
+
+### G3g result (owner's PC, 2026-11-21)
+
+From the owner's results.md, diagnosis.md and soak_summary.json (llama.cpp b12443, prompts_v3 `8b47570792f2`, three real-time runs per live row).
+
+**Offline, Robot R's prompts (56):**
+
+| Model | Condition | Final valid | Promises flag / behavior | Generated tokens p50 / p95 | At the cap (salvaged) | Largest fields |
+|---|---|---|---|---|---|---|
+| F3 | FULL | 100% | 60% / 100% | 115 / 173 | 1 (1) | args 38%, reason 28% |
+| F3 | FULL, activity offered | 96% | 80% / 90% | 151 / 200 | 13 (10) | args 41%, reason 19%, space 10% |
+| F3 | **LEAN, activity offered** | **100%** | **80% / 100%** | **119 / 131** | **0** | **args 55% (60 tokens)**, actions 20%, speech 13% |
+| F1 | FULL | 100% | 40% / 90% | 169 / 200 | 4 (4) | reason 39%, args 35% |
+| F1 | LEAN, activity offered | 100% | **0% / 80%** | 135 / 181 | 0 | args 45%, actions 18% |
+
+**Live (SB-04, Robot R calls; fallbacks are decisions that ended in WAIT):**
+
+| Robot R | NPC | Condition | Mode | Calls | Timeouts | Invalid (kinds) | Fallbacks | p95 ms | D-87 target |
+|---|---|---|---|---|---|---|---|---|---|
+| F3 | N3 | FULL | LIVE | 49 | 11 | 0 (3 salvaged) | 11/49 (22%) | 4007 | NOT met |
+| F3 | N3 | LEAN | LIVE | 56 | 10 | 9 (ACTIVITY_RULE 8, FN1_RULE 1) | 19/56 (34%) | 4002 | NOT met |
+| F3 | none | LEAN | LIVE | 40 | 0 | 6 (ACTIVITY_RULE 5, FN1_RULE 1) | 6/40 (15%) | 2625 | NOT met |
+| F3 | N3 | LEAN, guard cap 1 | LIVE | 55 | 7 | 3 (ACTIVITY_RULE 3) | 10/55 (18%) | 3939 | NOT met |
+| F3 | N3 | LEAN, guard cap 1, decisions only | LIVE | 49 | 3 | 13 (ACTIVITY_RULE 8, FN1_RULE 5) | 16/49 (33%) | 3950 | NOT met |
+| F1 | N3 | LEAN | LIVE | 54 | 0 | 10 (ACTIVITY_RULE 9, FN1_RULE 1; 6 repaired) | 4/48 (8%) | 2246 | **met** |
+| F1 | N3 | LEAN | LIVE_LOAD | 55 | 2 | 14 (ACTIVITY_RULE 13, FN1_RULE 1) | 14/53 (26%) | 3403 | (stress) |
+
+- **Freeing VRAM did not change timeouts:** other programs held 2.8 GB before the servers started and 2.6 GB stayed free with both; F3 FULL + N3 LIVE still had 22% timeouts. Contention is compute, not memory.
+- **F3 LEAN offline:** 100% valid, promises 80% flag / 100% behavior, nothing cut off, but generated tokens p50 119 (target 70); args are 55% of its tokens (60 per answer).
+- **F3 LEAN live:** ACTIVITY_RULE failures turned valid answers into WAITs (8 of 56 calls with N3; 5 of 40 alone, where every fallback was a rule failure and none a timeout). G3h item 1 (D-110).
+- **F1 LEAN + N3 met the LIVE target** (p95 2246 ms, 0 timeouts, 8% fallbacks) but kept promises badly offline (0% flag / 80% behavior), **so F3 stays** (D-79).
+- **The real-model soak passed** (233 decisions, 25 fallbacks; visitor_x's largest C1 context 765 of 780, a NOTE).
+- **Owner decisions (2026-11-21):** D-84, D-86, D-87, D-88 approved; D-85 approved as F3's default once G3h item 1 is built and its offline check passes; D-89 stays an option, the guard off; acceptance is judged in normal LIVE runs, LIVE_LOAD reported as a stress test.
+
+## G3h — The new LEAN default for F3 (draft PR; D-110 to D-114 PROPOSED)
+
+**Owner direction (2026-11-21):** an invalid activity never costs the actions; short track handles and other argument compaction, each measured first; prompts_v4 if the prompts change; speculative decoding investigated only. Owner steps: [G3h_OWNER_CHECKLIST.md](G3h_OWNER_CHECKLIST.md). Decision numbers D-110 onward (a parallel G4a session uses D-90 to D-109).
+
+| # | What | Decision | Proof (cloud) |
+|---|---|---|---|
+| 0 | Owner decisions on D-84 to D-89 recorded; acceptance judged in LIVE, LIVE_LOAD a stress report | D-87 | `tests/test_activity_drop.py`, `tests/test_focal_conditions.py` |
+| 1 | An invalid activity is dropped, the actions kept, the rule recorded; FN-1 holds counted apart; diagnose reports rule kinds | D-110 | `tests/test_activity_drop.py` (reproduced, failing on main) |
+| 2 | Tokens per track id measured (F3 and F1 tokenizers); handles P1, P2, ... for Robot R under LEAN | D-111 | `tests/test_handles.py`; measurement below |
+| 3 | Defaults left out of LEAN answers; coordinates to one decimal; measured | D-112 | `tests/test_handles.py`; measurement below |
+| 4 | prompts_v4; F3 and F1 offline on it in the cloud (plumbing) | D-113 | `tests/test_bakeoff.py`; the plumbing run below |
+| 5 | Speculative decoding for F3: tokenizer and VRAM from GGUF headers (investigation only) | D-114 | below |
+
+### Result
+
+- **Built:** items 0–6 (D-110 to D-114; D-114 is an investigation and a proposal, nothing built). One defect reproduced first (an invalid activity cost the actions, D-110). Found while building: `--focal-answer LEAN` on prompts_v3 rewrote only the format line, so it now applies the full LEAN rewrite (shapes, handles) and both sets measure the same LEAN; and llama-server b12443 needs `--spec-type draft-simple` for a draft model (the default is `none`) and has removed `--draft-max`.
+- **Item 2, measured first** (cloud: llama-server b12443 built from the pinned commit; the catalog's F3 and F1 files; their own tokenizers via `/tokenize`; the Demo policy's 28 prompts_v3 answers that name someone, 2.7 ids each):
+
+| Tokenizer | Tokens per id (key and value; with a handle) | ids per answer (share of all / of argument tokens) | Answer tokens: as written → handles → + defaults left out → + one decimal |
+|---|---|---|---|
+| F3 (Gemma 4) | 18 (11) | 22.7 of 110 (21% / 33%) | 110.4 → 93.1 → 88.0 → 88.0 |
+| F1 (Qwen3.5) | 17 (10) | 21.0 of 106 (20% / 34%) | 105.6 → 90.1 → 84.9 → 84.9 |
+
+  Ids are a large share, so handles were built (D-111); defaults left out save about 5 more tokens (D-112); one decimal saved nothing here (D-112 keeps it as a rule and the `numbers` field will show F3's real numbers). Applied to F3's measured LEAN answers (p50 119), the projection is roughly 95–100 tokens: likely still above the 70 target.
+- **Item 4, prompts_v4** `7cc7a7cc27b8` (100 prompts: 59 Robot R as LEAN sends them, with handles; 41 NPC). **Cloud plumbing run** (CPU, 4 cores, `--limit 2`: two Robot R and two NPC prompts per model; F3 and F1 the real catalog files): every answer valid (2/2 Robot R, 2/2 NPC, both models); Robot R named people only by handle (`"addressee_id": "P1"`), left out the channel, and its answers were read back to anonymous ids and passed the offline gate; generated tokens 101 and 107 (F3), 76 and 111 (F1); ids 5 (F3) and 4 (F1) tokens per answer. F3 wrote three actions in both (TURN_TO, SPEAK, EXPRESS). Plumbing only: two prompts say nothing about rates or promises.
+- **Item 5, speculative decoding** (D-114): S1 and N1 share F3's vocabulary exactly (GGUF headers, compared token by token); S1 would put about 1.34 GB of weights on the GPU (its 2.15 GB of input embeddings stay in host RAM in b12443), about 1.6–2.0 GB in all, inside the ~2.6 GB left free but most of Godot's reserve; N1 does not fit. On a CPU with three prompts_v4 prompts: answers identical with and without the draft (3 of 3), draft acceptance 47%, 246 of 315 generated tokens from the draft. Estimated about 1.3x faster generation on the GPU (not measured). A proposal for the owner.
+- **Journals:** JOURNALS_PLACEHOLDER
+- **Soak:** SOAK_PLACEHOLDER
+- **Needs the owner's PC** ([G3h_OWNER_CHECKLIST.md](G3h_OWNER_CHECKLIST.md)): F3 and F1 offline on prompts_v4 with LEAN (the targets: final valid ≥ 98%, promises ≥ 80% / 95%, generated tokens p50 ≤ 70); FULL on prompts_v3 with the activity offered, for comparison; F3 + N3 in LIVE (judged) and LIVE_LOAD (stress) with LEAN; F3 alone in LIVE; `diagnose`. If the offline targets are met, LEAN becomes F3's default (D-85). A decision on D-114.
 
 ## Out of scope for G3
 

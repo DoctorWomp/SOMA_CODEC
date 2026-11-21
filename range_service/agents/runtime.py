@@ -48,7 +48,8 @@ from .ambient import AmbientDisplay
 from .pulse import Digest, Event, IntentMonitor, Presence, Pulse, Survey, is_closing, voice_key
 from .cognition import FAR_FROM_FOCAL_M, LEVELS, NEAR_FOCAL_M, CognitionLevel, Signals
 from .context import OUTPUT_CAPS, Assembled, ContextAssembler, Identity, ago
-from .gateway import ModelGateway
+from .gateway import ActivityDropped, ModelGateway
+from .handles import HandleMap
 from .memory import AgentMemory
 from .policy_demo import NpcTemplatePolicy, Proposal, RobotDemoPolicy, RoutinePolicy, is_farewell
 from .tokenizer import ApproxTokenizer, Tokenizer
@@ -105,6 +106,7 @@ class DecisionJob:
     started_at: float = 0.0               # time.monotonic() when the job was made: the decision deadline counts from here (D-63)
     now_ms: int = 0                       # simulated time of the observation it is based on
     sources: list[str] = field(default_factory=list)   # who or what triggered it (tracks, voices), for metrics (D-65)
+    handles: Any = None                   # G3h (D-111): the agent's HandleMap when this prompt uses handles
 
 
 class AgentRuntime:
@@ -149,6 +151,7 @@ class AgentRuntime:
         self.pending = False
         self.records: list[dict[str, Any]] = []
         self.prompts: list[dict[str, str]] = []       # assembled contexts, for leak checks and the viewer
+        self.handles: HandleMap | None = None          # G3h (D-111): observer-local handles, made on first use
         self.results: dict[str, dict[str, Any]] = {}
         self.stats = {"decisions": 0, "requests": 0, "fallbacks": 0, "replans": 0, "rejected": 0, "skipped_pending": 0}
         self._queued: list[str] = []
@@ -622,7 +625,10 @@ class AgentRuntime:
         return (f"you are in a conversation with {partner}: before moving away, say a closing or excuse line "
                 f"to {partner} first in the same answer (for example \"Excuse me, I need to go\"), or stay with them")
 
-    def _answer_check(self, actions: list[dict[str, Any]], activity: dict[str, Any] | None) -> str | None:
+    def _answer_check(self, actions: list[dict[str, Any]], activity: dict[str, Any] | None) -> Any:
+        """The runtime's policy check of an answer: None, an error (FN-1: the answer is refused and
+        repaired, or held), or ActivityDropped (G3h, D-110): the optional activity broke a rule, so
+        the gateway drops it and keeps the actions; the runtime then derives one (D-61)."""
         if activity is not None:
             _, error = activities.parse(activity, now_ms=self.ws.now_ms,
                                         default_review_s=self.pulse_cfg["pulse"]["default_review_after_s"],
@@ -630,7 +636,7 @@ class AgentRuntime:
                                         open_commitments={c["memory_id"] for c in self.memory.open_commitments()},
                                         perceived={t for t in self.ws.tracks if self.ws.visible(t)})
             if error:
-                return error
+                return ActivityDropped(activities.rule_of(error), error)
         return self._fn1_problem(actions, activity)
 
     def _set_activity(self, job: DecisionJob, proposals: list[Proposal],
@@ -676,6 +682,14 @@ class AgentRuntime:
         return chosen.record()
 
     # ---------- persona prefixes, pre-warming and promotion latency (G3c-1; T5, T6) ----------
+
+    def _handles_for(self, tier: str, policy: str) -> HandleMap | None:
+        """G3h (D-111): Robot R's prompts and answers use handles under the LEAN answer format."""
+        if policy != "MODEL" or tier != "FOCAL" or self.answer_condition() != "LEAN":
+            return None
+        if self.handles is None:
+            self.handles = HandleMap()
+        return self.handles
 
     def answer_condition(self) -> str:
         """Robot R's answer condition on its gateway (FULL, SHORT, LEAN; G3f D-77, G3g D-85)."""
@@ -838,12 +852,13 @@ class AgentRuntime:
             goal = self._goal_text()
             if self.pulse is not None:
                 goal += "\n" + self.sitrep()
+            handles = self._handles_for(tier, policy)
             assembled = assembler.assemble(
                 guardrails=guardrails.guardrails_section(tier, self.allowed_actions, self.body, self.expressions,
                                                          activity=self.pulse is not None, answer=self.answer_condition()),
                 identity=self.identity, memory=self.memory, ws=self.ws, setting=self.setting, goal=goal,
                 triggers=[t.lower().replace("_", " ") for t in triggers], participants=participants, topics=topics,
-                audience=disclosure.audience_from_packet(packet))
+                audience=disclosure.audience_from_packet(packet), rename=handles.rename if handles else None)
         rule = self._rule_policy(policy)
         proposals = rule.decide(self, triggers)
         demo_hint = None
@@ -857,6 +872,11 @@ class AgentRuntime:
         choices = self.answer_choices() if policy == "MODEL" else None
         if choices is not None and self.pulse is not None:
             choices["activity"] = self.pulse_cfg["pulse"]["max_review_after_s"]
+        handles = self._handles_for(tier, policy) if tier != "C0" else None
+        if handles is not None and choices is not None:
+            # G3h (D-111): the model names people by handle; the answer is mapped back before anything leaves.
+            choices["targets"] = [handles.handle(x) for x in choices["targets"]]
+            demo_hint = handles.rename(demo_hint) if demo_hint else demo_hint
         if self.pulse is not None and policy == "MODEL" and set(triggers) <= IDLE_WORK_TRIGGERS and \
                 (self.activity is None or self.activity.kind in activities.IDLE_KINDS):
             # The idle budget caps attempted work (G3d, D-67): debited when the job is admitted,
@@ -864,7 +884,8 @@ class AgentRuntime:
             self.pulse.model_reviews_at.append(self.ws.now_ms)
             self._log("IDLE_DEBIT", decision_id=decision_id, triggers=triggers)
         return DecisionJob(decision_id, self.ws.tick, triggers, policy, tier, self.cognition.level, assembled,
-                           proposals, demo_hint, prefix_key, choices, started_at=time.monotonic(), now_ms=self.ws.now_ms)
+                           proposals, demo_hint, prefix_key, choices, started_at=time.monotonic(), now_ms=self.ws.now_ms,
+                           handles=handles if policy == "MODEL" else None)
 
     async def decide(self, job: DecisionJob) -> list[dict[str, Any]]:
         """Answer a job: returns the action requests to send. Model calls happen here."""
@@ -895,14 +916,18 @@ class AgentRuntime:
                     if self.npc_model or getattr(self.gateway, "prompt_layout", "ONE_MESSAGE") == "SYSTEM_PREFIX" else None,
                     choices=job.choices, background=job.triggers == ["PULSE_REVIEW"],
                     check=self._answer_check if self.pulse is not None else None, started_at=job.started_at,
-                    evidence_ms=job.now_ms)
+                    evidence_ms=job.now_ms, handles=job.handles)
                 model_calls, fallback = result.model_calls, result.fallback
                 proposals = [_proposal_from_model(a, self.memory, self.conversation) for a in result.actions]
                 self._answer_activity = result.activity
+                if result.activity_dropped is not None:
+                    self._log("ACTIVITY_DROPPED", rule=result.activity_dropped["rule"], decision_id=job.decision_id)
                 if fallback is not None and self.pulse is not None and "conversation with" in (result.fallback_error or ""):
-                    # FN-1: the repair also walked away without a word. Stay engaged instead.
+                    # FN-1: the repair also walked away without a word. Stay engaged instead. Recorded as
+                    # held by FN-1 (G3h, D-110): the right outcome, not a failure.
                     partner = self.conversation.partner
                     proposals = [Proposal("LOOK_AT", {"target_id": partner}), Proposal("WAIT", {"duration_ms": 1000})]
+                    fallback = {"action": "WAIT", "reason": "FN1_HELD"}
                     self._log("FN1_HELD", partner=partner, how="model answer replaced after one repair")
             requests = self._emit(job, proposals, model_calls, fallback)
             if job.policy == "MODEL":
@@ -1025,6 +1050,8 @@ class AgentRuntime:
             entry = {"decision_id": job.decision_id, "prompt": job.assembled.prompt}
             if job.choices is not None:
                 entry["choices"] = job.choices
+            if job.handles is not None:
+                entry["handles"] = job.handles.snapshot()     # G3h (D-111): handle -> anonymous id (evaluator view)
             self.prompts.append(entry)
         return requests
 

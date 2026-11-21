@@ -65,7 +65,7 @@ Each technique with its effect, cost and when to use it.
 | While it thinks | Fast-lane nonverbal cue (T11); speech streamed (T10) |
 | Output | Schema-constrained action (T9) |
 | Not allowed in trials | Response cache (T15); mid-run model changes (T18) |
-| Optional, measured | KV quantization (T8), speculative decoding (T17) |
+| Optional, measured | KV quantization (T8), speculative decoding (T17; G3h investigated it for F3 from GGUF headers: S1, Gemma 4 E2B, shares F3's tokenizer exactly and would fit in the VRAM left free, D-114, not built) |
 | Fairness | Record queue time, prefill tokens, cached tokens and generation time per call, per arm. HORIZON arms may send longer or shorter prompts; report it rather than hide it. |
 | Sharing the GPU (G3f) | Option C's two servers share one GPU: Robot R's misses came from that contention (D-75). Measured conditions, off until the owner's PC decides: the persona prefix as a system message (D-76), shorter answers (D-77), and the focal-first GPU guard, which holds new NPC calls while a Robot R call is in flight (D-78). G3g: the LEAN answer (D-85), salvage (D-86, on), the guard for real decisions only (D-89); the target counts fallback decisions (D-87) |
 
