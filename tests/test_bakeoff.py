@@ -158,12 +158,12 @@ def test_report_writes_markdown_and_json(tmp_path):
                          "promotion_warm_to_call_p50_ms": 4000, "promotion_warm_call_p50_ms": 600,
                          "promotion_cold_to_call_p50_ms": 9000, "promotion_cold_call_p50_ms": 900}]}
     j, m = bk.write_report(results, tmp_path)
-    text = m.read_text()
+    text = m.read_text(encoding="utf-8")
     assert "## Offline prompt set: Robot R prompts" in text and "## Offline prompt set: NPC prompts" in text
     assert "| N3 Qwen3.5-4B | Q4_K_M | q8_0 | 1 | 100% |" in text and "3100" in text
     assert "| F3 Gemma 4 12B Q4_0 | N3 | LIVE_LOAD | 1 | C | yes | 9 | 900.0 / 1500 | 9 / 0 | 30 (2) | " \
            "700.0 / 5 / 300 / 380 | 40% | 12.5 | 4000 / 600 / 650.0 (2) | 9000 / 900 / 1200.0 (1) | 8700 / 3600 |" in text
-    assert json.loads(Path(j).read_text())["offline"][0]["vram_mib"] == 3100
+    assert json.loads(Path(j).read_text(encoding="utf-8"))["offline"][0]["vram_mib"] == 3100
 
 
 # ---------- regression tests for the measurement bugs found in the first bake-off (2026-11-17, D-58) ----------

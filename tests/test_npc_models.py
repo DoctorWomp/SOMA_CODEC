@@ -178,9 +178,9 @@ def test_llama_npc_model_choice(monkeypatch):
 def _run_dir(tmp: Path, prompts: list[dict], extra: dict[str, str] | None = None) -> Path:
     side = tmp / "sidecar"
     side.mkdir(parents=True)
-    (side / "prompts.jsonl").write_text("".join(json.dumps(p) + "\n" for p in prompts))
+    (side / "prompts.jsonl").write_text("".join(json.dumps(p) + "\n" for p in prompts), encoding="utf-8")
     for name, text in (extra or {}).items():
-        (tmp / name).write_text(text)
+        (tmp / name).write_text(text, encoding="utf-8")
     return tmp
 
 
@@ -212,7 +212,7 @@ def test_observer_filter_check_catches_tracks_an_agent_never_perceived(tmp_path)
                               {"agent_id": "visitor_y", "prompt": "robot_r is over there"}])
     packet = {"type": "world.observation", "payload": {"observer_id": "visitor_x",
                                                        "observations": [{"track_id": X_TRACK}]}}
-    (run / "sidecar" / "sidecar_received.jsonl").write_text(json.dumps(packet) + "\n")
+    (run / "sidecar" / "sidecar_received.jsonl").write_text(json.dumps(packet) + "\n", encoding="utf-8")
     found = canary.observer_filter_problems(run, ["robot_r", "visitor_x", "visitor_y"])
     assert any("never perceived" in f and "anon_zzzzzzzzzz" in f for f in found)
     assert any("names robot_r by its real id" in f for f in found)

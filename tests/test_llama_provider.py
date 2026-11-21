@@ -220,7 +220,7 @@ sys.exit(standin.main(["--port", port]))
 def test_server_process_lifecycle_and_key_hygiene(tmp_path):
     repo = str(Path(__file__).resolve().parent.parent)
     binary = tmp_path / "llama-server"
-    binary.write_text(FAKE_SERVER.format(python=sys.executable, repo=repo))
+    binary.write_text(FAKE_SERVER.format(python=sys.executable, repo=repo), encoding="utf-8")
     binary.chmod(0o755)
     model = tmp_path / "m.gguf"
     model.write_bytes(b"GGUF")
@@ -245,7 +245,7 @@ def test_server_process_lifecycle_and_key_hygiene(tmp_path):
         await provider.stop()                                               # idempotent: stops only ours
 
     asyncio.run(run())
-    text = log.read_text()
+    text = log.read_text(encoding="utf-8")
     assert "'--cache-type-k', 'q8_0'" in text and "'--reasoning', 'off'" in text and "'--host', '127.0.0.1'" in text
     assert server.api_key not in text                                       # never in the log
 
@@ -253,7 +253,7 @@ def test_server_process_lifecycle_and_key_hygiene(tmp_path):
 @pytest.mark.skipif(sys.platform == "win32", reason="the fake server binary is a POSIX script")
 def test_server_that_dies_while_loading_is_reported(tmp_path):
     binary = tmp_path / "llama-server"
-    binary.write_text(f"#!{sys.executable}\nimport sys\nprint('error: model file is damaged')\nsys.exit(3)\n")
+    binary.write_text(f"#!{sys.executable}\nimport sys\nprint('error: model file is damaged')\nsys.exit(3)\n", encoding="utf-8")
     binary.chmod(0o755)
     settings = ServerSettings("focal", tmp_path / "m.gguf", "m", "0" * 64, 1, 1024, "f16", "auto", "all")
     server = LlamaServer(binary, settings, tmp_path / "log.txt", startup_timeout_s=20)

@@ -127,13 +127,13 @@ def test_invalid_kinds(error, kind):
 def test_a_run_folder_is_cleared_of_an_earlier_run_and_only_of_what_a_run_writes(tmp_path):
     run = tmp_path / "run_F3_live_1"
     (run / "sidecar").mkdir(parents=True)
-    (run / "sidecar" / "decision_records.jsonl").write_text('{"a": 1}\n')
-    (run / "journal.jsonl").write_text("{}\n")
-    (run / "godot.log").write_text("x")
-    (run / "notes.txt").write_text("mine")
+    (run / "sidecar" / "decision_records.jsonl").write_text('{"a": 1}\n', encoding="utf-8")
+    (run / "journal.jsonl").write_text("{}\n", encoding="utf-8")
+    (run / "godot.log").write_text("x", encoding="utf-8")
+    (run / "notes.txt").write_text("mine", encoding="utf-8")
     removed = clear_previous_run(run)
     assert sorted(removed) == ["godot.log", "journal.jsonl", "sidecar"]
-    assert (run / "notes.txt").read_text() == "mine" and not (run / "sidecar").exists()
+    assert (run / "notes.txt").read_text(encoding="utf-8") == "mine" and not (run / "sidecar").exists()
     assert clear_previous_run(run) == [] and clear_previous_run(tmp_path / "missing") == []
 
 
@@ -141,7 +141,7 @@ def test_a_replay_source_inside_the_run_folder_is_never_cleared(tmp_path):
     run = tmp_path / "r"
     (run / "sidecar").mkdir(parents=True)
     src = run / "sidecar" / "decision_records.jsonl"
-    src.write_text("{}\n")
+    src.write_text("{}\n", encoding="utf-8")
     with pytest.raises(RunError, match="replay from a copy"):
         clear_previous_run(run, keep=(src,))
     assert src.is_file()
@@ -166,7 +166,7 @@ def test_report_leaves_out_void_rows_and_marks_pooled_ones(tmp_path):
               conditions={"prompt_layout": "SYSTEM_PREFIX", "answer": "SHORT", "gpu_guard": True, "npc_cap": 0},
               robot=live_diag.robot_breakdown([_rec("robot_r", 1, [_call()])]))]}
     _, m = bk.write_report(results, tmp_path)
-    text = m.read_text()
+    text = m.read_text(encoding="utf-8")
     assert "F3 old" not in text and "1 live row(s) from the pre-G3c-2 harness are left out" in text
     assert "| F3 b (POOLED: with F3+N3 LIVE) |" in text and "| F3 a | N3 | LIVE |" in text
     assert "F3 c [SYSTEM_PREFIX, answer SHORT, GPU guard cap 0]" in text

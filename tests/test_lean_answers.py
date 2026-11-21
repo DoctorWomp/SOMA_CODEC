@@ -307,7 +307,7 @@ def test_npc_table_rows_name_the_condition_of_their_run(tmp_path):
                 "agreement_kv": None}
     _, md = bk.write_report({"offline": [cond("ONE_MESSAGE", "FULL"), cond("SYSTEM_PREFIX", "SHORT")], "live": []},
                             tmp_path)
-    text = md.read_text()
+    text = md.read_text(encoding="utf-8")
     npc = text[text.index("NPC prompts"):]
     assert "| F3 Gemma 4 12B | " in npc
     assert "| F3 Gemma 4 12B [run with Robot R SYSTEM_PREFIX, SHORT; NPC prompts unchanged] |" in npc
