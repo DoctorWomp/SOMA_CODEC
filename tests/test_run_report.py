@@ -64,14 +64,15 @@ def test_run_report_counts_offered_accepted_latency_and_fn1(tmp_path):
            "model_calls": [{"outcome": "TIMEOUT", "timings": {"total_ms": 4000}}]}
     (tmp_path / "sidecar" / "decision_records.jsonl").write_text(json.dumps(rec) + "\n", encoding="utf-8")
     (tmp_path / "sidecar" / "delivery.jsonl").write_text(
-        json.dumps({"agent_id": "robot_r", "event": "DISCARDED"}) + "\n", encoding="utf-8")
+        json.dumps({"agent_id": "robot_r", "event": "DISCARDED", "reason": "TARGET_NOT_PERCEIVED"}) + "\n", encoding="utf-8")
     journal = [_say(1000, "visitor_x", "robot_r", "Where is the demo?"), _resolved(1200, "a1", "SPEAK"),
                _say(1200, "robot_r", "visitor_x", "On the platform."), _resolved(1300, "a2", "LOOK_AT"),
                _resolved(5000, "a3", "MOVE_TO"),                                        # left without a goodbye
                _say(9000, "robot_r", "visitor_x", "Excuse me, I need to go."), _resolved(9100, "a4", "MOVE_TO"),
                _resolved(9200, "a5", "SPEAK", accepted=False)]
     r = run_report(tmp_path, journal, ["robot_r"])["robot_r"]
-    assert r["actions"] == {"offered": 5, "accepted": 4, "refused": 1, "dropped_before_send": 1}
+    assert r["actions"] == {"offered": 5, "accepted": 4, "refused": 1, "dropped_before_send": 1,
+                            "dropped_before_send_by_reason": {"TARGET_NOT_PERCEIVED": 1}}
     assert r["response_latency_ms"]["p50"] == 200 and r["response_latency_ms"]["unanswered"] == 0
     assert r["model_calls"] == 1 and r["timeouts"] == 1 and r["fallbacks"] == {"TIMEOUT": 1}
     assert r["glances_accepted"] == 1

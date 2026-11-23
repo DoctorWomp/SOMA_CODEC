@@ -29,6 +29,13 @@ PRECISION = ["F32", "F16", "BF16", "Q8_0", "Q6_K", "Q5_K_M", "Q5_K_S", "Q5_0", "
 TRACK = re.compile(r"\banon_[a-z0-9]{10}\b")
 
 
+def _drops(b: dict) -> str:
+    """Answers dropped before sending, with why (G3 close-out): "28 (TARGET_NOT_PERCEIVED 20, ...)"."""
+    by = b.get("dropped_before_send_by_reason") or {}
+    reasons = ", ".join(f"{k} {v}" for k, v in by.items())
+    return f"{b['dropped_before_send']} ({reasons})" if reasons else str(b["dropped_before_send"])
+
+
 # ---------- signatures and offline checks ----------
 
 def signature(action: dict[str, Any]) -> str:
@@ -558,7 +565,7 @@ def robot_lines(live: list[dict], f) -> list[str]:
         out.append(f"| {r['label']}{cond_text(r)} | {r.get('npc_label', '–')} | {r['mode']} | {b['calls']} | "
                    f"{o['VALID_FIRST_TRY']} / {o['VALID_AFTER_REPAIR']}{' (' + str(b['salvaged']) + ' salvaged)' if b.get('salvaged') else ''} | "
                    f"{o['TIMEOUT_AT_MODEL']} / {o['TIMEOUT_IN_QUEUE']} | "
-                   f"{o['INVALID_OUTPUT']} ({kinds}) | {sum(b['fallbacks_by_reason'].values())} ({why}) | {b['dropped_before_send']} | "
+                   f"{o['INVALID_OUTPUT']} ({kinds}) | {sum(b['fallbacks_by_reason'].values())} ({why}) | {_drops(b)} | "
                    f"{f(b['queue_ms_p50'])} / {f(b['prefill_ms_p50'])} / {f(b['generation_ms_p50'])} | "
                    f"{f(b['prefill_ms_p95'])} / {f(b['generation_ms_p95'])} | {f(b['prompt_tokens_p50'])} / {f(b['prompt_tokens_p95'])} | "
                    f"{pct(b['cache_share'])} | {f(b['generated_tokens_p50'])} / {f(b['generated_tokens_p95'])} / "
@@ -637,10 +644,10 @@ def diagnosis_lines(rows: list[dict]) -> list[str]:
            "Each folder is split run by run (the pre-G3f harness appended later runs to a folder's records). "
            "Counts and timings only.", "",
            "| Folder | Run | Model / NPC | Calls | Valid 1st / repaired | Timeouts model / queue | Invalid (kinds) | "
-           "Activity rules: rejected / dropped (G3h) | Held by FN-1 | "
+           "Activity rules: rejected / dropped (G3h) | Held by FN-1 | Dropped before send (why) | "
            "Queue / prefill / gen p50 ms | Gen p95 ms | Prompt tok p50 (context p50) | Cache share | Gen tok p50 / p95 / max | "
            "Other busy (timeouts) | NPC calls (timeouts) |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         o = r["outcomes"]
         kinds = ", ".join(f"{k} {v}" for k, v in r["invalid_kinds"].items()) or "–"
@@ -649,7 +656,7 @@ def diagnosis_lines(rows: list[dict]) -> list[str]:
         out.append(f"| {r['run_dir']} | {r['segment']}/{r['segments']} | {f(r.get('model'))} / {f(r.get('npc_model'))} | "
                    f"{r['calls']} | {o['VALID_FIRST_TRY']} / {o['VALID_AFTER_REPAIR']} | {o['TIMEOUT_AT_MODEL']} / "
                    f"{o['TIMEOUT_IN_QUEUE']} | {o['INVALID_OUTPUT']} ({kinds}) | {rules} | {f(r.get('held_by_fn1'))} | "
-                   f"{f(r['queue_ms_p50'])} / "
+                   f"{_drops(r) if 'dropped_before_send' in r else '–'} | {f(r['queue_ms_p50'])} / "
                    f"{f(r['prefill_ms_p50'])} / {f(r['generation_ms_p50'])} | {f(r['generation_ms_p95'])} | "
                    f"{f(r['prompt_tokens_p50'])} ({f(r['context_tokens_p50'])}) | {f(r['cache_share'])} | "
                    f"{f(r['generated_tokens_p50'])} / {f(r['generated_tokens_p95'])} / {f(r['generated_tokens_max'])} | "

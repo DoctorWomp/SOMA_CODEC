@@ -21,6 +21,8 @@ numbers leave this module: never prompt or answer text.
 
 from __future__ import annotations
 
+from collections import Counter
+
 import json
 from pathlib import Path
 from typing import Any
@@ -150,8 +152,11 @@ def robot_breakdown(records: list[dict[str, Any]], delivery: list[dict[str, Any]
     timeouts = [c for c in calls if c.get("outcome") == "TIMEOUT"]
     t_busy = [c.get("other_server_busy_ms") for c in timeouts if c.get("other_server_busy_ms") is not None]
     t_total = [c["timings"]["total_ms"] or 0 for c in timeouts if c.get("other_server_busy_ms") is not None]
-    dropped_before_send = sum(1 for d in (delivery or []) if d.get("agent_id") == agent_id
-                              and d.get("event") in ("DISCARDED", "DROPPED"))
+    dropped = [d for d in (delivery or []) if d.get("agent_id") == agent_id and d.get("event") in ("DISCARDED", "DROPPED")]
+    dropped_before_send = len(dropped)
+    # G3 close-out (owner, 2026-11-23): why each answer was dropped before sending (D-63's relevance
+    # check: TARGET_NOT_PERCEIVED, SOMEONE_ELSE_ADDRESSING; or DECISION_DEADLINE_PASSED).
+    dropped_by_reason = Counter(str(d.get("reason") or "UNKNOWN") for d in dropped)
     return {
         "calls": len(calls), "decisions": len(recs), "decisions_pulse_review": len(pulse_recs),
         "outcomes": outcomes, "invalid_kinds": dict(sorted(invalid_kinds.items())), "invalid_not_repaired": not_repaired,
@@ -164,6 +169,7 @@ def robot_breakdown(records: list[dict[str, Any]], delivery: list[dict[str, Any]
         "fallbacks_by_reason": dict(sorted(fallbacks.items())),
         "timeouts_on_pulse_reviews": sum(1 for r in pulse_recs for c in r["model_calls"] if c.get("outcome") == "TIMEOUT"),
         "dropped_before_send": dropped_before_send,
+        "dropped_before_send_by_reason": dict(sorted(dropped_by_reason.items())),
         "queue_ms_p50": _pct(t("queue_ms"), 0.5), "queue_ms_p95": _pct(t("queue_ms"), 0.95),
         "prefill_ms_p50": _pct(t("prefill_ms"), 0.5), "prefill_ms_p95": _pct(t("prefill_ms"), 0.95),
         "generation_ms_p50": _pct(t("generation_ms"), 0.5), "generation_ms_p95": _pct(t("generation_ms"), 0.95),

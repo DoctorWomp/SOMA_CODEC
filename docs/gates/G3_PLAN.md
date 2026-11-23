@@ -1,6 +1,6 @@
 # G3 — Agent runtime
 
-**Status:** G3a COMPLETE (merged 2026-11-15) · G3b COMPLETE (G3b-1 and G3b-2 merged; D-57, D-58 APPROVED 2026-11-16; bake-off run on the owner's PC 2026-11-17) · G3c-1 COMPLETE (merged 2026-11-17; D-59 APPROVED 2026-11-17) · G3c-2 built 2026-11-18 (D-60, D-61 APPROVED 2026-11-19) · G3d built 2026-11-18 (D-63 to D-70 APPROVED 2026-11-19; D-62 PROPOSED): G3 complete pending the owner's PC results · **G3e (presence and expression) built 2026-11-18; D-71 APPROVED, D-72 to D-74 PROPOSED** · **G3f (Robot R on time under load) built 2026-11-19, draft PR; D-75 to D-83 PROPOSED; D-60, D-61, D-63 to D-70 APPROVED 2026-11-19** · owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md), [G3c-2](G3c2_OWNER_CHECKLIST.md), [G3d](G3d_OWNER_CHECKLIST.md), [G3e](G3e_OWNER_CHECKLIST.md), [G3f](G3f_OWNER_CHECKLIST.md)
+**Status:** **G3 COMPLETE (closed 2026-11-23).** G3a to G3h merged; the owner's G3h run met D-87's live target with F3 + N3 and LEAN answers, now F3's default (D-85). Still PROPOSED: D-62 and D-72 to D-74 (await the owner's G3e watch), D-114 (deferred until G4 measures rendering). Owner checks: [G3a](G3a_OWNER_CHECKLIST.md), [G3b](G3b_OWNER_CHECKLIST.md), [G3c-1](G3c_OWNER_CHECKLIST.md), [G3c-2](G3c2_OWNER_CHECKLIST.md), [G3d](G3d_OWNER_CHECKLIST.md), [G3e](G3e_OWNER_CHECKLIST.md), [G3f](G3f_OWNER_CHECKLIST.md), [G3g](G3g_OWNER_CHECKLIST.md), [G3h](G3h_OWNER_CHECKLIST.md)
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §4 (G3 row) · [INFERENCE_STRATEGY.md](../INFERENCE_STRATEGY.md) §7 steps 1–5 · [CONTEXT_MEMORY_STRATEGY.md](../CONTEXT_MEMORY_STRATEGY.md) §3–§5 and §11 steps 3–5 · [EXPRESSION_PRINCIPLES.md](../EXPRESSION_PRINCIPLES.md) §1 and §7 (G3 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §8 (directive templates) · Blueprint §10 (agent contracts, scheduler), §11 (memory), §18 (T18, T25–T27), §20 (G3 gate) · [DECISIONS.md](../DECISIONS.md) D-08, D-09, D-12, D-13, D-14, D-20, D-21, D-23, D-24, D-36, D-43–D-46
 
 ## Goal
@@ -532,7 +532,7 @@ From the owner's results.md, diagnosis.md and soak_summary.json (llama.cpp b1244
 - **The real-model soak passed** (233 decisions, 25 fallbacks; visitor_x's largest C1 context 765 of 780, a NOTE).
 - **Owner decisions (2026-11-21):** D-84, D-86, D-87, D-88 approved; D-85 approved as F3's default once G3h item 1 is built and its offline check passes; D-89 stays an option, the guard off; acceptance is judged in normal LIVE runs, LIVE_LOAD reported as a stress test.
 
-## G3h — The new LEAN default for F3 (draft PR; D-110 to D-114 PROPOSED)
+## G3h — The new LEAN default for F3 (merged, DoctorWomp/SOMA_CODEC#32; D-110 to D-113 APPROVED 2026-11-23, D-114 deferred)
 
 **Owner direction (2026-11-21):** an invalid activity never costs the actions; short track handles and other argument compaction, each measured first; prompts_v4 if the prompts change; speculative decoding investigated only. Owner steps: [G3h_OWNER_CHECKLIST.md](G3h_OWNER_CHECKLIST.md). Decision numbers D-110 onward (a parallel G4a session uses D-90 to D-109).
 
@@ -561,6 +561,31 @@ From the owner's results.md, diagnosis.md and soak_summary.json (llama.cpp b1244
 - **Journals:** every scenario byte-identical to main (each three times, one with random sidecar delays): SB-04 `50048b7e3d42`, SB-05 `3ef2e2e0e63c`, SB-06 `b5b29006cad4`, SB-07 `a486ddb7a471`, SB-08 `f1f631e031c1`, SB-10 `ab5964d77f57`, SB-04 with fake-model NPCs `a7854d66f268` (and replayed), SB-06 with the fake model `f7b4d221a195` (and replayed), SB-09 `09a8d071f381`. Expected: FULL stays the configured default; the fake model never writes an activity that breaks a rule, never leaves a conversation without a closing line, and handles exist only under LEAN.
 - **Soak:** `tools/soak.py` (fake model, stepped) OK: 263 decisions, 0 fallbacks; prompt tokens Robot R largest 2188 of 3750, visitor C1 679–736 of 780, C2 up to 1520 of 1900; raw heard Robot R 11 / 23 / 24 / 22 / 20 (cap 40); the same numbers as G3g.
 - **Needs the owner's PC** ([G3h_OWNER_CHECKLIST.md](G3h_OWNER_CHECKLIST.md)): F3 and F1 offline on prompts_v4 with LEAN (the targets: final valid ≥ 98%, promises ≥ 80% / 95%, generated tokens p50 ≤ 70); FULL on prompts_v3 with the activity offered, for comparison; F3 + N3 in LIVE (judged) and LIVE_LOAD (stress) with LEAN; F3 alone in LIVE; `diagnose`. If the offline targets are met, LEAN becomes F3's default (D-85). A decision on D-114.
+
+## G3 close-out (2026-11-23)
+
+**The owner's G3h run** (RTX 4070 Ti SUPER, 2026-11-22; prompts_v4 `7cc7a7cc27b8`; results.md, diagnosis.md, soak_summary.json):
+
+| Condition | Robot R fallback decisions | Robot R p95 | D-87 target |
+|---|---|---|---|
+| F3 FULL + N3, LIVE (G3g) | 11/49 (22%) | 4007 ms | not met |
+| **F3 LEAN + N3, LIVE** | **5/59 (8%)**, all timeouts; 5 activities dropped with the actions kept | **3941 ms** | **met** |
+| F3 LEAN alone, LIVE | 0/42 (1 held by FN-1) | 2935 ms | met |
+| F3 LEAN + N3, LIVE_LOAD (stress, reported only) | 3/45 (7%; 2 held by FN-1); was 24/36 (67%) with FULL | 3980 ms | not judged |
+| F1 LEAN + N3, LIVE (G3g) | 4/48 (8%) | 2246 ms | met (but promises 16% flag offline) |
+
+- **Offline, F3 LEAN on prompts_v4:** final valid 100%, promises 79% flag / 100% behavior, nothing at the cap, generated tokens p50 101 (the 70-token target, a speed proxy, is dropped: D-85). F1 LEAN: 100% valid, promises 16% flag / 100% behavior.
+- **Real-model soak (SB-09, LIVE, LEAN): OK**: 233 decisions, 25 fallbacks; memory and prompts bounded.
+- **VRAM:** other programs held 3.2–3.4 GB before the servers started this time, so free memory fell below the 2 GB reserve during some runs (the warning is D-87's). Close them before G4's rendering measurements.
+- **The owner's `check.py` failure** (`test_report_leaves_out_void_rows_and_marks_pooled_ones`, mojibake) was the G3h branch without DoctorWomp/SOMA_CODEC#31; on main it passes.
+
+**Owner decisions (2026-11-23):** D-85 APPROVED (LEAN is F3's default; the token target dropped); D-110 to D-113 APPROVED; D-114 deferred until G4 measures the rendered client's GPU cost.
+
+**Built at close-out:**
+- `configs/inference.yaml` `focal.answer: LEAN`.
+- **Why answers are dropped before sending.** F3 LEAN + N3 dropped 28 of Robot R's requests before sending (5 alone). The reason of each was already in `sidecar/delivery.jsonl` (D-63: TARGET_NOT_PERCEIVED, SOMEONE_ELSE_ADDRESSING, DECISION_DEADLINE_PASSED). It is now counted by reason in the live breakdown (`dropped_before_send_by_reason`), the run report, results.md's Robot R table and `bakeoff.py diagnose` (which also reads existing folders), so the next run says why.
+
+**Carried into G4 and later:** the drop reasons above (check them in the next live run or the G4a viewer); D-62 and D-72 to D-74 (the G3e watch); D-114 (speculative decoding, after G4's render measurements); rig step B (gaits).
 
 ## Out of scope for G3
 
