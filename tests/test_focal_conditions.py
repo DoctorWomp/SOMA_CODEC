@@ -105,12 +105,15 @@ def test_robot_breakdown_by_outcome_and_cost():
              fallback={"action": "WAIT", "reason": "TIMEOUT"}),
         _rec("visitor_x", 1, [_call("TIMEOUT")]),
     ]
-    b = live_diag.robot_breakdown(recs, [{"agent_id": "robot_r", "event": "DISCARDED"}, {"agent_id": "visitor_x", "event": "DISCARDED"}])
+    b = live_diag.robot_breakdown(recs, [{"agent_id": "robot_r", "event": "DISCARDED", "reason": "SOMEONE_ELSE_ADDRESSING"},
+                                         {"agent_id": "visitor_x", "event": "DISCARDED", "reason": "TARGET_NOT_PERCEIVED"}])
     assert b["calls"] == 6 and b["decisions"] == 5 and b["decisions_pulse_review"] == 1
     assert b["outcomes"] == {"VALID_FIRST_TRY": 1, "VALID_AFTER_REPAIR": 1, "TIMEOUT_IN_QUEUE": 1, "TIMEOUT_AT_MODEL": 1,
                              "INVALID_OUTPUT": 2, "PROVIDER_ERROR": 0, "OTHER": 0}
     assert b["invalid_kinds"] == {"FN1_RULE": 1, "TRUNCATED": 1} and b["invalid_not_repaired"] == 1
     assert b["fallbacks_by_reason"] == {"INVALID_OUTPUT": 1, "TIMEOUT": 2} and b["timeouts_on_pulse_reviews"] == 1
+    assert b["dropped_before_send_by_reason"] == {"SOMEONE_ELSE_ADDRESSING": 1}     # G3 close-out: why, per agent
+    assert bk._drops(b) == "1 (SOMEONE_ELSE_ADDRESSING 1)"
     assert b["dropped_before_send"] == 1 and b["at_output_cap"] == 1 and b["context_tokens_p95"] == 2400
     assert b["cache_share"] == round(1200 / 8000, 2) and b["other_server_busy_share_timeouts"] == round(3000 / 4005, 2)
 

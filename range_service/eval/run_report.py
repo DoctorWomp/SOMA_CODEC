@@ -20,6 +20,8 @@ Evaluator only; computed after a run from its own files, never fed back to an ag
 
 from __future__ import annotations
 
+from collections import Counter
+
 import asyncio
 import json
 import re
@@ -166,7 +168,10 @@ def run_report(run_dir: Path, journal: list[dict[str, Any]], agents: list[str]) 
             continue
         out[aid] = {
             "actions": {"offered": len(mine), "accepted": len(accepted), "refused": len(mine) - len(accepted),
-                        "dropped_before_send": sum(1 for d in delivery if d["agent_id"] == aid and d["event"] == "DISCARDED")},
+                        "dropped_before_send": sum(1 for d in delivery if d["agent_id"] == aid and d["event"] == "DISCARDED"),
+                        "dropped_before_send_by_reason": dict(sorted(Counter(
+                            str(d.get("reason") or "UNKNOWN") for d in delivery
+                            if d["agent_id"] == aid and d["event"] == "DISCARDED").items()))},
             "response_latency_ms": {"p50": _pct(lat, 0.5), "p95": _pct(lat, 0.95), "max": max(lat) if lat else None,
                                     "n": len(lat), "unanswered": unanswered},
             "model_calls": len(calls), "timeouts": sum(1 for c in calls if c["outcome"] == "TIMEOUT"),
