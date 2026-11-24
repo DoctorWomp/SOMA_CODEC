@@ -734,6 +734,19 @@ def director_checks(results: dict, marking: tuple) -> tuple[list[str], str]:
     iv = manifest.get("interventions") or {}
     if not iv.get("intervention_assisted") or manifest["tainted"] or iv.get("recipes") != ["director_tour"]:
         problems.append(f"director_tour manifest: {iv}, tainted {manifest['tainted']} (a recipe is a planned treatment)")
+    # D-102: the run saved as a recipe (tools/recipe.py) gives back the recipe it was played from.
+    from tools.recipe import recipe_from_run   # noqa: PLC0415
+    from range_service.configs import CONFIGS_DIR   # noqa: PLC0415
+    import yaml   # noqa: PLC0415
+
+    def _items(items: list) -> list:
+        return [(i["at_tick"], i["intervention_type"], i["operation"], i["target_id"],
+                 {k: round(float(v), 3) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+                  for k, v in i["args"].items()}) for i in items]
+    saved = recipe_from_run(tours["tour_a"].run_dir, "saved")["interventions"]
+    played = yaml.safe_load((CONFIGS_DIR / "recipes" / "director_tour.yaml").read_text(encoding="utf-8"))["interventions"]
+    if _items(saved) != _items(played):
+        problems.append("director_tour: the run saved as a recipe differs from the recipe it played (D-102)")
     prompts = [json.loads(x) for x in (tours["tour_a"].run_dir / "sidecar" / "prompts.jsonl").read_text(encoding="utf-8").splitlines()]
     robot = [p for p in prompts if p["agent_id"] == "robot_r"]
     new_dir = "Help visitors find places in the venue."
