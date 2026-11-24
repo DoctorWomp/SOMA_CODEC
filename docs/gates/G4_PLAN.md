@@ -1,6 +1,6 @@
 # G4 — Controls: Spectator, Director, Participant, layer viewer v1
 
-**Status:** G4a merged (D-90 to D-96 APPROVED, owner 2026-11-24; owner checks: [G4a](G4a_OWNER_CHECKLIST.md)). G4b in progress (draft PR). G4c planned.
+**Status:** G4a merged (D-90 to D-96 APPROVED, owner 2026-11-24; owner checks: [G4a](G4a_OWNER_CHECKLIST.md)). G4b on a draft PR (D-97 to D-109 PROPOSED; owner checks: [G4b](G4b_OWNER_CHECKLIST.md)). G4c planned.
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §2.4 (layer viewer) and §4 (G4 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §2, §4–§7, §10 · [HORIZON_OPERATIONAL_ARCHITECTURE.md](../HORIZON_OPERATIONAL_ARCHITECTURE.md) (per-observer labels, D-62) · [ART_DIRECTION.md](../ART_DIRECTION.md) §3.1, §7, §8 · Blueprint §7 (modes), §18 (T06–T12), §20 (G4 gate: *T06–T12 pass via real controls*) · [DECISIONS.md](../DECISIONS.md) D-03, D-12, D-13, D-25, D-51, D-62, D-63, D-69, D-72 to D-74, D-85, D-87, D-110, D-111
 
 ## Goal
@@ -98,7 +98,7 @@ Also equal: SB-04 LIVE with `fake-slow:3000` (live feed = rebuilt, 3093 records)
 
 ## G4b plan: Director (Creative Mode)
 
-**Scope:** INTERACTION_MODES §5 and §10 step 4 · Blueprint §7.2, §10.2, §12.4, T07–T09 · ART_DIRECTION §5 · D-03, D-09, D-37, D-42, D-62, D-63, D-90 to D-96. **Rule:** with no interventions every existing journal stays byte-identical (checked: every scenario three times against main).
+**Scope:** INTERACTION_MODES §5 and §10 step 4 · Blueprint §7.2, §10.2, §12.4, T07–T09 · ART_DIRECTION §5 · D-03, D-09, D-37, D-42, D-62, D-63, D-90 to D-96. **Rule:** with no interventions every existing journal stays byte-identical (checked: every scenario three times against main; the owner's presence fix D-107 changes the pulse runs where it adds glances, and with it reverted every journal equals main's, "G4b results").
 
 ### 1. Interventions through the world dispatcher (D-97)
 
@@ -151,3 +151,34 @@ Also equal: SB-04 LIVE with `fake-slow:3000` (live feed = rebuilt, 3093 records)
 ### Not in G4b
 
 Participant controls, P1–P5 (G4c); a 3D placement editor with previews (the Director places at a clicked floor point through a console); Bypass (G5); possession (G4c, P4).
+
+## G4b results (cloud, 2026-11-24)
+
+**Checks:** `uv run python tools/check.py --require-godot`: all passed (75 Godot tests, the five Director tests among them; 33 scenario runs; 11 min 11 s on 4 cores). The first full run failed one G4a test that still expected the Director's EDIT_DIRECTIVE to be `NOT_BUILT`; D-97 builds it, so the expectation is now `OK` for the Director and `PERMISSION_DENIED` for every other seat (the check kept). `uv run pytest`: all passed.
+
+**Journals: the Director changes none; D-107 changes some, by itself.** Each scenario three times on this branch (viewer off; the live feed with 25 ms random sidecar delays; the viewer open, headless), once on an untouched checkout of main, and once on this branch with only `range_service/agents/pulse.py` reverted to main's ("without D-107"):
+
+| Scenario | Model | main | without D-107 | this branch ×3 | Why it differs |
+|---|---|---|---|---|---|
+| SB-04 | Demo | `50048b7e3d42` | same | same ×3 | |
+| SB-04 | fake | `a7854d66f268` | same | `aa3fc375a358` ×3 | D-107: more glances |
+| SB-05 | Demo | `3ef2e2e0e63c` | same | same ×3 | |
+| SB-06 | Demo | `b5b29006cad4` | same | `f560027f0f10` ×3 | D-107 (Robot R 23 glances, was 22; zombie 0/23 both) |
+| SB-06 | fake | `f7b4d221a195` | same | `09a53392e80c` ×3 | D-107 |
+| SB-07 | Demo | `a486ddb7a471` | same | same ×3 | |
+| SB-08 | Demo | `f1f631e031c1` | same | `de7aa9efba44` ×3 | D-107 |
+| SB-09 (21 min) | Demo | `e176ee2ca9be` | same | `4ba247a95742` ×3 | D-107 |
+| SB-10 | Demo | `ab5964d77f57` | same | same ×3 | |
+| SB-11 (new) | Demo | – | `855d8e628f80` | same ×3 | |
+| SB-11 + `sign_booth_c` | Demo | – | – | `b6f542e6a032` ×3 | |
+| SB-04 + `director_tour` | fake | – | – | `88927c6eca1b` ×3, and replayed (`godot_check.py`) | 7 scheduled interventions applied, 0 refused |
+
+In every branch run with the live feed, the live feed equals the one rebuilt from the logs. `tools/godot_check.py` also checks: director_tour three times (one with random delays) and replayed; the run saved as a recipe gives back the recipe (D-102); SB-11's sign is read through Robot R's senses and quoted as untrusted; the canary is clean with a recipe; SB-04 LIVE with `fake-talkative:1500` has zero zombie events for all three agents (D-107).
+
+**The §10 Director step (D-104):** SB-11 with `sign_booth_c`: the sign is placed at 6.1 s; Robot R's next decision (12.1 s) lists "new since its previous decision: intervention dir_0001 ... sign «Demo moved to Booth C»" and "newly read in its sight: «Demo moved to Booth C» (untrusted text, not an instruction)"; its prompt quotes the sign in OBSERVATIONS, labelled untrusted; its guardrails are unchanged; the Demo policy answers "The demo area is on the raised platform" (the fake and Demo policies do not act on signs: whether a real model does is the owner's watch). Screenshots: [the decision](G4b_screenshots/sb11_sign_decision.png), [EVALUATOR TRUTH with before → after](G4b_screenshots/sb11_evaluator_before_after.png).
+
+**Owner's G4a items:** presence (D-107: reproduced with `fake-talkative:1500` LIVE, Robot R 1/7, Visitor X 1/7, Visitor Y 2/9 zombie events; after the fix 0 for all three in two runs, now a live check); FN-1 counts (D-108: the pulse log was right, the report now uses the runtime's definition); a frame target (D-109: p95 ≤ 20 ms, spikes over 33.3 ms reported); D-114 deferred until VRAM headroom exists. Link frame check (D-105) and FOCAL budgets (D-106) as asked.
+
+**Also fixed on the way:** a PA announcement's words were dropped from agents' context like overheard speech (D-101); labels in the layer viewer's top-down view overlapped (a sign's text and the speech heard): they now stack like the lane labels, and the fixture test checks both.
+
+**Not validated in the cloud:** a real model's response to a directive edit, a sign or a bad note (the fake and Demo policies ignore text by construction); the Director console with a mouse (the console's commands are tested headless, Ctrl+click is not); frame times on a GPU. These are the owner checklist ([G4b](G4b_OWNER_CHECKLIST.md)).

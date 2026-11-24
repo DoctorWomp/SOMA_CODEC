@@ -1404,7 +1404,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
   3. **The 8 s per-source cooldown** also swallowed a new utterance from someone glanced at recently.
 - **Fix:** a speaker keeps its partner in gaze (holds renewed while speaking) and still glances at someone else (then returns within 1 s, as before); speech and voices are discrete events and bypass the cooldown (movement keeps it); a source not glanced at yet stays pending for 1 s and gets the next free glance. After: zero zombie events for all three agents in the same runs.
 - **Regression checks:** `tests/test_pulse.py` (a speaker holds its partner's gaze and glances at someone else; two arrivals both glanced within 1 s; a new utterance glanced within the cooldown); **live:** `tools/godot_check.py` runs SB-04 LIVE with `fake-talkative:1500` and requires zero zombie events for every agent.
-- **Journals change** for runs with the pulse on (more glances: SB-06, SB-07, SB-08, SB-10 and the fake-model runs; G4_PLAN "G4b results" lists them). Runs without the pulse (SB-04 and SB-05 with the Demo policy) do not.
+- **Journals change** where the new glances happen (measured, G4_PLAN "G4b results"): SB-04 with the fake model, SB-06 (Demo and fake), SB-08 and SB-09. Unchanged: SB-04 and SB-05 with the Demo policy, SB-07, SB-10. With only this file reverted, every journal equals main's: the change is this decision's alone.
 
 ## D-108 — The FN-1 counts agree: the run report uses the runtime's definition
 **Status:** PROPOSED (2026-11-24), owner's G4a checklist item 11.

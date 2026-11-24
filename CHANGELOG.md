@@ -25,7 +25,7 @@ All notable changes, by gate. Dates are when the work was done.
 
 ### Changed
 - Frame target p95 ≤ 20 ms at the 60 FPS cap, spikes over 33.3 ms reported (D-109; was 16.7 ms, D-69).
-- Journals of runs with the pulse on (more glances, D-107); every other journal unchanged, and the Director changes none without interventions (G4_PLAN "G4b results").
+- Journals where D-107's new glances happen: SB-04 (fake model), SB-06, SB-08, SB-09; every other journal unchanged, and without D-107 every journal equals main's: the Director changes none without interventions (G4_PLAN "G4b results").
 
 ## G4a — Permissions, Spectator and the layer viewer v1 (2026-11-24; merged)
 

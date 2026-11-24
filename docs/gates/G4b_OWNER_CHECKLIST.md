@@ -3,7 +3,7 @@
 **Gate:** G4b ([G4_PLAN.md](G4_PLAN.md) "G4b plan" and "G4b results"). **Decisions:** D-97 to D-109 (PROPOSED); your 2026-11-24 approval of D-90 to D-96 is recorded in DECISIONS.md; D-114 is now deferred until VRAM headroom exists.
 **What is new:** a Director seat that can change the run while it plays, through the world dispatcher and journaled (D-97): Robot R's or an NPC's directive, goal and persona sliders (D-98); props, barriers, signs, notes and sound sources, with placement rules and navigation for every body size (D-99); signs and sounds reach agents only through their senses (D-100); PA announcements and an NPC told to say something, all as untrusted text (D-101); recipes that schedule the same interventions again (D-102); intervention markers in the layer viewer (D-103); SB-11, a sign at the info desk (D-104). Also from your G4a checklist: presence in live runs (D-107), the FN-1 counts (D-108), a frame target (D-109).
 
-**Journals:** with no interventions, the Director changes no journal. The presence fix (D-107) does change the runs that have the pulse on (more glances); G4_PLAN "G4b results" lists which, and why.
+**Journals:** with no interventions, the Director changes no journal (checked: the branch with only the presence fix reverted gives main's journal in every scenario). The presence fix (D-107) changes SB-04 with the fake model, SB-06, SB-08 and SB-09 (more glances); G4_PLAN "G4b results" has the table.
 
 Everything below is on your PC. Close what holds GPU memory first (OWNER_SETUP_WINDOWS.md "GPU memory").
 
