@@ -192,6 +192,9 @@ def check_options(opts: RunOptions, cs: ConfigSet) -> dict[str, Any]:
 
 
 def godot_command(opts: RunOptions, scenario: dict[str, Any], run_dir: Path, port: int, seed: int) -> list[str]:
+    # Godot runs with --path godot_app, so a relative path would land inside godot_app/ (owner's PC,
+    # 2026-11-24: `--out runs\g4a_cost_off` gave "Godot wrote no journal"). Hand it absolute paths.
+    run_dir = Path(run_dir).resolve()
     # RANGE plays no sound yet: the dummy audio driver avoids audio-device errors on machines without one.
     cmd = [opts.godot, "--path", str(GODOT_PROJECT), "--audio-driver", "Dummy", *opts.godot_args]
     if not opts.headless:
@@ -489,7 +492,7 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     seed = scenario["default_seed"] if opts.seed is None else opts.seed
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     run_id = f"{opts.scenario_id.lower()}_{seed}_{stamp}"
-    run_dir = opts.out_dir or (REPO / "runs" / run_id)
+    run_dir = Path(opts.out_dir).resolve() if opts.out_dir else (REPO / "runs" / run_id)
     keep = tuple(Path(spec.split(":", 1)[1]) for spec in (opts.model, opts.npc_model) if spec.startswith("replay:"))
     cleared = clear_previous_run(run_dir, keep)
     if cleared:

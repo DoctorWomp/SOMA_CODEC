@@ -53,14 +53,14 @@ func _ready() -> void:
 	title.name = "Title"
 	title.text = TITLE
 	title.add_theme_color_override("font_color", BORDER)
-	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_font_size_override("font_size", UiStyle.fs(15))
 	box.add_child(title)
 	body = RichTextLabel.new()
 	body.name = "Body"
 	body.bbcode_enabled = false
 	body.scroll_active = true
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_font_size_override("normal_font_size", 12)
+	body.add_theme_font_size_override("normal_font_size", UiStyle.fs(12))
 	box.add_child(body)
 	refresh()
 

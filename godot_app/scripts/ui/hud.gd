@@ -37,7 +37,7 @@ func _ready() -> void:
 	_panel.add_theme_stylebox_override("panel", style)
 	label = Label.new()
 	label.add_theme_color_override("font_color", Color("#e6eef2"))
-	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_font_size_override("font_size", UiStyle.fs(15))
 	_panel.add_child(label)
 	add_child(_panel)
 
