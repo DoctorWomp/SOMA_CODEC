@@ -190,6 +190,7 @@ class Pulse:
 
 # ---------- loop 2: presence ----------
 
+PENDING_GLANCE_MS = 1000       # G4b (D-107): a source not glanced at yet waits at most this long
 ARRIVAL_LOOK_WITHIN_MS = 20_000     # G3f (SB-10): speech to it at most this long ago gets a look on arrival
 
 
@@ -209,6 +210,9 @@ class Presence:
         # standing body may turn for a target beyond the neck (D-72).
         self.deferred: dict[str, Any] | None = None
         self.was_en_route = False
+        # G4b (D-107): sources not glanced at yet (one glance per packet): {"source", "why", "at_ms",
+        # "point"}; each gets the next free glance while it is fresh (PENDING_GLANCE_MS).
+        self.pending: list[dict[str, Any]] = []
 
     def step(self, *, now_ms: int, ws: Any, perceived: Any, heard: list[dict[str, Any]], partner: str | None,
              speaking_until_ms: int, activity: Activity | None, can_look: bool,
@@ -253,33 +257,53 @@ class Presence:
         for track in perceived.new_tracks:
             if (ws.tracks[track].range_m or 99) <= self.range_m:
                 sources.append((track, "movement"))
-        if not speaking:
-            for track, why in sources:
-                # Already looking at it only while the world still holds the last LOOK_AT (G3d, D-65);
-                # it used to count as looked at forever after one glance.
-                held = track == self.gaze_target and now_ms - self.gaze_since_ms < WORLD_LOOK_HOLD_MS
-                if held or now_ms - self.last_glance.get(track, -10**9) < self.cooldown_ms:
-                    continue
-                self.last_glance[track] = now_ms
-                out.append(("LOOK_AT", {"point": voices[track]} if track in voices else {"target_id": track}))
-                events.append(Event("GLANCE", now_ms, {"target": track, "why": why}))
-                if en_route and track in to_me:
-                    self.deferred = {"args": out[-1][1], "source": track, "at_ms": now_ms}
-                self.gaze_target, self.gaze_since_ms = track, now_ms
-                if partner is not None and track != partner:
-                    self.return_at_ms = now_ms + self.return_ms
-                break
+        # G4b (D-107), three changes found with the owner's live run (zombie time with F3):
+        # - its own speech no longer silences the presence loop: a speaker still glances at someone
+        #   else (then returns to its partner, below); its partner is already held in gaze;
+        # - a new utterance is a discrete event (HORIZON_OPERATIONAL_ARCHITECTURE): speech and voices
+        #   are glanced at even within the per-source cooldown, which now applies to movement only;
+        # - one glance per packet, but a source not glanced at yet stays pending for
+        #   PENDING_GLANCE_MS and gets the next free glance (two people arriving together).
+        for track, why in sources:
+            if not any(p["source"] == track for p in self.pending):
+                self.pending.append({"source": track, "why": why, "at_ms": now_ms, "point": voices.get(track)})
+        self.pending = [p for p in self.pending if now_ms - p["at_ms"] <= PENDING_GLANCE_MS
+                        and (p["point"] is not None or ws.visible(p["source"]))]
+        for p in list(self.pending):
+            track, why = p["source"], p["why"]
+            if speaking and track == partner:
+                self.pending.remove(p)
+                continue
+            # Already looking at it only while the world still holds the last LOOK_AT (G3d, D-65);
+            # it used to count as looked at forever after one glance.
+            held = track == self.gaze_target and now_ms - self.gaze_since_ms < WORLD_LOOK_HOLD_MS
+            cooling = why == "movement" and now_ms - self.last_glance.get(track, -10**9) < self.cooldown_ms
+            if held or cooling:
+                self.pending.remove(p)
+                continue
+            self.pending.remove(p)
+            self.last_glance[track] = now_ms
+            out.append(("LOOK_AT", {"point": p["point"]} if p["point"] is not None else {"target_id": track}))
+            events.append(Event("GLANCE", now_ms, {"target": track, "why": why}))
+            if en_route and track in to_me:
+                self.deferred = {"args": out[-1][1], "source": track, "at_ms": now_ms}
+            self.gaze_target, self.gaze_since_ms = track, now_ms
+            if partner is not None and track != partner:
+                self.return_at_ms = now_ms + self.return_ms
+            break
         if not out and partner is not None and ws.visible(partner):
             if self.return_at_ms is not None and now_ms >= self.return_at_ms:
                 out.append(("LOOK_AT", {"target_id": partner}))
                 events.append(Event("GAZE_RETURN", now_ms, {"target": partner}))
                 self.gaze_target, self.gaze_since_ms, self.return_at_ms = partner, now_ms, None
-            elif self.gaze_target != partner and self.return_at_ms is None and not speaking:
-                out.append(("LOOK_AT", {"target_id": partner}))          # soft, steady gaze while listening
+            elif self.gaze_target != partner and self.return_at_ms is None:
+                out.append(("LOOK_AT", {"target_id": partner}))          # soft, steady gaze, listening or speaking
                 events.append(Event("GAZE_PARTNER", now_ms, {"target": partner}))
                 self.gaze_target, self.gaze_since_ms = partner, now_ms
-            elif self.gaze_target == partner and now_ms - self.gaze_since_ms >= self.hold_ms and not speaking:
-                out.append(("LOOK_AT", {"target_id": partner}))          # renew the hold (the world holds 3 s)
+            elif self.gaze_target == partner and now_ms - self.gaze_since_ms >= self.hold_ms:
+                # Renew the hold (the world holds 3 s), also while it speaks: a speaker keeps looking at
+                # whom it talks to (D-107; until G4b the hold lapsed during its own long lines).
+                out.append(("LOOK_AT", {"target_id": partner}))
                 events.append(Event("GAZE_HOLD", now_ms, {"target": partner}))   # logged: gaze intervals (G3d)
                 self.gaze_since_ms = now_ms
         idle = activity is not None and activity.kind in IDLE_KINDS and partner is None

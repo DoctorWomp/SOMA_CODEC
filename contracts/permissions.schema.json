@@ -27,7 +27,7 @@
     "capabilities": {
       "type": "object",
       "propertyNames": {"$ref": "#/$defs/capability"},
-      "required": ["ACT_IN_WORLD", "EDIT_DIRECTIVE", "WORLD_CHANGE", "TRIGGER_EVENT", "POSSESS", "BYPASS_LAYER",
+      "required": ["ACT_IN_WORLD", "EDIT_DIRECTIVE", "WORLD_CHANGE", "TRIGGER_EVENT", "INFLUENCE", "INSPECT_AGENT", "POSSESS", "BYPASS_LAYER",
                    "TIME_CONTROL", "PAUSE", "SELECT_AVATAR", "CAMERA_FREE", "CAMERA_ORBIT", "CAMERA_FOLLOW",
                    "CAMERA_POV", "VIEW_WORLD", "VIEW_SENSOR", "VIEW_LAYERS", "VIEW_EVALUATOR_TRUTH"],
       "additionalProperties": {
@@ -61,7 +61,7 @@
   },
   "$defs": {
     "principal": {"enum": ["SPECTATOR", "DIRECTOR", "PARTICIPANT", "EVALUATOR", "AGENT", "HOST"]},
-    "capability": {"enum": ["ACT_IN_WORLD", "EDIT_DIRECTIVE", "WORLD_CHANGE", "TRIGGER_EVENT", "POSSESS",
+    "capability": {"enum": ["ACT_IN_WORLD", "EDIT_DIRECTIVE", "WORLD_CHANGE", "TRIGGER_EVENT", "INFLUENCE", "INSPECT_AGENT", "POSSESS",
                             "BYPASS_LAYER", "TIME_CONTROL", "PAUSE", "SELECT_AVATAR", "CAMERA_FREE", "CAMERA_ORBIT",
                             "CAMERA_FOLLOW", "CAMERA_POV", "VIEW_WORLD", "VIEW_SENSOR", "VIEW_LAYERS",
                             "VIEW_EVALUATOR_TRUTH"]}

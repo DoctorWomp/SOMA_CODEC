@@ -42,8 +42,7 @@
       "grants": {
         "DIRECTOR": "ANY"
       },
-      "built": false,
-      "gate": "G4b",
+      "built": true,
       "logged_for": [
         "DIRECTOR"
       ]
@@ -53,8 +52,7 @@
       "grants": {
         "DIRECTOR": "ANY"
       },
-      "built": false,
-      "gate": "G4b",
+      "built": true,
       "logged_for": [
         "DIRECTOR"
       ]
@@ -64,10 +62,31 @@
       "grants": {
         "DIRECTOR": "ANY"
       },
-      "built": false,
-      "gate": "G4b",
+      "built": true,
       "logged_for": [
         "DIRECTOR"
+      ]
+    },
+    "INFLUENCE": {
+      "about": "Plant information through plausible channels (ENVIRONMENTAL_INFLUENCE, SOCIAL_INFLUENCE): a note or sign, a PA announcement, an NPC told to say something",
+      "grants": {
+        "DIRECTOR": "ANY"
+      },
+      "built": true,
+      "logged_for": [
+        "DIRECTOR"
+      ]
+    },
+    "INSPECT_AGENT": {
+      "about": "Read an agent's editable directive, goal and persona sliders (private agent state, operator only)",
+      "grants": {
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY"
+      },
+      "built": true,
+      "logged_for": [
+        "DIRECTOR",
+        "EVALUATOR"
       ]
     },
     "POSSESS": {

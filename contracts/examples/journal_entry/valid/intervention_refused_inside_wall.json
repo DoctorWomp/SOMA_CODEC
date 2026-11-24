@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "seq": 412,
+  "tick_id": 366,
+  "sim_time_ms": 6100,
+  "kind": "INTERVENTION",
+  "actor_id": null,
+  "payload": {
+    "status": "REFUSED",
+    "reason": "INSIDE_WALL",
+    "request": {
+      "request_id": "req_0003",
+      "operator": "director",
+      "intervention_type": "ENVIRONMENTAL_INFLUENCE",
+      "operation": "PLACE_PROP",
+      "target_id": null,
+      "args": {
+        "prop_type": "SIGN",
+        "x": 10.0,
+        "z": 9.0,
+        "yaw_rad": 0.0,
+        "text": "Demo moved to Booth C"
+      },
+      "pre_scheduled": false
+    },
+    "intervention": null
+  }
+}

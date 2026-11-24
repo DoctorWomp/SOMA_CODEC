@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "recipe_id": "sign_booth_c",
+  "about": "A sign \"Demo moved to Booth C\" in front of Robot R at 6 s (SB-11).",
+  "scenario": "SB11_SIGN_AT_DESK",
+  "interventions": [
+    {
+      "at_tick": 60,
+      "intervention_type": "ENVIRONMENTAL_INFLUENCE",
+      "operation": "PLACE_PROP",
+      "target_id": null,
+      "args": {
+        "prop_type": "SIGN",
+        "x": 13.5,
+        "z": 7.0,
+        "yaw_rad": 0.0,
+        "text": "Demo moved to Booth C"
+      }
+    }
+  ]
+}

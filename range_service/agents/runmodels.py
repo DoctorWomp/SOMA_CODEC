@@ -30,12 +30,12 @@ from typing import Any
 
 from .gateway import ModelGateway, ServerActivity, gateway_from_spec
 
-FAKE_KINDS = ("fake", "fake-slow:", "fake-malformed")
+FAKE_KINDS = ("fake", "fake-slow:", "fake-malformed", "fake-talkative")
 ANSWERS = ("FULL", "SHORT", "LEAN")
 
 
 def _is_fake(spec: str) -> bool:
-    return spec == "fake" or spec == "fake-malformed" or spec.startswith("fake-slow:")
+    return spec == "fake" or spec == "fake-malformed" or spec.startswith(("fake-slow:", "fake-talkative"))
 
 
 def _is_simgpu(spec: str) -> bool:

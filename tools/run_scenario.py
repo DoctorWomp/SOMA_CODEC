@@ -67,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seat", default="spectator", choices=["spectator", "director", "evaluator"],
                         help="G4a: the client's seat (only evaluator sees EVALUATOR TRUTH, D-90)")
     parser.add_argument("--observer", default=None, help="G4a: the avatar the views open on (default: Robot R)")
+    parser.add_argument("--recipe", default=None, help="G4b: schedule a recipe's interventions (configs/recipes/ID.yaml)")
     parser.add_argument("--frame-stats", action="store_true",
                         help="record frame times in a headless run too (always on with --watch)")
     parser.add_argument("--no-prewarm", action="store_true",
@@ -109,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
                       prewarm=False if args.no_prewarm else None, pulse="off" if args.no_pulse else args.pulse,
                       resolution=args.resolution, render_preset=args.render_preset,
                       frame_stats=True if args.frame_stats else None, presence=args.presence,
-                      viewer=args.viewer, seat=args.seat.upper(), observer=args.observer,
+                      viewer=args.viewer, seat=args.seat.upper(), observer=args.observer, recipe=args.recipe,
                       conditions=Conditions(args.focal_layout, args.focal_answer,
                                             None if args.gpu_guard is None else args.gpu_guard == "on", args.npc_cap,
                                             args.guard_hold, False if args.no_salvage else None),
@@ -172,6 +173,10 @@ def main(argv: list[str] | None = None) -> int:
               f"(n={lat['n']}, unanswered {lat['unanswered']}); {r['model_calls']} model calls, {r['timeouts']} timeouts, "
               f"fallbacks {r['fallbacks'] or 0}; {r['glances_accepted']} glances; FN-1 departures mid-conversation "
               f"{r['fn1']['departures_mid_conversation']} ({r['fn1']['without_goodbye']} without a goodbye first)")
+    iv = s.get("interventions") or {}
+    if iv.get("applied") or iv.get("refused"):
+        print(f"  interventions: {iv['applied']} applied, {iv['refused']} refused, {iv['scheduled']} scheduled "
+              f"{iv['by_type']} (intervention-assisted)")
     v = s.get("viewer") or {}
     if v:
         live = v.get("live_matches_replay")

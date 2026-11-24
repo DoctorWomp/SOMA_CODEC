@@ -32,6 +32,8 @@ var results: Array = []          # [{"index", "event_type", "actor_id", "reason_
 var _events: Array = []          # [{"index", "at", "event"}] sorted by world tick
 var _next := 0
 var _per := 6                    # world ticks per scenario tick
+## G4b (D-102): a recipe's interventions, played on the tape as the Director's pre-scheduled work.
+var recipe_id := ""
 
 
 func _init() -> void:
@@ -78,6 +80,14 @@ func setup(target_world: RangeWorld, scen: Dictionary, overrides := {}) -> bool:
 	for i in scen["events"].size():
 		var e: Dictionary = scen["events"][i]
 		_events.append({"index": i, "at": int(e["at_tick"]) * _per, "event": e})
+	if recipe_id != "":
+		var recipe := WorldData.load_config("recipes", recipe_id)
+		if recipe.is_empty():
+			return false
+		var n: int = scen["events"].size()
+		for i in recipe["interventions"].size():
+			var it: Dictionary = recipe["interventions"][i]
+			_events.append({"index": n + i, "at": int(it["at_tick"]) * _per, "intervention": it})
 	_events.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return a["at"] < b["at"] or (a["at"] == b["at"] and a["index"] < b["index"]))
 	return true
@@ -120,7 +130,10 @@ func _start() -> void:
 func _tick() -> void:
 	var now := world.clock.tick - start_tick
 	while _next < _events.size() and int(_events[_next]["at"]) <= now:
-		_play(int(_events[_next]["index"]), _events[_next]["event"])
+		if _events[_next].has("intervention"):
+			world.director.from_recipe(recipe_id, _events[_next]["intervention"])
+		else:
+			_play(int(_events[_next]["index"]), _events[_next]["event"])
 		_next += 1
 	if now >= duration_world_ticks():
 		phase = Phase.DONE
@@ -128,45 +141,49 @@ func _tick() -> void:
 		finished_run.emit()
 
 
-func _destination(e: Dictionary) -> Dictionary:
+static func _destination(w: RangeWorld, e: Dictionary) -> Dictionary:
 	var args: Dictionary = e.get("args", {})
 	if args.has("x"):
 		return {"x": float(args["x"]), "z": float(args["z"])}
-	var spawn := world.spawn_point(String(e["where"]))
+	var spawn := w.spawn_point(String(e.get("where", "")))
 	if not spawn.is_empty():
 		return {"x": spawn["position"].x, "z": spawn["position"].z}
-	for zone in world.map_data["zones"]:
-		if zone["zone_id"] == e["where"]:
+	for zone in w.map_data["zones"]:
+		if zone["zone_id"] == e.get("where"):
 			var a: Dictionary = zone["area"]
 			return {"x": (float(a["x_min"]) + float(a["x_max"])) / 2, "z": (float(a["z_min"]) + float(a["z_max"])) / 2}
+	return {}
+
+
+## One tape event as an action request: {"action", "args"}, or {} for an unknown event. Shared by
+## the tape and the Director's TRIGGER_EVENT (G4b, D-99).
+static func event_request(w: RangeWorld, e: Dictionary) -> Dictionary:
+	var args: Dictionary = e.get("args", {})
+	match String(e["event_type"]):
+		"move_to", "avatar_approaches", "leave":
+			var dest := _destination(w, e)
+			return {} if dest.is_empty() else {"action": "MOVE_TO", "args": {"destination": dest}}
+		"turn_to":
+			return {"action": "TURN_TO", "args": {"target_id": String(args.get("target", ""))}}
+		"gesture", "wave", "small_wave":
+			var gesture: String = {"wave": "WAVE", "small_wave": "SMALL_WAVE"}.get(String(e["event_type"]), String(args.get("gesture", "")))
+			var gargs := {"gesture": gesture}
+			if args.has("target"):
+				gargs["target_id"] = String(args["target"])
+			return {"action": "GESTURE", "args": gargs}
+		"say":
+			return {"action": "SPEAK", "args": {"channel": "LOCAL", "text": String(args.get("text", "")), "addressee_id": args.get("to")}}
+		"pa_announcement":
+			return {"action": "SPEAK", "args": {"channel": "PA", "text": String(args.get("text", ""))}}
 	return {}
 
 
 ## One tape event becomes one host action request, checked by the action gate like any other.
 func _play(index: int, e: Dictionary) -> void:
 	var actor := String(e.get("actor", ""))
-	var args: Dictionary = e.get("args", {})
-	var action := ""
-	var action_args := {}
-	match String(e["event_type"]):
-		"move_to", "avatar_approaches", "leave":
-			action = "MOVE_TO"
-			action_args = {"destination": _destination(e)}
-		"turn_to":
-			action = "TURN_TO"
-			action_args = {"target_id": String(args["target"])}
-		"gesture", "wave", "small_wave":
-			action = "GESTURE"
-			var gesture: String = {"wave": "WAVE", "small_wave": "SMALL_WAVE"}.get(String(e["event_type"]), String(args.get("gesture", "")))
-			action_args = {"gesture": gesture}
-			if args.has("target"):
-				action_args["target_id"] = String(args["target"])
-		"say":
-			action = "SPEAK"
-			action_args = {"channel": "LOCAL", "text": String(args["text"]), "addressee_id": args.get("to")}
-		"pa_announcement":
-			action = "SPEAK"
-			action_args = {"channel": "PA", "text": String(args["text"])}
+	var conv := event_request(world, e)
+	var action := String(conv.get("action", ""))
+	var action_args: Dictionary = conv.get("args", {})
 	var reason := "INVALID_SCHEMA"
 	var event_ids: Array = []
 	if action != "" and world.avatars.has(actor):

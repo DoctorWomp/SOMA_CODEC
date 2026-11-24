@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "message_id": "gd_000412",
+  "type": "director.request",
+  "tick_id": 180,
+  "sim_time_ms": 3000,
+  "source": "godot_world",
+  "payload": {
+    "request_id": "req_0001",
+    "operator": "director",
+    "intervention_type": "DIRECTIVE_EDIT",
+    "operation": "EDIT_DIRECTIVE",
+    "target_id": "robot_r",
+    "args": {
+      "field": "directive",
+      "value": "Help visitors find places in the venue."
+    },
+    "pre_scheduled": false
+  }
+}

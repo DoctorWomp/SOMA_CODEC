@@ -97,13 +97,13 @@ To change a decision, edit its entry and note the date. Do not silently delete e
 | D-87 | The target counts fallback decisions; every run records what else was on the GPU | APPROVED (owner, 2026-11-21); judged in LIVE, LIVE_LOAD a stress report |
 | D-88 | Assembly never exceeds a tier budget | APPROVED (owner, 2026-11-21) |
 | D-89 | The GPU guard for real decisions only (`gpu_guard.hold: DECISIONS`) | APPROVED as an option (owner, 2026-11-21); the guard stays off |
-| D-90 | Seats, roles and the world dispatcher; the Evaluator is its own seat | PROPOSED (2026-11-24) |
-| D-91 | Every avatar is a body plus a controller | PROPOSED (2026-11-24) |
-| D-92 | Watching is not part of the world's record: the operator log | PROPOSED (2026-11-24) |
-| D-93 | The viewer feed: one builder, live and on replay; two audiences, two files | PROPOSED (2026-11-24) |
-| D-94 | Layer viewer v1 as built | PROPOSED (2026-11-24) |
-| D-95 | Spectator cameras (T06) and the Sensor view from packets only | PROPOSED (2026-11-24) |
-| D-96 | The layer viewer's cost: measured in the cloud, painted only on change; the owner's PC decides | PROPOSED (2026-11-24) |
+| D-90 | Seats, roles and the world dispatcher; the Evaluator is its own seat | APPROVED (owner, 2026-11-24) |
+| D-91 | Every avatar is a body plus a controller | APPROVED (owner, 2026-11-24) |
+| D-92 | Watching is not part of the world's record: the operator log | APPROVED (owner, 2026-11-24) |
+| D-93 | The viewer feed: one builder, live and on replay; two audiences, two files | APPROVED (owner, 2026-11-24) |
+| D-94 | Layer viewer v1 as built | APPROVED (owner, 2026-11-24) |
+| D-95 | Spectator cameras (T06) and the Sensor view from packets only | APPROVED (owner, 2026-11-24) |
+| D-96 | The layer viewer's cost: measured in the cloud, painted only on change; the owner's PC decides | APPROVED (owner, 2026-11-24) |
 | D-110 | An invalid activity never costs the actions; FN-1 holds are counted apart | APPROVED (owner, 2026-11-23) |
 | D-111 | Short, observer-local handles for people in Robot R's LEAN prompts and answers | APPROVED (owner, 2026-11-23) |
 | D-112 | Argument compaction in LEAN answers: defaults left out, coordinates to one decimal | APPROVED (owner, 2026-11-23) |
@@ -1229,7 +1229,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **Owner's PC decides** (G3g checklist §5): F3 + N3 LIVE and LIVE_LOAD with LEAN and the guard at cap 1 in both settings.
 
 ## D-90 — Seats, roles and the world dispatcher; the Evaluator is its own seat
-**Status:** PROPOSED (2026-11-24), G4a item 1. Amends INTERACTION_MODES §2.2 on one point (below), on the owner's G4a instruction.
+**Status:** APPROVED (owner, 2026-11-24, including the separate Evaluator seat: the Spectator no longer sees evaluator truth); proposed 2026-11-24, G4a item 1. Amends INTERACTION_MODES §2.2 on one point (below).
 
 - **Principals:** four **seats** a person can take (`SPECTATOR`, `DIRECTOR`, `PARTICIPANT`, `EVALUATOR`) and two **internal** principals (`AGENT`: the sidecar session; `HOST`: the scenario's event tape, D-48). One seat per client, chosen at launch (`run_scenario.py --seat`, `view_run.py --seat`; no in-app switch, so nobody slides into evaluator truth by a key press).
 - **The table is data:** `configs/permissions.yaml` (contract `permissions`, exported to `godot_app/data/permissions/`): one capability per kind of request (act in the world, edit a directive, change the world, trigger an event, possess, bypass a layer, time control, pause, select an avatar, four cameras, four views), each with grants by principal and scope (`ANY`; `CONTROLLED`: the agent session's own bodies, D-91; `OWN_AVATAR`: a participant's own body), `built: false` with the gate that builds it (the dispatcher answers `NOT_BUILT`, never pretends), and `logged_for`. `tools/validate_configs.py` also refuses a table where an internal principal could do anything but act, a scope on the wrong principal, or evaluator truth for any seat but the Evaluator.
@@ -1239,7 +1239,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **Tests:** `tests/test_permissions.py` (no seat acts for an agent's body or edits a directive; a participant only for its own body; agents never view; evaluator truth for the Evaluator only; `NOT_BUILT` names its gate; the table checks catch a widened table; Godot reads the same table); Godot `test_dispatcher_permissions_without_ui` (every seat, no UI: refusals never reach the gate; the world's track table only for the Evaluator; the operator log holds the refusals), `test_permission_matrix`.
 
 ## D-91 — Every avatar is a body plus a controller
-**Status:** PROPOSED (2026-11-24), G4a item 1 (INTERACTION_MODES §2.1).
+**Status:** APPROVED (owner, 2026-11-24); proposed 2026-11-24, G4a item 1 (INTERACTION_MODES §2.1).
 
 - `Avatar.controller` is `SCRIPTED`, `LLM_AGENT`, `HUMAN_INPUT` or `REPLAY_TAPE`, set from the scenario cast's `controller` (already in Godot's world-only copy). `RangeWorld.set_controller(id, kind)` swaps it and nothing else: body, senses, COMMS and the action gate are the same.
 - **Who drives a body:** the agent session drives the avatars it linked whose controller it runs (`SCRIPTED`, `LLM_AGENT`); a request for any other linked body reaches the gate as one the session does not control (`CAPABILITY_DENIED`, journaled as before). A participant seat drives only its own `HUMAN_INPUT` body (G4c builds the seat's controls).
@@ -1247,13 +1247,13 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **Tests:** Godot `test_agent_requests_and_controller_swap` (the link's path accepted as before; after a swap to `HUMAN_INPUT` the agent session is refused and the body, position and config are unchanged; swapping back restores it; the tape still plays).
 
 ## D-92 — Watching is not part of the world's record: the operator log
-**Status:** PROPOSED (2026-11-24), G4a.
+**Status:** APPROVED (owner, 2026-11-24); proposed 2026-11-24, G4a.
 
 - Seat requests are answered by the dispatcher and recorded, when refused or when the capability is `logged_for` the seat (a participant opening its own views; the Evaluator reading evaluator truth), in `RUN/operator.jsonl` (`--operator-log`), never in the journal. So opening views, moving cameras or being refused **cannot change a journal**, live or stepped, and a run's hash says nothing about who watched it.
 - `tools/view_run.py` writes `RUN/operator_replay.jsonl` for a replay. Taint rules that depend on it (a participant who opened evaluator truth, a mid-run Bypass) come with G4c and G5.
 
 ## D-93 — The viewer feed: one builder, live and on replay; two audiences, two files
-**Status:** PROPOSED (2026-11-24), G4a items 3–4.
+**Status:** APPROVED (owner, 2026-11-24); proposed 2026-11-24, G4a items 3–4.
 
 - **One builder** (`range_service/viewer/feed.py` `FeedBuilder`) turns what the sidecar saw into viewer records: observation packets (sight with the observer's pose and head yaw, hearing with bearings and words, track first sight / loss / return), the requests it sent and the world's results, decision records (triggers, context sections and sizes, activity and wake conditions, each model call's queue / prefill / generation / tokens / outcome / salvaged / activity dropped), the pulse log, `delivery.jsonl` holds and drops with their D-63 reasons, each decision's D-111 handle map, and the Beacon (accepted `EXPRESS`, with the ambient state, D-73).
 - **Live:** in a watched run (`--watch`, or `--viewer closed|open`) the sidecar feeds the builder as messages pass and appends to `RUN/viewer/*.jsonl`, which Godot's `ViewerStore` reads every 250 ms. **No new link message**: the agent link's traffic and Godot's 64 KB inbound buffer are untouched. **Replay:** the runner rebuilds the feed from the run's logs at the end of **every** run (`sidecar_received`, `sidecar_sent`, `decision_records`, `prompts`, `pulse`, `delivery`), and `tools/view_run.py` does so for older folders. The two are compared in `summary.json` (`viewer.live_matches_replay`): **equal** on every run so far (SB-04 stepped and LIVE).
@@ -1264,7 +1264,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **Tests:** `tests/test_viewer_feed.py` (tracks NEW / LOST / BACK and hearing; results, drops and the Beacon; calls salvaged and activity dropped, LEAN without words; reason_summary labelled for Robot R and evaluator-only for an NPC with a goal; prompts give handles to the observer and text to the evaluator only; truth records evaluator-only; the leak check catches a real id, a secret and shared tracks; the Godot fixture matches the contract and leaks nothing); `tools/godot_check.py` (SB-04 with the live feed: the same journal, live = rebuilt, no leaks in any observer feed, truth tracks written).
 
 ## D-94 — Layer viewer v1 as built
-**Status:** PROPOSED (2026-11-24), G4a item 4 (RANGE_V0_SCOPE §2.4 items 1–4 and 8).
+**Status:** APPROVED (owner, 2026-11-24); proposed 2026-11-24, G4a item 4 (RANGE_V0_SCOPE §2.4 items 1–4 and 8).
 
 - **Where:** a 2D panel in the Godot client (`scripts/ui/viewer/layer_viewer.gd`), F3; the same panel on a finished run with `tools/view_run.py` (no world, the map from its data). The selected avatar (camera `[` `]`) is the observer.
 - **Per observer (D-62):** the header, the top-down view and every decision panel say "seen by <observer>"; one observer's tracks are never shown in another's panel.
@@ -1279,14 +1279,14 @@ No answer failed for an unknown target or a disallowed action. The causes:
 - **Tests:** Godot `test_layer_viewer_from_fixture` (a committed fixture from a real SB-04 LIVE run, with a drop before sending, a salvaged call, a dropped activity and a FULL reason_summary added: 8 lanes built, 9 labelled not built; Bypass disabled with its reason; Solo/Mute change only what is shown; scrub and N/P; the drop explained with its reason; the words labelled; no real id in any decision text; the capability card; no EVALUATOR TRUTH panel for a Spectator), `test_evaluator_panel_only_for_the_evaluator`, `test_viewer_store_reads_a_growing_file`; the replay self-test in `tools/godot_check.py` (every decision of Robot R in the SB-04 run, as Spectator and as Evaluator).
 
 ## D-95 — Spectator cameras (T06) and the Sensor view from packets only
-**Status:** PROPOSED (2026-11-24), G4a item 2.
+**Status:** APPROVED (owner, 2026-11-24); proposed 2026-11-24, G4a item 2.
 
 - **Cameras:** free fly, orbit, **follow** (behind the avatar along its heading, looking at it) and **POV** (the avatar's sensor point, facing where its head faces, D-72); `C` cycles the modes the seat may use, `[` `]` cycle avatars. Every mode and selection is asked of the dispatcher (a participant: its own body's follow and POV only). Orbit and follow stop short of the first wall between the avatar and the camera, like a `SpringArm3D` (a ray query on the world layer; the rig keeps one camera node).
 - **Sensor view (F2):** drawn from the selected observer's latest packet only: the sight cone from the packet's pose (body yaw + head yaw), each track at its estimated position labelled with the observer's own id and handle and "seen / partly seen / lost: reason", heard speech along the packet's bearing (relative to the body) with the words for 3 s. G1's view drew the cone from the live body; now a body that moved after the sample does not move the drawing.
 - **Tests:** Godot `test_spectator_cameras_t06` (follow behind and looking at the avatar; POV at the sensor point facing the head; C back to free; switching targets; a wall stops the orbit camera; a participant cannot orbit or select another body), `test_sensor_view_draws_the_packet` (the pose and head yaw from the packet, not the moved body; the id with its handle, never the real id); the G1 `test_camera` unchanged and passing.
 
 ## D-96 — The layer viewer's cost: measured in the cloud, painted only on change; the owner's PC decides
-**Status:** PROPOSED (2026-11-24), G4a item 5. Measurement and one design choice; agents unchanged.
+**Status:** APPROVED (owner, 2026-11-24); proposed 2026-11-24, G4a item 5. Measurement and one design choice; agents unchanged.
 
 - **How it is measured** (D-69 tools): rendered SB-04, LIVE, the same scene and seed, `--viewer off` (no live feed), `closed` (the feed written, the panel hidden) and `open` (the panel drawn the whole run); frame p50 / p95 / p99 and spikes, Godot's own video memory, the viewer's open time and repaints (`frames.json`), peak VRAM and `vram_hygiene` (D-87, nvidia-smi), Robot R's calls and fallbacks, event-loop lag. `tools/compare_runs.py` prints them side by side; `bakeoff.py live --modes LIVE_RENDERED --viewer open` gives a results.md row (render column "· viewer open") in the render-tax table against headless LIVE.
 - **Cloud numbers (plumbing, not the owner's GPU):** Xvfb with Mesa's software renderer (llvmpipe) on 4 shared CPU cores, 1280×720, `v0_compat`, the fake model (Robot R's calls take 0 ms, so the render tax on focal throughput cannot be measured here), two runs each:

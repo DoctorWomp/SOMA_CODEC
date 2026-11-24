@@ -60,6 +60,9 @@ class Sidecar:
         # G4a (D-93): the live viewer feed (range_service/viewer/feed.LiveFeed), or None. It only reads
         # what passes and appends to files; it never changes a message or a decision.
         self.viewer = viewer
+        # G4b (D-97): every applied intervention this run saw (agent-side applied here, world-side
+        # reported by Godot), for the run manifest; never shown to an agent.
+        self.interventions: list[dict[str, Any]] = []
         self.run_mode = "LIVE"
         self._step_jobs: list[tuple[AgentRuntime, DecisionJob]] = []
         self._step_presence: dict[str, list[dict[str, Any]]] = {}     # stepped: presence actions per agent
@@ -238,7 +241,53 @@ class Sidecar:
                 self._viewer_flush()
         elif kind == "link.heartbeat":
             await self._send(ws, "link.heartbeat", {})
+        elif kind == "director.request":
+            await self._director_request(ws, env)
+        elif kind == "director.intervention":
+            self._intervention(payload)
         # Other valid types are not for the sidecar; they are ignored.
+
+    async def _director_request(self, ws: ServerConnection, env: dict[str, Any]) -> None:
+        """G4b (D-97, D-98): an agent-side intervention or an inspection from the Director seat (Godot's
+        dispatcher checked the seat). The edit applies to the agent's runtime at its next decision;
+        the answer carries the intervention record with before and after, which Godot journals."""
+        req = env["payload"]
+        out: dict[str, Any] = {"request_id": req["request_id"], "status": "REFUSED", "reason": None,
+                               "intervention": None, "editable": None}
+        runtime = self.runtimes.get(req["target_id"] or "")
+        if runtime is None:
+            out["reason"] = "UNKNOWN_TARGET"
+        elif req["operation"] == "INSPECT_AGENT":
+            out.update(status="INSPECTED", editable=runtime.editable())
+        elif req["operation"] != "EDIT_DIRECTIVE":
+            out["reason"] = "UNKNOWN_OPERATION"
+        else:
+            args = req["args"]
+            reason, before, after = runtime.apply_edit(str(args.get("field")), args.get("value"), args.get("name"))
+            if reason is not None:
+                out["reason"] = reason
+            else:
+                rec_args = {k: v for k, v in args.items() if k != "value" or args.get("field") == "slider"}
+                record = {"schema_version": "1.0", "intervention_id": req["request_id"], "tick_id": env["tick_id"],
+                          "sim_time_ms": env["sim_time_ms"], "operator": req["operator"],
+                          "intervention_type": "DIRECTIVE_EDIT", "operation": "EDIT_DIRECTIVE",
+                          "target_id": req["target_id"], "args": rec_args, "before": before, "after": after,
+                          "pre_scheduled": req["pre_scheduled"], "trial_tainted": not req["pre_scheduled"]}
+                out.update(status="APPLIED", intervention=record)
+                self._intervention(record)
+                for tier, key, prefix in runtime.take_snapshots():
+                    # T5/T6: the new persona's prefix, snapshotted in the background (never holds the world).
+                    if runtime.gateway is not None:
+                        task = asyncio.create_task(runtime.gateway.prepare_personas([(runtime.agent_id, tier, key, prefix)]))
+                        self._tasks.add(task)
+                        task.add_done_callback(self._tasks.discard)
+        await self._send(ws, "director.result", out)
+
+    def _intervention(self, record: dict[str, Any]) -> None:
+        self.interventions.append(record)
+        if self.viewer is not None:
+            self.viewer.builder.intervention(record)
+            self._viewer_flush()
 
     async def _scripted_observation(self, ws: ServerConnection, agent: ScriptedAgent, payload: dict[str, Any]) -> None:
         remembered = len(agent.memory)

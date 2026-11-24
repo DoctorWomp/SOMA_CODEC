@@ -48,14 +48,27 @@ def _ev(kind, t, actor, payload):
     return {"kind": kind, "sim_time_ms": t, "actor_id": actor, "payload": payload}
 
 
-def _resolved(t, rid, action, accepted=True):
-    return _ev("ACTION_RESOLVED", t, "robot_r", {"request": {"action": action, "action_request_id": rid, "args": {}},
+def _resolved(t, rid, action, accepted=True, args=None):
+    return _ev("ACTION_RESOLVED", t, "robot_r", {"request": {"action": action, "action_request_id": rid, "args": args or {}},
                                                  "result": {"action_request_id": rid, "agent_id": "robot_r",
                                                             "accepted": accepted, "reason_code": "OK" if accepted else "STALE_OBSERVATION"}})
 
 
 def _say(t, who, to, text):
     return _ev("SPEECH_EMITTED", t, who, {"avatar_id": who, "addressee_id": to, "text": text})
+
+
+def _poses(until_ms, robot=(15.0, 10.0), visitor=(15.0, 8.5)):
+    """Each avatar's own packets every 100 ms (the report reads positions from them, D-108)."""
+    out = []
+    for t in range(0, until_ms + 1, 100):
+        for who, (x, z) in (("robot_r", robot), ("visitor_x", visitor)):
+            out.append(_ev("OBSERVATION_DELIVERED", t, who, {"observer_id": who, "sim_time_ms": t,
+                                                             "observer_pose": {"x": x, "z": z, "yaw_rad": 0.0}}))
+    return out
+
+
+AWAY = {"destination": {"x": 22.0, "z": 16.0}}
 
 
 def test_run_report_counts_offered_accepted_latency_and_fn1(tmp_path):
@@ -67,10 +80,10 @@ def test_run_report_counts_offered_accepted_latency_and_fn1(tmp_path):
         json.dumps({"agent_id": "robot_r", "event": "DISCARDED", "reason": "TARGET_NOT_PERCEIVED"}) + "\n", encoding="utf-8")
     journal = [_say(1000, "visitor_x", "robot_r", "Where is the demo?"), _resolved(1200, "a1", "SPEAK"),
                _say(1200, "robot_r", "visitor_x", "On the platform."), _resolved(1300, "a2", "LOOK_AT"),
-               _resolved(5000, "a3", "MOVE_TO"),                                        # left without a goodbye
-               _say(9000, "robot_r", "visitor_x", "Excuse me, I need to go."), _resolved(9100, "a4", "MOVE_TO"),
+               _resolved(5000, "a3", "MOVE_TO", args=AWAY),                             # left without a goodbye
+               _say(9000, "robot_r", "visitor_x", "Excuse me, I need to go."), _resolved(9100, "a4", "MOVE_TO", args=AWAY),
                _resolved(9200, "a5", "SPEAK", accepted=False)]
-    r = run_report(tmp_path, journal, ["robot_r"])["robot_r"]
+    r = run_report(tmp_path, journal + _poses(9200), ["robot_r"])["robot_r"]
     assert r["actions"] == {"offered": 5, "accepted": 4, "refused": 1, "dropped_before_send": 1,
                             "dropped_before_send_by_reason": {"TARGET_NOT_PERCEIVED": 1}}
     assert r["response_latency_ms"]["p50"] == 200 and r["response_latency_ms"]["unanswered"] == 0
@@ -120,3 +133,32 @@ def test_a_relative_run_folder_reaches_godot_as_an_absolute_path(tmp_path, monke
     for p in paths:
         assert Path(p).is_absolute(), p
         assert Path(p).is_relative_to(tmp_path / "runs" / "rel"), p
+
+
+def test_fn1_report_agrees_with_the_runtime_definition_d108(tmp_path):
+    """The owner's G4a run: the report said 1 departure without a goodbye, the pulse log 0 FN-1
+    violations. The report counted every MOVE_TO within 20 s of an exchange; the runtime counts only
+    moving away from a conversation that is still open (D-61, D-66). Same fixture, both rules: see
+    tests/test_fn1_goodbye.py::test_after_the_partners_farewell_leaving_is_no_violation_d108."""
+    (tmp_path / "sidecar").mkdir()
+    talk = [_say(1000, "visitor_x", "robot_r", "Where is the demo?"), _say(1200, "robot_r", "visitor_x", "On the platform.")]
+    cases = {
+        # The partner said goodbye first: the conversation is closing, leaving is fine.
+        "after_partner_farewell": (talk + [_say(3000, "visitor_x", "robot_r", "Great, thanks. Bye!"),
+                                           _say(3500, "robot_r", "visitor_x", "Glad I could help."),
+                                           _resolved(5000, "m1", "MOVE_TO", args=AWAY)], (0, 0)),
+        # Toward the partner is not a departure.
+        "toward_partner": (talk + [_resolved(5000, "m1", "MOVE_TO", args={"destination": {"x": 15.0, "z": 9.2}})], (0, 0)),
+        # Mid-conversation, away, no goodbye: a departure without one.
+        "away_no_goodbye": (talk + [_resolved(5000, "m1", "MOVE_TO", args=AWAY)], (1, 0)),
+        # LOCAL to nobody in particular within earshot counts as a goodbye (D-66).
+        "local_goodbye_in_earshot": (talk + [_ev("SPEECH_EMITTED", 4000, "robot_r", {"avatar_id": "robot_r", "addressee_id": None,
+                                                                                    "channel": "LOCAL", "text": "Sorry, I have to go."}),
+                                             _resolved(5000, "m1", "MOVE_TO", args=AWAY)], (1, 1)),
+    }
+    for name, (journal, (dep, good)) in cases.items():
+        r = run_report(tmp_path, journal + _poses(6000), ["robot_r"])["robot_r"]["fn1"]
+        assert (r["departures_mid_conversation"], r["with_goodbye_first"]) == (dep, good), name
+    far = run_report(tmp_path, talk + [_resolved(5000, "m1", "MOVE_TO", args=AWAY)] + _poses(6000, visitor=(15.0, 4.0)),
+                     ["robot_r"])["robot_r"]["fn1"]
+    assert far["departures_mid_conversation"] == 0                                    # partner 6 m away: no conversation

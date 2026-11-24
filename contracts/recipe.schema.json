@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/recipe.schema.json",
+  "title": "Intervention recipe",
+  "description": "configs/recipes/<id>.yaml (G4b, D-102): a set of Director interventions at scenario ticks, played identically into a run through the scenario tape (run_scenario.py --recipe ID) as pre-scheduled interventions, a planned treatment (Blueprint §7.2). tools/recipe.py save writes one from a run's journal.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "recipe_id", "about", "interventions"],
+  "properties": {
+    "schema_version": {"$ref": "common.schema.json#/$defs/schema_version"},
+    "recipe_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,47}$"},
+    "about": {"type": "string", "minLength": 1, "maxLength": 300},
+    "scenario": {"description": "The scenario it was made for (checked: its targets must be in that cast).", "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$"},
+    "interventions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at_tick", "intervention_type", "operation", "target_id", "args"],
+        "properties": {
+          "at_tick": {"description": "Scenario tick (the scenario's tick_hz), like the event tape.", "$ref": "common.schema.json#/$defs/tick"},
+          "intervention_type": {"enum": ["DIRECTIVE_EDIT", "WORLD_CHANGE", "EVENT_TRIGGER", "ENVIRONMENTAL_INFLUENCE", "SOCIAL_INFLUENCE"]},
+          "operation": {"enum": ["EDIT_DIRECTIVE", "PLACE_PROP", "MOVE_PROP", "REMOVE_PROP", "TRIGGER_EVENT", "PA_ANNOUNCEMENT", "NPC_SAY"]},
+          "target_id": {"$ref": "common.schema.json#/$defs/nullable_id"},
+          "args": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,47}$"},
+            "additionalProperties": {"oneOf": [{"type": "string", "maxLength": 4000}, {"type": "number"}, {"type": "boolean"}, {"type": "null"}]}
+          }
+        },
+        "allOf": [
+          {"if": {"properties": {"intervention_type": {"const": "DIRECTIVE_EDIT"}}}, "then": {"properties": {"operation": {"const": "EDIT_DIRECTIVE"}}}},
+          {"if": {"properties": {"intervention_type": {"const": "WORLD_CHANGE"}}}, "then": {"properties": {"operation": {"enum": ["PLACE_PROP", "MOVE_PROP", "REMOVE_PROP"]}}}},
+          {"if": {"properties": {"intervention_type": {"const": "EVENT_TRIGGER"}}}, "then": {"properties": {"operation": {"const": "TRIGGER_EVENT"}}}},
+          {"if": {"properties": {"intervention_type": {"const": "ENVIRONMENTAL_INFLUENCE"}}}, "then": {"properties": {"operation": {"enum": ["PLACE_PROP", "MOVE_PROP", "REMOVE_PROP", "PA_ANNOUNCEMENT"]}}}},
+          {"if": {"properties": {"intervention_type": {"const": "SOCIAL_INFLUENCE"}}}, "then": {"properties": {"operation": {"const": "NPC_SAY"}}}}
+        ]
+      }
+    }
+  }
+}

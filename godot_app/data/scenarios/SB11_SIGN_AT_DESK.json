@@ -1,0 +1,57 @@
+{
+  "_generated": "Do not edit. Made by tools/export_godot_data.py from the source file below.",
+  "source": "configs/scenarios/SB11_SIGN_AT_DESK.yaml",
+  "kind": "scenarios",
+  "data": {
+    "schema_version": "1.0",
+    "scenario_id": "SB11_SIGN_AT_DESK",
+    "title": "Sign at the desk",
+    "map": "sandbox_flats",
+    "default_seed": 4211,
+    "tick_hz": 10,
+    "duration_ticks": 300,
+    "events": [
+      {
+        "at_tick": 20,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Hello! Is this the information desk?"
+        }
+      },
+      {
+        "at_tick": 120,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Where is the demo today?"
+        }
+      },
+      {
+        "at_tick": 220,
+        "event_type": "say",
+        "actor": "visitor_x",
+        "args": {
+          "to": "robot_r",
+          "text": "Thanks. See you."
+        }
+      }
+    ],
+    "cast": {
+      "robot_r": {
+        "body": "wheeled_humanoid",
+        "controller": "LLM_AGENT",
+        "spawn": "spawn_robot",
+        "presence_amplitude": 0.5
+      },
+      "visitor_x": {
+        "body": "human_walker",
+        "controller": "SCRIPTED",
+        "spawn": "spawn_talker",
+        "presence_amplitude": 0.5
+      }
+    }
+  }
+}

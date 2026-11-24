@@ -11,6 +11,11 @@ prompt is assembled:
 
 Overheard speech (addressed to someone else) is noted only as "speaking", never with its words
 (D-12: overheard is not told or acted on).
+
+G4b (D-100, D-101): what the Director can plant reaches an agent only through its senses, and
+always as **untrusted text** (D-09): a sign or note it can read (SIGN_TEXT; kept while it can read
+it and SIGN_TTL_MS after), a PA announcement (spoken to everyone in coverage, so its words are kept,
+labelled as an announcement), and a sound it hears (AUDIO_SOUND: class and level, a bearing).
 """
 
 from __future__ import annotations
@@ -23,6 +28,8 @@ GESTURE_TTL_MS = 30_000
 EXPRESSION_TTL_MS = 15_000
 VOICE_TTL_MS = 20_000
 LOST_TRACK_TTL_MS = 10_000
+SIGN_TTL_MS = 30_000            # G4b: a sign stays in mind this long after it was last readable
+SOUND_TTL_MS = 10_000           # G4b: a sound this long after it was last heard
 CONVERSATION_KEEP = 24          # turns kept in the Working Set; older ones live on as episode cards
 PLACE_GRID_M = 0.5
 GREETING_GESTURES = frozenset({"WAVE", "SMALL_WAVE", "RAISED_HAND", "BECKON"})
@@ -69,6 +76,8 @@ class Perceived:
     expressions: list[dict[str, Any]] = field(default_factory=list)
     invites: list[dict[str, Any]] = field(default_factory=list)
     heard: list[dict[str, Any]] = field(default_factory=list)          # speech not addressed to it (G3c-2): words not kept
+    signs: list[dict[str, Any]] = field(default_factory=list)          # G4b: text it could read for the first time
+    announcements: list[dict[str, Any]] = field(default_factory=list)  # G4b: PA announcements heard
 
 
 @dataclass
@@ -76,6 +85,8 @@ class WorkingSet:
     agent_id: str
     tracks: dict[str, TrackState] = field(default_factory=dict)
     voices: list[dict[str, Any]] = field(default_factory=list)     # unplaced voices: {"at_ms", "bearing"}
+    signs: dict[str, dict[str, Any]] = field(default_factory=dict)   # G4b: event id -> {"text", "x", "z", "range_m", "first_ms", "last_ms"}
+    sounds: dict[str, dict[str, Any]] = field(default_factory=dict)  # G4b: event id -> {"sound_class", "level_db", "bearing", ...}
     turns: list[Turn] = field(default_factory=list)
     pose: dict[str, float] | None = None
     now_ms: int = 0
@@ -107,6 +118,10 @@ class WorkingSet:
                 self._speech(item, out)
             elif kind == "GROUP_INVITE" and self._first(item):
                 out.invites.append(item)
+            elif kind == "SIGN_TEXT":
+                self._sign(item, out)
+            elif kind == "AUDIO_SOUND":
+                self._sound(item)
         for track_id, state in self.tracks.items():
             if track_id not in present and state.left_ms is None:
                 state.left_ms = self.now_ms
@@ -150,11 +165,36 @@ class WorkingSet:
         if value["gesture"] in GREETING_GESTURES and value.get("direction") == "TOWARD_OBSERVER":
             out.greetings.append(item)
 
+    def _sign(self, item: dict[str, Any], out: Perceived) -> None:
+        key = item.get("event_id") or item["observation_id"]
+        pos = item.get("position_estimate") or {}
+        state = self.signs.get(key)
+        if state is None:
+            state = {"text": item["value"]["text"], "first_ms": self.now_ms}
+            self.signs[key] = state
+            out.signs.append(item)
+        state.update(last_ms=self.now_ms, range_m=item.get("range_m"),
+                     x=_q(pos["x"]) if pos else None, z=_q(pos["z"]) if pos else None)
+
+    def _sound(self, item: dict[str, Any]) -> None:
+        key = item.get("event_id") or item["observation_id"]
+        state = self.sounds.setdefault(key, {"first_ms": self.now_ms})
+        state.update(last_ms=self.now_ms, sound_class=item["value"]["sound_class"], level_db=item["value"].get("level_db"),
+                     bearing=item.get("bearing_rad"), validity=item["validity"])
+
     def _speech(self, item: dict[str, Any], out: Perceived) -> None:
         if not self._first(item):
             return
         value = item["value"]
         track_id = item.get("track_id")
+        if value.get("channel") == "PA":
+            # G4b (D-101): an announcement is spoken to everyone in coverage, so its words are kept,
+            # labelled as an announcement and as untrusted text (D-09). Until G4b they were dropped
+            # like overheard speech; no scenario used the PA, so no run changes.
+            self.turns.append(Turn(item["observed_at_ms"], "PA announcement", value["text"], True))
+            del self.turns[:-CONVERSATION_KEEP]
+            out.announcements.append(item)
+            return
         if value.get("addressed_to_observer") is True and value.get("channel") == "LOCAL":
             self.turns.append(Turn(item["observed_at_ms"], track_id or "unknown", value["text"], True))
             del self.turns[:-CONVERSATION_KEEP]
@@ -181,6 +221,8 @@ class WorkingSet:
             if state.expression is not None and now - state.expression["at_ms"] > EXPRESSION_TTL_MS:
                 state.expression = None
         self.voices = [v for v in self.voices if now - v["at_ms"] <= VOICE_TTL_MS]
+        self.signs = {k: v for k, v in self.signs.items() if now - v["last_ms"] <= SIGN_TTL_MS}
+        self.sounds = {k: v for k, v in self.sounds.items() if now - v["last_ms"] <= SOUND_TTL_MS}
         self.tracks = {k: s for k, s in self.tracks.items() if s.left_ms is None or now - s.left_ms <= LOST_TRACK_TTL_MS}
         after = sum(len(s.gestures) for s in self.tracks.values()) + len(self.voices) + len(self.tracks)
         self.expired_count += max(0, before - after)

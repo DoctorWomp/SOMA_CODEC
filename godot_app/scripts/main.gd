@@ -63,6 +63,7 @@ var replay_dir := ""
 var viewer_self_test := false
 var screenshot_path := ""               # replay: save the window to PNG after selecting --decision=N
 var screenshot_decision := -1
+var recipe_id := ""                     # G4b (D-102): a recipe's interventions, scheduled on the tape
 var dispatcher: WorldDispatcher        # the world's, or a stand-alone one in replay
 var viewer_store: ViewerStore
 var layer_viewer: LayerViewer
@@ -159,6 +160,8 @@ func _read_args() -> void:
 			viewer_self_test = true
 		elif arg.begins_with("--screenshot="):
 			screenshot_path = arg.trim_prefix("--screenshot=")
+		elif arg.begins_with("--recipe="):
+			recipe_id = arg.trim_prefix("--recipe=")
 		elif arg.begins_with("--decision="):
 			screenshot_decision = int(arg.trim_prefix("--decision="))
 
@@ -186,6 +189,7 @@ func _run_scenario() -> void:
 		return
 	scenario_player = ScenarioPlayer.new()
 	scenario_player.run_seed = run_seed if _seed_given else int(scen["default_seed"])
+	scenario_player.recipe_id = recipe_id
 	scenario_player.journal_path = journal_path
 	if journal_path == "auto":
 		scenario_player.journal_path = Journal.new_default_path("%s_%s" % [scenario_id, Time.get_datetime_string_from_system().replace(":", "-")])
@@ -219,6 +223,7 @@ func _run_scenario() -> void:
 		link.setup(world, link_port, cast, "", run_mode)
 		hud.link = link
 	scenario_player.link = link
+	world.director.link = link
 	scenario_player.finished_run.connect(_on_scenario_finished)
 
 
@@ -259,6 +264,7 @@ func _start_link_if_asked() -> void:
 	add_child(link)
 	link.setup(world, port, agents, "", run_mode)
 	hud.link = link
+	world.director.link = link
 
 
 # ---------------- G4a: seat, viewer, replay ----------------

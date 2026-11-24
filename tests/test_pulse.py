@@ -132,7 +132,7 @@ def test_pulse_backs_off_resets_and_jitter_is_seeded():
 
 # ---------- loop 2: presence (FN-2) ----------
 
-def test_presence_glances_rate_limited_never_while_speaking_and_returns_to_partner():
+def test_presence_glances_rate_limited_and_return_to_partner():
     pr = Presence(CFG["presence"])
     ws = WorkingSet("robot_r")
     s = Scene()
@@ -146,9 +146,46 @@ def test_presence_glances_rate_limited_never_while_speaking_and_returns_to_partn
     out2, _ = pr.step(now_ms=2600, partner=P, speaking_until_ms=0, ws=ws, perceived=later, heard=[],
                       activity=None, can_look=True, expressions=[])
     assert ("LOOK_AT", {"target_id": P}) in out + out2                              # back on the partner within ~1 s
-    quiet, _ = pr.step(now_ms=3000, partner=None, speaking_until_ms=9000, ws=ws, perceived=later,
-                       heard=[{"track_id": Q}], activity=None, can_look=True, expressions=[])
-    assert quiet == []                                                             # never while speaking
+    # Movement is rate limited per source; a new utterance is a discrete event and is glanced at even
+    # within the cooldown, also while it speaks itself (G4b, D-107; it used to be "never while speaking").
+    moved = Perceived(new_tracks=[Q])
+    again, _ = pr.step(now_ms=3000, partner=None, speaking_until_ms=0, ws=ws, perceived=moved, heard=[],
+                       activity=None, can_look=True, expressions=[])
+    assert again == []                                                             # movement: cooldown
+    talking, _ = pr.step(now_ms=4000, partner=None, speaking_until_ms=9000, ws=ws, perceived=later,
+                         heard=[{"track_id": Q}], activity=None, can_look=True, expressions=[])
+    assert talking == [("LOOK_AT", {"target_id": Q})]
+
+
+def test_speaker_keeps_its_partner_in_gaze_and_glances_at_others_d107():
+    """The owner's live SB-04 (F3): Robot R's long answers silenced the presence loop, so the gaze
+    hold on its partner lapsed and the partner's next question got no look until the model answered."""
+    pr = Presence(CFG["presence"])
+    ws = WorkingSet("robot_r")
+    seen = ws.update(Scene().see(P, 15, 8.5).see(Q, 18, 12).packet())
+    kw = dict(ws=ws, heard=[], activity=None, can_look=True, expressions=[], partner=P)
+    pr.step(now_ms=0, perceived=Perceived(), speaking_until_ms=0, **kw)           # gaze on the partner
+    assert pr.gaze_target == P
+    out, ev = pr.step(now_ms=5000, perceived=Perceived(), speaking_until_ms=11000, **kw)
+    assert out == [("LOOK_AT", {"target_id": P})] and ev[0].kind == "GAZE_HOLD"     # held while speaking
+    out, ev = pr.step(now_ms=5100, perceived=Perceived(), speaking_until_ms=11000, ws=ws,
+                      heard=[{"track_id": P}, {"track_id": Q}], activity=None, can_look=True, expressions=[],
+                      partner=P)
+    assert out == [("LOOK_AT", {"target_id": Q})]                                  # someone else: a glance
+    del seen
+
+
+def test_two_people_arriving_together_both_get_a_glance_within_a_second_d107():
+    pr = Presence(CFG["presence"])
+    ws = WorkingSet("visitor_x")
+    seen = ws.update(Scene().see(P, 15, 8.5).see(Q, 16, 9).packet())
+    kw = dict(ws=ws, heard=[], activity=None, can_look=True, expressions=[], partner=None, speaking_until_ms=0)
+    first, _ = pr.step(now_ms=200, perceived=seen, **kw)
+    second, _ = pr.step(now_ms=300, perceived=Perceived(), **kw)
+    targets = [a[1]["target_id"] for a in first + second]
+    assert sorted(targets) == sorted([P, Q])                                       # one per packet, both within 1 s
+    late, _ = pr.step(now_ms=1500, perceived=Perceived(), **kw)
+    assert late == []                                                              # nothing left pending
 
 
 def test_glance_toward_an_unseen_voice_points_where_it_came_from():
