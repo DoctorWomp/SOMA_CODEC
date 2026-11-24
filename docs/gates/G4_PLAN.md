@@ -154,7 +154,7 @@ Participant controls, P1–P5 (G4c); a 3D placement editor with previews (the Di
 
 ## G4b results (cloud, 2026-11-24)
 
-**Checks:** `uv run python tools/check.py --require-godot`: all passed (75 Godot tests, the five Director tests among them; 33 scenario runs; 11 min 11 s on 4 cores). The first full run failed one G4a test that still expected the Director's EDIT_DIRECTIVE to be `NOT_BUILT`; D-97 builds it, so the expectation is now `OK` for the Director and `PERMISSION_DENIED` for every other seat (the check kept). `uv run pytest`: all passed.
+**Checks:** `uv run python tools/check.py --require-godot`: all passed (75 Godot tests, the five Director tests among them; 33 scenario runs; 11 min 17 s on 4 cores, on the final tree). The first full run failed one G4a test that still expected the Director's EDIT_DIRECTIVE to be `NOT_BUILT`; D-97 builds it, so the expectation is now `OK` for the Director and `PERMISSION_DENIED` for every other seat (the check kept). `uv run pytest`: all passed.
 
 **Journals: the Director changes none; D-107 changes some, by itself.** Each scenario three times on this branch (viewer off; the live feed with 25 ms random sidecar delays; the viewer open, headless), once on an untouched checkout of main, and once on this branch with only `range_service/agents/pulse.py` reverted to main's ("without D-107"):
 
