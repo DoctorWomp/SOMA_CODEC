@@ -220,7 +220,9 @@ func _on_message(raw: PackedByteArray) -> void:
 		return
 	match String(env["type"]):
 		"agent.action_request":
-			var result := world.actions.submit(env["payload"], agents)
+			# Through the world dispatcher (D-90): the agent session drives only the avatars it linked
+			# whose controller it runs (D-91); the action gate then checks the request as before.
+			var result := world.dispatcher.agent_request(env["payload"], agents)
 			_enqueue(_envelope("world.action_result", result))
 		"link.hello":
 			_set_ready(true)

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "audience": "EVALUATOR",
+  "observer": "robot_r",
+  "lane": "prompt",
+  "t_ms": 100,
+  "data": {
+    "decision_id": "dec_robot_r_000001",
+    "prompt": "## GUARDRAILS\n...",
+    "handles": {
+      "P1": "anon_wodzgiwd7a"
+    }
+  }
+}

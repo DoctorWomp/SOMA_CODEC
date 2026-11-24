@@ -50,6 +50,8 @@ Every request (move, speak, place prop, edit directive, open a view) carries the
 | Speak, gesture, move in-world | — | — | ✅ through COMMS and the action gate | ✅ if declared in the manifest |
 | Possess an existing NPC | — | ✅ logged (§5, P4) | — | ❌ |
 
+**Amended by [D-90](DECISIONS.md) (G4a, owner's instruction):** evaluator truth is for a separate **Evaluator** seat only, never the Spectator, Director or Participant seats; the table is data (`configs/permissions.yaml`) and Godot's world dispatcher enforces it. The views' requests go to an operator log, never the journal (D-92).
+
 ## 3. Launch menu
 
 Blueprint §4 already specifies it. Summary:

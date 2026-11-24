@@ -37,6 +37,12 @@ Steps:
               G3d (D-68): the runs above are independent, so they run side by side, up to the
               CPU count at a time (RANGE_CHECK_JOBS=N overrides; 1 = one after another); replays
               start after the run they replay. The same runs and checks as before.
+              G4a (D-90, D-93): SB-04 (fake model, random sidecar delays) once more with the live viewer
+              feed written as it goes: the same journal, the live feed equal to the one rebuilt from
+              the logs, no real id or evaluator text in any observer feed, Godot's truth tracks
+              written; then the Godot replay of that run as Spectator and as Evaluator scrubs to
+              every decision of Robot R and explains it (no EVALUATOR TRUTH for the Spectator).
+              Godot's permission matrix (test_permission_matrix) must equal Python's.
               Runs with --filter only if the filter is part of "scenario_determinism".
 
 For the link tests, two sidecars run on 127.0.0.1 with a fresh session token for the duration
@@ -222,6 +228,20 @@ def validate_artifacts(folder: Path, require_all: bool = True) -> tuple[int, lis
             checked += 1
             for p in contracts.problems("action_result", result)[:3]:
                 problems.append(f"{path.name} result {index}: {p}")
+    # G4a (D-90): Godot's world dispatcher and range_service/viewer/permissions.py give the same
+    # answer for every principal x capability x case.
+    matrix_path = folder / "permissions_matrix.json"
+    if matrix_path.is_file():
+        from range_service.viewer import permissions as perm
+
+        godot_matrix = json.loads(matrix_path.read_text(encoding="utf-8"))
+        python_matrix = perm.matrix(perm.load_table())
+        checked += len(python_matrix)
+        for case in sorted(set(godot_matrix) | set(python_matrix)):
+            if godot_matrix.get(case) != python_matrix.get(case):
+                problems.append(f"permissions: Godot says {godot_matrix.get(case)} for {case!r}, Python {python_matrix.get(case)}")
+    elif require_all:
+        problems.append("permissions_matrix.json was not written by the Godot tests")
     secrets_list = private_strings()
     c, found = check_agent_records(folder)
     checked += c
@@ -430,12 +450,12 @@ def _stop_cpu_load(procs: list[multiprocessing.Process]) -> None:
 
 
 def _scenario_run(godot: str, scenario_id: str, out: Path, jitter_ms: int = 0, posing: bool = True,
-                  model: str = "none", configs=None):
+                  model: str = "none", configs=None, viewer: str = "auto"):
     import asyncio
 
     from range_service.eval.runner import RunOptions, run_scenario
     return asyncio.run(run_scenario(RunOptions(scenario_id, godot, out_dir=out, jitter_ms=jitter_ms, timeout_s=900,
-                                               posing=posing, model=model, configs=configs)))
+                                               posing=posing, model=model, configs=configs, viewer=viewer)))
 
 
 def scenario_jobs() -> int:
@@ -459,7 +479,7 @@ def run_many(godot: str, root: Path, specs: dict[str, dict], jobs: int) -> dict:
         spec = specs[name]
         try:
             return _scenario_run(godot, spec["scenario"], root / name, spec.get("jitter", 0), spec.get("posing", True),
-                                 spec.get("model", "none"), spec.get("configs"))
+                                 spec.get("model", "none"), spec.get("configs"), spec.get("viewer", "auto"))
         except RunError as exc:
             return exc
     with ThreadPoolExecutor(max_workers=jobs) as pool:
@@ -650,6 +670,8 @@ def npc_specs() -> tuple[dict[str, dict], dict[str, dict], tuple]:
 
     first = {name: {"scenario": "SB04_POLITE_BID", "jitter": jitter, "model": "fake"}
              for name, jitter in (("SB04_npc_a", 0), ("SB04_npc_b", 25), ("SB04_npc_c", 0))}
+    # G4a (D-93): the same run with the live viewer feed written as it goes (random sidecar delays too).
+    first["SB04_npc_viewer"] = {"scenario": "SB04_POLITE_BID", "jitter": 25, "model": "fake", "viewer": "closed"}
     cs, _ = load_and_check()
     marking = canary.marked_configs(cs)
     marked = marking[0]
@@ -703,7 +725,60 @@ def npc_model_checks(results: dict, root: Path, marking: tuple) -> tuple[list[st
         found = canary.scan_run(out, {a: e["persona"] for a, e in cast.items()}, goals, labels, npcs)
         found += canary.observer_filter_problems(out, list(cast))
         problems += [f"canary {scenario_id}: {p}" for p in found]
-    return problems, f"{npc_calls} NPC model calls, journal {(hashes['SB04_npc_a'] or '')[:12]} x3 and replayed"
+    viewer_problems, viewer_note = viewer_checks(results, root)
+    problems += viewer_problems
+    return problems, (f"{npc_calls} NPC model calls, journal {(hashes['SB04_npc_a'] or '')[:12]} x3 and replayed; "
+                      f"{viewer_note}")
+
+
+def viewer_checks(results: dict, root: Path) -> tuple[list[str], str]:
+    """G4a (D-90, D-93): the live viewer feed changes no journal and equals the feed rebuilt from the
+    logs; observer feeds name nobody by a real id and hold no evaluator text; the Godot replay
+    (Spectator and Evaluator seats) scrubs to every decision of Robot R and explains it."""
+    from range_service.configs import load_and_check
+    from range_service.viewer import feed
+
+    problems: list[str] = []
+    run = results["SB04_npc_viewer"]
+    if isinstance(run, Exception):
+        return [f"SB-04 with the live viewer feed: {run}"], ""
+    base = results["SB04_npc_a"]
+    if not isinstance(base, Exception) and run.journal_sha256 != base.journal_sha256:
+        problems.append(f"the live viewer feed changed the SB-04 journal ({(run.journal_sha256 or '')[:12]} vs "
+                        f"{(base.journal_sha256 or '')[:12]})")
+    v = run.summary.get("viewer") or {}
+    for key in ("live_matches_replay", "live_matches_replay_evaluator"):
+        if not (v.get(key) or {}).get("match"):
+            problems.append(f"SB-04 viewer: {key} {v.get(key)}")
+    cs, _ = load_and_check()
+    scen = cs.items["scenarios"]["SB04_POLITE_BID"]
+    secrets = [p["private_goal"] for p in cs.items["personas"].values() if p.get("private_goal")]
+    secrets += [str(x) for x in scen.get("evaluator_only", {}).values() if isinstance(x, str)]
+    for name in ("SB04_npc_viewer", "SB04_npc_a"):
+        r = results[name]
+        if isinstance(r, Exception):
+            continue
+        obs = feed.read_jsonl(r.run_dir / "viewer" / feed.OBSERVER_FILE)
+        ev = feed.read_jsonl(r.run_dir / "viewer" / feed.EVALUATOR_FILE)
+        # Prompt text: the guardrails' first line is in every prompt and in nothing an observer perceives.
+        prompt_marks = sorted({e["data"]["prompt"].splitlines()[1] for e in ev if e["lane"] == "prompt"})
+        if not prompt_marks:
+            problems.append(f"{name}: no prompt in the evaluator truth file")
+        problems += [f"{name} viewer: {p}" for p in feed.observer_leaks(obs, sorted(scen["cast"]), secrets + prompt_marks)[:5]]
+        if not any(e["lane"] == "truth_tracks" for e in ev):
+            problems.append(f"{name}: Godot wrote no truth_tracks.json for the EVALUATOR TRUTH panel")
+    shown = []
+    for seat in ("spectator", "evaluator"):
+        code, out = _run([find_godot() or "godot", "--headless", "--path", str(PROJECT_DIR), "res://scenes/main.tscn", "--",
+                          f"--replay={(run.run_dir / 'viewer').as_posix()}", f"--seat={seat}", "--observer=robot_r",
+                          "--viewer-self-test"], timeout=300)
+        line = next((x for x in out.splitlines() if x.startswith("VIEWER SELF TEST")), "")
+        shown.append(line.replace("VIEWER SELF TEST ", ""))
+        if code != 0 or not line or "problems=0" not in line:
+            problems.append(f"viewer replay as {seat}: exit {code}; {line or 'no summary line'}; "
+                            + "; ".join(x for x in out.splitlines() if x.startswith(("VIEWER PROBLEM", "SCRIPT ERROR", "ERROR")))[:400])
+    return problems, (f"viewer: live feed {v.get('observer_records')} records = rebuilt, journal unchanged; "
+                      f"replay {' | '.join(shown)}")
 
 
 def scenario_checks(godot: str) -> int:

@@ -1,0 +1,51 @@
+{
+  "audience": "OBSERVER",
+  "data": {
+    "items": [
+      {
+        "bearing": 0.0,
+        "parts": [
+          "HEAD",
+          "TORSO",
+          "LEFT_SIDE",
+          "RIGHT_SIDE"
+        ],
+        "pos": {
+          "x": 15.0,
+          "z": 8.5
+        },
+        "quality": 0.904,
+        "range": 1.4,
+        "track": "visitor_x",
+        "validity": "OBSERVED"
+      },
+      {
+        "bearing": -1.0624,
+        "parts": [
+          "RIGHT_SIDE"
+        ],
+        "pos": {
+          "x": 15.826,
+          "z": 9.44
+        },
+        "quality": 0.228,
+        "range": 0.946,
+        "reason": "PARTLY_OCCLUDED",
+        "track": "anon_0hdkbyzg02",
+        "validity": "DEGRADED"
+      }
+    ],
+    "pose": {
+      "head_pitch": 0.1628,
+      "head_yaw": 0.0,
+      "x": 15.0,
+      "y": 0.0,
+      "yaw": 0.0,
+      "z": 10.0
+    }
+  },
+  "lane": "sight",
+  "observer": "robot_r",
+  "schema_version": "1.0",
+  "t_ms": 17700
+}

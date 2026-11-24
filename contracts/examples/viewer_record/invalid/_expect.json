@@ -1,0 +1,6 @@
+{
+  "truth_in_observer_feed": "enum",
+  "real_id_as_track": "pattern",
+  "unlabelled_reason": "const",
+  "meta_with_observer": "type"
+}

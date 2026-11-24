@@ -69,6 +69,9 @@ def frame_summary(path: Path) -> dict[str, Any]:
         "display_server": data.get("display_server"), "rendering_method": data.get("rendering_method"),
         "window_size": data.get("window_size"), "max_fps": data.get("max_fps"), "vsync_mode": data.get("vsync_mode"),
         "godot_video_mem_peak_mib": data.get("godot_video_mem_peak_mib"),
+        # G4a: the layer viewer's state during the run (closed, open), seconds open, panel redraws.
+        "viewer_mode": data.get("viewer_mode"), "viewer_open_s": data.get("viewer_open_s"),
+        "viewer_draws": data.get("viewer_draws"),
         "note": "headless: no rendering, frame times show the simulation loop only" if headless else None,
     }
 

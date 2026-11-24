@@ -1,0 +1,131 @@
+{
+  "audience": "OBSERVER",
+  "data": {
+    "action_request_ids": [
+      "act_robot_r_00002"
+    ],
+    "activity": {
+      "commitment_id": null,
+      "kind": "ATTEND",
+      "review_after_s": 60,
+      "source": "DERIVED",
+      "target_id": null,
+      "wake_if": [
+        {
+          "addressed": true
+        },
+        {
+          "new_track": true
+        },
+        {
+          "speech_heard": true
+        }
+      ]
+    },
+    "based_on_tick": 6,
+    "calls": [
+      {
+        "attempt": 0,
+        "cached_tokens": null,
+        "call_id": "call_robot_r_000001",
+        "deadline_ms": 3988,
+        "error": false,
+        "generated_tokens": null,
+        "generation_ms": null,
+        "outcome": "VALID",
+        "prefill_ms": null,
+        "prompt_tokens": null,
+        "queue_ms": 0,
+        "total_ms": 0
+      }
+    ],
+    "cognition": "C2",
+    "context": {
+      "budget_tokens": 3750,
+      "compression_steps": [],
+      "sections": [
+        {
+          "budget": 650,
+          "cut_items": 0,
+          "items": 1,
+          "section": "GUARDRAILS",
+          "tokens": 762
+        },
+        {
+          "budget": 300,
+          "cut_items": 0,
+          "items": 1,
+          "section": "IDENTITY",
+          "tokens": 122
+        },
+        {
+          "budget": 200,
+          "cut_items": 0,
+          "items": 1,
+          "section": "COMMITMENTS",
+          "tokens": 4
+        },
+        {
+          "budget": 200,
+          "cut_items": 0,
+          "items": 6,
+          "section": "SETTING",
+          "tokens": 76
+        },
+        {
+          "budget": 350,
+          "cut_items": 0,
+          "items": 1,
+          "section": "FACTS",
+          "tokens": 11
+        },
+        {
+          "budget": 350,
+          "cut_items": 0,
+          "items": 0,
+          "section": "EPISODES",
+          "tokens": 0
+        },
+        {
+          "budget": 750,
+          "cut_items": 0,
+          "items": 0,
+          "section": "CONVERSATION",
+          "tokens": 0
+        },
+        {
+          "budget": 800,
+          "cut_items": 0,
+          "items": 1,
+          "section": "OBSERVATIONS",
+          "tokens": 26
+        },
+        {
+          "budget": 150,
+          "cut_items": 0,
+          "items": 1,
+          "section": "DECISION",
+          "tokens": 62
+        }
+      ],
+      "tokenizer": "approx_chars_v1",
+      "total_tokens": 1088
+    },
+    "decision_id": "dec_robot_r_000001",
+    "fallback": null,
+    "policy": "MODEL",
+    "tier": "FOCAL",
+    "triggers": [
+      "START",
+      "PERSON_NEAR"
+    ],
+    "reason_summary": {
+      "text": "X asked about the demo; answering.",
+      "label": "the model's own words"
+    }
+  },
+  "lane": "decision",
+  "observer": "robot_r",
+  "schema_version": "1.0",
+  "t_ms": 100
+}

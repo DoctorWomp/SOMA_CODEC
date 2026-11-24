@@ -87,6 +87,10 @@ def test_rendered_runs_declare_resolution_and_preset_and_record_frames(tmp_path)
     assert "gl_compatibility" in cmd and any(a.startswith("--frame-stats=") for a in cmd)
     headless = godot_command(RunOptions("SB04_POLITE_BID", "godot"), SCEN, tmp_path, 1234, 7)
     assert "--resolution" not in headless and not any(a.startswith("--frame-stats=") for a in headless)
+    # G4a: a watched run reads the live viewer feed (closed until F3); headless runs write none.
+    assert "--viewer=closed" in cmd and any(a.startswith("--viewer-dir=") for a in cmd)
+    assert not any(a.startswith("--viewer") for a in headless)
+    assert any(a.startswith("--truth-tracks=") for a in headless) and "--seat=spectator" in headless
 
 
 def _row(mode, p50, p95, npm, pulse=True, render=None):

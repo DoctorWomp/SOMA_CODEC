@@ -1,0 +1,14 @@
+{
+  "audience": "OBSERVER",
+  "data": {
+    "at_ms": 100,
+    "event": "GLANCE",
+    "request_id": "act_robot_r_00001",
+    "target": "anon_wodzgiwd7a",
+    "why": "movement"
+  },
+  "lane": "pulse",
+  "observer": "robot_r",
+  "schema_version": "1.0",
+  "t_ms": 100
+}

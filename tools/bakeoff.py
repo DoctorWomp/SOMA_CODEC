@@ -6,6 +6,8 @@
     uv run python tools/bakeoff.py live --models F3 F1 --npc-model N3       # Option C runs of SB-04
     uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE LIVE_RENDERED \
         --resolution 1920x1080 --render-preset v0                           # the render tax (G3d)
+    uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE_RENDERED --viewer open \
+        --resolution 1920x1080 --render-preset v0 --repeat 1                # with the layer viewer open (G4a)
     uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE --no-pulse  # pulse off (G3d)
     uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE LIVE_LOAD \
         --focal-layout SYSTEM_PREFIX --focal-answer SHORT --gpu-guard on      # G3f conditions (D-76 to D-78)
@@ -387,7 +389,8 @@ def live_key(row: dict) -> tuple:
     c = row.get("conditions") or {}
     return (row["label"], row["mode"], row.get("npc_label"), row.get("pulse", True), c.get("prompt_layout", "ONE_MESSAGE"),
             c.get("answer", "FULL"), bool(c.get("gpu_guard")), c.get("npc_cap", 0) if c.get("gpu_guard") else 0,
-            c.get("guard_hold", "ALL") if c.get("gpu_guard") else "ALL", c.get("salvage", True) is not False)
+            c.get("guard_hold", "ALL") if c.get("gpu_guard") else "ALL", c.get("salvage", True) is not False,
+            row.get("render"))   # G4a: a rendered row with the layer viewer open is its own row
 
 
 def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, object]]) -> dict:
@@ -457,7 +460,8 @@ def live_row(entry: dict, npc_label: str, mode: str, runs: list[tuple[Path, obje
             # G3d (D-69): pulse, render, frame pacing (worst repeat) and peak VRAM sampled during the runs.
             "pulse": bool(((runs[-1][1].summary.get("render") or {}).get("pulse"))),
             "render": None if (runs[-1][1].summary.get("render") or {}).get("headless", True)
-            else f"{runs[-1][1].summary['render']['resolution']} {runs[-1][1].summary['render']['preset']}",
+            else f"{runs[-1][1].summary['render']['resolution']} {runs[-1][1].summary['render']['preset']}"
+            + (" · viewer open" if (runs[-1][1].summary.get("viewer") or {}).get("mode") == "open" else ""),
             "npc_calls_per_min": round(len(npc) / minutes, 1) if minutes else None,
             "frame_p50_ms": max((x["p50_ms"] for x in frames if x["p50_ms"] is not None), default=None),
             "frame_p95_ms": max((x["p95_ms"] for x in frames if x["p95_ms"] is not None), default=None),
@@ -509,8 +513,9 @@ def cmd_live(args: argparse.Namespace) -> int:
             runs = []
             for k in range(args.repeat):
                 npc_part = "" if npc_label in ("config",) else f"_{str(npc_label).lower()}"
+                viewer_part = f"_viewer{args.viewer}" if mode in RENDERED_MODES and args.viewer != "auto" else ""
                 out = RESULTS / (f"run_{entry['label']}{npc_part}_{mode.lower()}{'_nopulse' if args.no_pulse else ''}"
-                                 f"{suffix}_{k + 1}")
+                                 f"{viewer_part}{suffix}_{k + 1}")
                 print(f"SB-04 {mode} {k + 1}/{args.repeat} with {entry['label']} {entry['model']} {entry['quant']} "
                       f"(NPC model: {npc_label})...")
                 try:
@@ -520,7 +525,8 @@ def cmd_live(args: argparse.Namespace) -> int:
                         npc_load_streams=load, npc_load_prompts=npc_items,
                         headless=mode not in RENDERED_MODES, resolution=args.resolution,
                         render_preset=args.render_preset, frame_stats=True,
-                        pulse="off" if args.no_pulse else "auto", conditions=conditions)))
+                        pulse="off" if args.no_pulse else "auto", conditions=conditions,
+                        viewer=args.viewer if mode in RENDERED_MODES else "off")))
                 except RunError as exc:
                     print(f"  FAILED: {exc}")
                     continue
@@ -751,6 +757,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="NPC server model: config (configs/inference.yaml), a catalog label such as N3, or none")
     p_live.add_argument("--resolution", default="1920x1080", help="LIVE_RENDERED: the window size, WIDTHxHEIGHT")
     p_live.add_argument("--render-preset", default="v0", help="LIVE_RENDERED: v0 or v0_compat (range_service/eval/runner.py)")
+    p_live.add_argument("--viewer", default="auto", choices=["auto", "off", "closed", "open"],
+                        help="G4a: LIVE_RENDERED with the layer viewer closed (auto) or open the whole run")
     p_live.add_argument("--no-pulse", action="store_true",
                         help="the pulse protocol off in every run (compare with the same command without it)")
     p_live.add_argument("--focal-layout", default=None, choices=["ONE_MESSAGE", "SYSTEM_PREFIX"],

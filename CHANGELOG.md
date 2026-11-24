@@ -2,6 +2,20 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
+## G4a — Permissions, Spectator and the layer viewer v1 (2026-11-24; draft PR)
+
+`docs/gates/G4_PLAN.md` (G4 split into G4a, G4b, G4c), D-90 to D-95 PROPOSED, `docs/gates/G4a_OWNER_CHECKLIST.md`. Owner decisions recorded: D-62 and D-72 to D-74 APPROVED (the G3e watch).
+
+### Added
+- Seats and the world dispatcher (D-90): `configs/permissions.yaml` (contract `permissions`), Godot's `WorldDispatcher` for the link, the tape and every seat request, a Python mirror whose answers are compared with Godot's; the Evaluator is its own seat, the only one that sees evaluator truth.
+- Body + controller (D-91): `Avatar.controller`, `RangeWorld.set_controller`; the agent session drives only `SCRIPTED` and `LLM_AGENT` bodies.
+- The operator log (D-92): seat requests and refusals in `RUN/operator.jsonl`, never the journal.
+- The viewer feed (D-93): `range_service/viewer/feed.py`, contract `viewer_record`; written live in watched runs and rebuilt at the end of every run (`RUN/viewer/`); Godot's `truth_tracks.json` for the Evaluator; `tools/view_run.py` replays any run folder.
+- Layer viewer v1 (D-94) and the EVALUATOR TRUTH panel; follow and POV cameras and the Sensor view from packets only (D-95); `run_scenario.py --viewer --seat --observer`, `bakeoff.py live --viewer`, viewer columns in `compare_runs.py`.
+
+### Unchanged
+- Every scenario's journal (checked three times each, with the live feed and with the viewer open).
+
 ## G3f — Robot R on time under load (2026-11-19; draft PR)
 
 `docs/gates/G3_PLAN.md` (G3f), D-75 to D-83 PROPOSED, `docs/gates/G3f_OWNER_CHECKLIST.md`. Owner decisions recorded: D-60, D-61, D-63 to D-69 APPROVED; D-70's memory proposal APPROVED and built (D-81).

@@ -1,12 +1,25 @@
 class_name CameraRig
 extends Node3D
-## Spectator camera, basic version (Blueprint §7.1, §7.4). It never creates an in-world body.
+## Spectator cameras (Blueprint §7.1, §7.4; G4a T06). It never creates an in-world body.
 ##
-## FREE:  W/A/S/D move, Q/E down/up, Shift faster, hold right mouse to look, wheel = speed.
-## ORBIT: follows the selected avatar; hold right mouse to orbit, wheel to zoom.
-## C switches mode, [ and ] select the previous / next avatar.
+## FREE:   W/A/S/D move, Q/E down/up, Shift faster, hold right mouse to look, wheel = speed.
+## ORBIT:  around the selected avatar; hold right mouse to orbit, wheel to zoom.
+## FOLLOW: behind the selected avatar, along its heading (third person); wheel to zoom.
+## POV:    the selected avatar's own point of view: its sensor point, facing where its head faces
+##         (D-72). What it *could* see; the Sensor view (F2) shows what its senses actually received.
+## C cycles the modes the seat may use, [ and ] select the previous / next avatar.
+##
+## Orbit and follow keep the camera out of walls like a SpringArm3D: a ray from the avatar to the
+## camera stops it short of the first wall it hits. Every mode and selection is asked of the world
+## dispatcher (D-90) when one is set: a participant (G4c) gets only its own avatar's follow and POV.
 
-enum Mode { FREE, ORBIT }
+enum Mode { FREE, ORBIT, FOLLOW, POV }
+
+const MODE_CAPABILITY := {Mode.FREE: "CAMERA_FREE", Mode.ORBIT: "CAMERA_ORBIT", Mode.FOLLOW: "CAMERA_FOLLOW",
+	Mode.POV: "CAMERA_POV"}
+const FOLLOW_HEIGHT := 1.6
+const FOLLOW_PITCH := -0.25
+const CLIP_MARGIN := 0.2
 
 const FREE_SPEED := 8.0
 const FAST_FACTOR := 3.0
@@ -26,6 +39,9 @@ var free_speed := FREE_SPEED
 var orbit_yaw := 0.5
 var orbit_pitch := -0.4
 var orbit_distance := 5.0
+var follow_distance := 4.0
+var dispatcher: WorldDispatcher        # the seat's permissions (D-90); null = no checks (G1 tests)
+var clipped := false                   # the last orbit/follow placement was pulled in by a wall
 var _looking := false
 
 
@@ -57,13 +73,66 @@ func selected_target() -> Node3D:
 
 
 func select_next() -> void:
-	if not targets.is_empty():
-		selected = (selected + 1) % targets.size()
+	_select_step(1)
 
 
 func select_prev() -> void:
-	if not targets.is_empty():
-		selected = (selected - 1 + targets.size()) % targets.size()
+	_select_step(-1)
+
+
+func _select_step(direction: int) -> void:
+	for i in targets.size():
+		var candidate := (selected + direction * (i + 1) + targets.size() * 4) % targets.size()
+		if _allowed("SELECT_AVATAR", candidate):
+			selected = candidate
+			if not _allowed(MODE_CAPABILITY[mode], selected):
+				mode = Mode.FREE
+			return
+
+
+## Select an avatar by id (launch option, tests). False if unknown or not allowed for the seat.
+func select_avatar(avatar_id: String) -> bool:
+	for i in targets.size():
+		if (targets[i] as Avatar).avatar_id == avatar_id and _allowed("SELECT_AVATAR", i):
+			selected = i
+			return true
+	return false
+
+
+func selected_id() -> String:
+	var t := selected_target()
+	return (t as Avatar).avatar_id if t is Avatar else ""
+
+
+func _allowed(capability: String, index := -1) -> bool:
+	if dispatcher == null:
+		return true
+	var target := ""
+	if index >= 0 and index < targets.size() and targets[index] is Avatar:
+		target = (targets[index] as Avatar).avatar_id
+	return dispatcher.seat_request(capability, target)["code"] == "OK"
+
+
+## Switch to `new_mode` if the seat may use it for the selected avatar. Returns whether it did.
+func set_mode(new_mode: Mode) -> bool:
+	if new_mode != Mode.FREE and selected_target() == null:
+		return false
+	if not _allowed(MODE_CAPABILITY[new_mode], selected):
+		return false
+	if mode != Mode.FREE and new_mode == Mode.FREE and camera != null:
+		free_position = camera.global_position
+		free_yaw = camera.global_rotation.y
+		free_pitch = clampf(camera.global_rotation.x, -1.5, 1.5)
+	mode = new_mode
+	_apply()
+	return true
+
+
+## C: the next mode the seat may use (FREE → ORBIT → FOLLOW → POV → FREE).
+func cycle_mode() -> void:
+	for i in range(1, 5):
+		if set_mode(((int(mode) + i) % 4) as Mode):
+			return
 
 
 func toggle_mode() -> void:
@@ -103,12 +172,41 @@ func _process(delta: float) -> void:
 func _apply() -> void:
 	if camera == null:
 		return
-	if mode == Mode.ORBIT and selected_target() != null:
-		var focus := selected_target().global_position + Vector3.UP * ORBIT_FOCUS_HEIGHT
+	var t := selected_target()
+	clipped = false
+	if mode == Mode.ORBIT and t != null:
+		var focus := t.global_position + Vector3.UP * ORBIT_FOCUS_HEIGHT
 		var view_basis := Basis.from_euler(Vector3(orbit_pitch, orbit_yaw, 0))
-		global_transform = Transform3D(view_basis, focus + view_basis.z * orbit_distance)
+		global_transform = Transform3D(view_basis, _clip(focus, focus + view_basis.z * orbit_distance))
+	elif mode == Mode.FOLLOW and t != null:
+		var focus := t.global_position + Vector3.UP * ORBIT_FOCUS_HEIGHT
+		var view_basis := Basis.from_euler(Vector3(FOLLOW_PITCH, t.rotation.y, 0))
+		var want := t.global_position + Vector3.UP * FOLLOW_HEIGHT + view_basis.z * follow_distance
+		var at := _clip(focus, want)
+		if (focus - at).length() > 0.01:
+			global_transform = Transform3D(Basis.looking_at(focus - at, Vector3.UP), at)
+		else:
+			global_transform = Transform3D(view_basis, at)
+	elif mode == Mode.POV and t is Avatar:
+		var a := t as Avatar
+		var dir := SenseModel.head_forward_of(a)
+		var view_basis := Basis.from_euler(Vector3(a.head_pitch, atan2(-dir.x, -dir.z), 0))
+		global_transform = Transform3D(view_basis, SenseModel.sensor_origin(a))
 	else:
 		global_transform = Transform3D(Basis.from_euler(Vector3(free_pitch, free_yaw, 0)), free_position)
+
+
+## Like a SpringArm3D: stop the camera short of the first wall between the avatar and `want`.
+func _clip(from: Vector3, want: Vector3) -> Vector3:
+	if not is_inside_tree() or get_world_3d() == null:
+		return want
+	var q := PhysicsRayQueryParameters3D.create(from, want, Layers.WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return want
+	clipped = true
+	var p: Vector3 = hit["position"]
+	return p + (from - p).normalized() * CLIP_MARGIN
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -121,6 +219,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			var closer := mb.button_index == MOUSE_BUTTON_WHEEL_UP
 			if mode == Mode.ORBIT:
 				orbit_distance = clampf(orbit_distance * (0.9 if closer else 1.1), MIN_ORBIT_DISTANCE, MAX_ORBIT_DISTANCE)
+			elif mode == Mode.FOLLOW:
+				follow_distance = clampf(follow_distance * (0.9 if closer else 1.1), MIN_ORBIT_DISTANCE, 20.0)
 			else:
 				free_speed = clampf(free_speed * (1.2 if closer else 1 / 1.2), 1.0, 60.0)
 	elif event is InputEventMouseMotion and _looking:
@@ -132,7 +232,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			free_yaw -= rel.x * MOUSE_SENSITIVITY
 			free_pitch = clampf(free_pitch - rel.y * MOUSE_SENSITIVITY, -1.5, 1.5)
 	elif event.is_action_pressed("cam_toggle_mode"):
-		toggle_mode()
+		cycle_mode()
 	elif event.is_action_pressed("select_next"):
 		select_next()
 	elif event.is_action_pressed("select_prev"):

@@ -9,7 +9,11 @@ configs (NPCs model-driven) is then scanned by ``scan_run``:
 - no marker appears in any other agent's context, in Robot R's context, in anything sent to
   the world (``sidecar_sent.jsonl``: every action request, so every COMMS message), in the
   journal (every COMMS event the world routed), in memories or decision records;
-- evaluator-label markers appear nowhere at all.
+- evaluator-label markers appear nowhere at all;
+- G4a (D-93): the viewer's observer feed holds no marker (it is scanned like every other file);
+  the evaluator truth file (``viewer/evaluator_truth.jsonl``, Evaluator seat only) is the one other
+  file that may hold them, and must hold every cast member's goal and the scenario's label
+  (otherwise the EVALUATOR TRUTH panel would show nothing and the check would prove nothing).
 
 ``observer_filter_problems`` checks that every agent's contexts only mention the tracks its
 own observation packets gave it: NPCs perceive through the observer filter like everyone else.
@@ -81,9 +85,19 @@ def scan_run(run_dir: Path, cast_personas: dict[str, str], goal_markers: dict[st
         persona = cast_personas.get(agent)
         if persona in goal_markers and any(e["agent_id"] == agent for e in prompts) and agent not in seen_own:
             problems.append(f"{agent}: its own private goal never reached its own prompt (the canary proves nothing)")
+    evaluator_file = run_dir / "viewer" / "evaluator_truth.jsonl"
+    if evaluator_file.is_file():
+        text = evaluator_file.read_text(encoding="utf-8", errors="replace")
+        for avatar_id, persona in sorted(cast_personas.items()):
+            if persona in goal_markers and goal_markers[persona] not in text:
+                problems.append(f"viewer/evaluator_truth.jsonl: {avatar_id}'s private goal is missing (the panel shows nothing)")
+        if not any(m in text for m in label_markers.values()):
+            problems.append("viewer/evaluator_truth.jsonl: the scenario's evaluator labels are missing")
     for path in sorted(run_dir.rglob("*")):
         if not path.is_file() or path.name in ("prompts.jsonl",) or path.suffix not in (".jsonl", ".json", ".log"):
             continue
+        if path == evaluator_file:
+            continue   # evaluator truth by design (checked above); the observer feed is scanned
         text = path.read_text(encoding="utf-8", errors="replace")
         for marker in all_markers:
             if marker in text:

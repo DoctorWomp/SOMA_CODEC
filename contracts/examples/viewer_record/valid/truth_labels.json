@@ -1,0 +1,20 @@
+{
+  "audience": "EVALUATOR",
+  "data": {
+    "evaluator_only": {
+      "y_leaves_after_s": 90,
+      "y_wants_help": true
+    },
+    "measure": [
+      "missed_bid",
+      "false_interruption",
+      "y_left_unhelped",
+      "x_task_completed"
+    ],
+    "scenario_id": "SB04_POLITE_BID"
+  },
+  "lane": "truth_labels",
+  "observer": null,
+  "schema_version": "1.0",
+  "t_ms": 0
+}

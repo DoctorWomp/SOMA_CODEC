@@ -71,6 +71,7 @@ func setup(target_world: RangeWorld, scen: Dictionary, overrides := {}) -> bool:
 		if spawned == null:
 			return false
 		# The presence dial's baseline (G3e, D-74), resolved by Python from persona and directive.
+		spawned.controller = String(scen["cast"][avatar_id].get("controller", "SCRIPTED"))   # D-91
 		spawned.presence_baseline = float(scen["cast"][avatar_id].get("presence_amplitude", spawned.presence_baseline))
 	for operator_id in scen.get("pa_operators", []):
 		world.comms.pa_operators[String(operator_id)] = true
@@ -169,7 +170,7 @@ func _play(index: int, e: Dictionary) -> void:
 	var reason := "INVALID_SCHEMA"
 	var event_ids: Array = []
 	if action != "" and world.avatars.has(actor):
-		var result := world.actions.submit_host({"schema_version": "1.0", "action_request_id": "tape_%04d" % (index + 1),
+		var result := world.dispatcher.host_request({"schema_version": "1.0", "action_request_id": "tape_%04d" % (index + 1),
 			"agent_id": actor, "based_on_tick_id": world.clock.tick, "action": action, "args": action_args}, actor)
 		reason = String(result["reason_code"])
 		event_ids = result["resulting_event_ids"]

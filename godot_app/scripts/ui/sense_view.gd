@@ -1,12 +1,17 @@
 class_name SenseView
 extends Node3D
-## F2 (Blueprint §7.4 "sensor view"): draws what the selected avatar perceived at its last
-## observation sample, from its own packet, not from world truth. A spectator debug view in the
-## HUD's diagnostic style (ART_DIRECTION §8); meaning is always in words, never color alone.
+## The Sensor view (F2; Blueprint §7.4; G4a): what the selected observer perceived at its last
+## observation sample, drawn from its own packet only, never from world truth (D-39). A spectator
+## view in the HUD's diagnostic style (ART_DIRECTION §8); meaning is always in words.
 ##
-## - its field of view (two short lines) from its sensor height;
-## - a line to each avatar it perceives, labelled "seen", "partly seen: …" or "lost: …";
-## - for speech it heard, a label "heard: «…»" and a short arrow toward where it came from.
+## - its sight cone, from the packet's own pose: the body's yaw plus the head's yaw (D-72), at its
+##   sensor height, as wide as its body's field of view;
+## - each track at the position the packet estimated, by the observer's own anonymous id (with its
+##   D-111 handle beside it when the observer has one), labelled seen, partly seen or lost;
+## - speech it heard, as an arrow along the packet's bearing (relative to the body, D-72) with the
+##   words, for 3 s.
+## Opening it is asked of the world dispatcher (VIEW_SENSOR, D-90): a participant (G4c) may open it
+## only for its own body, and that is logged.
 
 const SEEN := Color("#3fc1d0")
 const LOST := Color("#9aa3ad")
@@ -14,6 +19,8 @@ const FOV_LEN_M := 4.0
 
 var world: RangeWorld
 var rig: CameraRig
+var store: ViewerStore            # optional: the observer's own handles (D-111), from the viewer feed
+var last_drawn: Dictionary = {}   # what the last frame drew (tests): {"observer", "eye", "cone_dir", "labels"}
 var _mesh := ImmediateMesh.new()
 var _labels: Array[Label3D] = []
 
@@ -42,7 +49,19 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("sense_view"):
-		visible = not visible
+		toggle()
+
+
+## Open or close the view; opening asks the dispatcher for the selected observer.
+func toggle() -> bool:
+	if visible:
+		visible = false
+		return true
+	var target := rig.selected_id() if rig != null else ""
+	if world != null and world.dispatcher != null and world.dispatcher.seat_request("VIEW_SENSOR", target)["code"] != "OK":
+		return false
+	visible = true
+	return true
 
 
 func _process(_delta: float) -> void:
@@ -58,12 +77,18 @@ func _process(_delta: float) -> void:
 
 
 func draw_packet(a: Avatar, packet: Dictionary) -> void:
-	var eye := SenseModel.sensor_origin(a)
+	var pose: Dictionary = packet["observer_pose"]
+	var at := Vector3(float(pose["x"]), float(pose["y"]), float(pose["z"]))
+	var yaw := float(pose["yaw_rad"])
+	var head_yaw := float(pose.get("head_yaw_rad", 0.0))
+	var eye := at + Vector3.UP * a.sensor_mount_height       # the body's own sensor height (its config)
+	var body_fwd := Vector3(-sin(yaw), 0, -cos(yaw))
+	var head_fwd := Vector3(-sin(yaw + head_yaw), 0, -cos(yaw + head_yaw))
 	var half := deg_to_rad(float(a.body["sensors"]["fov_deg"])) / 2
+	var labels: Array[String] = []
 	_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
 	for s in [-1.0, 1.0]:
-		var dir := SenseModel.head_forward_of(a).rotated(Vector3.UP, half * s)   # the cone follows the head (D-72)
-		_line(eye, eye + dir * FOV_LEN_M, SEEN)
+		_line(eye, eye + head_fwd.rotated(Vector3.UP, half * s) * FOV_LEN_M, SEEN)   # the cone follows the head (D-72)
 	var used := 0
 	for item in packet["observations"]:
 		var kind := String(item["kind"])
@@ -78,18 +103,29 @@ func draw_packet(a: Avatar, packet: Dictionary) -> void:
 			elif validity != "OBSERVED":
 				text = "lost: " + String(item.get("validity_reason", validity)).to_lower().replace("_", " ")
 				color = LOST
+			text = "%s · %s" % [_track_label(a.avatar_id, item.get("track_id")), text]
 			_line(eye, target, color)
 			_label(used, target + Vector3.UP * 0.35, text)
+			labels.append(text)
 			used += 1
 		elif kind == "AUDIO_SPEECH":
-			var b := float(item["bearing_rad"])
-			var dir := SenseModel.forward_of(a).rotated(Vector3.UP, b)   # bearings stay relative to the body
+			var dir := body_fwd.rotated(Vector3.UP, float(item["bearing_rad"]))   # bearings stay relative to the body
 			_line(eye, eye + dir * 1.2, LOST)
 	_mesh.surface_end()
 	# Speech is delivered in a single sample; keep showing the last thing heard for 3 s.
 	var heard: Dictionary = world.senses.last_heard.get(a.avatar_id, {})
 	if not heard.is_empty() and SimClock.ms_at(world.clock.tick) - int(heard["ms"]) <= 3000:
-		_label(used, eye + Vector3.UP * 0.9, "heard: «%s»" % heard["text"])
+		var text := "heard: «%s»" % heard["text"]
+		_label(used, eye + Vector3.UP * 0.9, text)
+		labels.append(text)
+	last_drawn = {"observer": a.avatar_id, "eye": eye, "cone_dir": head_fwd, "labels": labels}
+
+
+## The observer's own id for a track, with its handle beside it when it has one (D-111).
+func _track_label(observer: String, track) -> String:
+	if store != null:
+		return store.track_label(observer, track)
+	return String(track) if track != null else "unknown"
 
 
 func _line(from: Vector3, to: Vector3, color: Color) -> void:

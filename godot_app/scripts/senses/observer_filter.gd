@@ -205,6 +205,21 @@ func entity_for_track(observer_id: String, track_id: String) -> String:
 	return ""
 
 
+## EVALUATOR ONLY (G4a, D-93): every observer's tracks as {observer id: {track id: avatar id}}.
+## Read through the world dispatcher (Evaluator seat) or written at run end to the run folder's
+## viewer/truth_tracks.json; never in the journal or in anything an agent receives.
+func truth_tracks() -> Dictionary:
+	var out := {}
+	var observers := _tracks.keys()
+	observers.sort()
+	for observer_id in observers:
+		var per := {}
+		for target_id in _tracks[observer_id]:
+			per[String(_tracks[observer_id][target_id]["track_id"])] = String(target_id)
+		out[String(observer_id)] = per
+	return out
+
+
 func _track(tracks: Dictionary, target_id: String) -> Dictionary:
 	if not tracks.has(target_id):
 		var token := ""
