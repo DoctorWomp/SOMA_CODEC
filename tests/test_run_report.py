@@ -105,3 +105,18 @@ def test_bakeoff_tables_compare_headless_with_rendered_and_pulse_on_with_off():
     assert any("+10%" in line and "-10%" in line for line in tax)
     ab = bk.pulse_ab_lines([_row("LIVE", 2000, 3000, 10.0), _row("LIVE", 2100, 2900, 10.0, pulse=False)], f)
     assert len(ab) == 6 and "2000 / 3000 | 2100 / 2900" in ab[-1]
+
+
+def test_a_relative_run_folder_reaches_godot_as_an_absolute_path(tmp_path, monkeypatch):
+    """Owner's PC, 2026-11-24: `run_scenario.py ... --out runs\\g4a_cost_off` failed with "Godot wrote
+    no journal". Godot runs with --path godot_app, so a relative --journal= landed in
+    godot_app/runs/... instead of the run folder. Every path handed to Godot must be absolute."""
+    monkeypatch.chdir(tmp_path)
+    opts = RunOptions("SB04_POLITE_BID", "godot", mode="LIVE", headless=False)
+    cmd = godot_command(opts, SCEN, Path("runs") / "rel", 1234, 7)
+    paths = [a.split("=", 1)[1] for a in cmd
+             if a.split("=", 1)[0] in ("--journal", "--frame-stats", "--truth-tracks", "--operator-log", "--viewer-dir")]
+    assert len(paths) == 5
+    for p in paths:
+        assert Path(p).is_absolute(), p
+        assert Path(p).is_relative_to(tmp_path / "runs" / "rel"), p

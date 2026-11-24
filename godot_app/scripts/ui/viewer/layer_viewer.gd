@@ -24,8 +24,8 @@ const DIM := Color("#8a96a3")
 const WARN := Color("#e0a040")
 const BAD := Color("#e06a5a")
 const OK_COLOR := Color("#7fd18b")
-const HEADER_H := 54.0
-const NAME_W := 232.0
+const HEADER_H := 58.0     # room for the capability card at UiStyle.FONT_BUMP
+const NAME_W := 252.0      # lane names at UiStyle.FONT_BUMP
 const PIN_H := 16.0
 const AXIS_H := 18.0
 const FONT_SIZE := 13
@@ -111,7 +111,7 @@ func _ready() -> void:
 	decision_label = Label.new()
 	decision_label.name = "DecisionPanel"
 	decision_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	decision_label.add_theme_font_size_override("font_size", 12)
+	decision_label.add_theme_font_size_override("font_size", UiStyle.fs(12))
 	decision_label.add_theme_color_override("font_color", TEXT)
 	decision_label.clip_text = true
 	add_child(decision_label)
@@ -145,7 +145,7 @@ func _button(text: String, tip: String, toggle: bool) -> Button:
 	b.tooltip_text = tip
 	b.toggle_mode = toggle
 	b.focus_mode = Control.FOCUS_NONE
-	b.add_theme_font_size_override("font_size", 10)
+	b.add_theme_font_size_override("font_size", UiStyle.fs(10))
 	add_child(b)
 	return b
 
@@ -418,14 +418,14 @@ func paint(c: Control) -> void:
 		dispatcher.seat if dispatcher != null else "?", mode, playhead_ms / 1000.0, store.t_max / 1000.0], ACCENT, 14)
 	var card := capability_card().split("\n")
 	for i in card.size():
-		_text(Vector2(12, 34 + 14 * i), card[i], DIM, 11)
+		_text(Vector2(12, 34 + (14 + UiStyle.FONT_BUMP) * i), card[i], DIM, 11)
 	_draw_map(a["map"])
 	_c.draw_rect(a["text"], Color(1, 1, 1, 0.04))
 	_draw_lanes(a["plot"], a["row_h"], a["pins"])
 
 
 func _text(at: Vector2, s: String, color: Color, font_size := FONT_SIZE, max_w := -1.0) -> void:
-	_c.draw_string(_font, at, s, HORIZONTAL_ALIGNMENT_LEFT, max_w, font_size, color)
+	_c.draw_string(_font, at, s, HORIZONTAL_ALIGNMENT_LEFT, max_w, UiStyle.fs(font_size), color)
 
 
 ## Top-down view of the observer's own perception at the playhead: its pose, its head-anchored
