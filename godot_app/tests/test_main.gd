@@ -2766,8 +2766,9 @@ func test_dispatcher_permissions_without_ui() -> String:
 			var r := w.dispatcher.seat_action(_req(agent, w.clock.tick, "SPEAK", {"channel": "LOCAL", "text": "hi"}, 900 + n))
 			if r.get("code", "") == "OK" or r.has("accepted"):
 				return "%s sent an action for %s: %s" % [seat, agent, r]
+		# Built for the Director in G4b (D-97); still refused for every other seat.
 		var edit := String(w.dispatcher.seat_request("EDIT_DIRECTIVE", "robot_r")["code"])
-		if edit != ("NOT_BUILT" if seat == "DIRECTOR" else "PERMISSION_DENIED"):
+		if edit != ("OK" if seat == "DIRECTOR" else "PERMISSION_DENIED"):
 			return "%s EDIT_DIRECTIVE gave %s" % [seat, edit]
 		var truth := String(w.dispatcher.seat_request("VIEW_EVALUATOR_TRUTH", "robot_r")["code"])
 		if (truth == "OK") != (seat == "EVALUATOR"):
