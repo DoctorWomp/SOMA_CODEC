@@ -17,7 +17,7 @@ extends Control
 
 signal decision_selected(decision_id: String)
 
-const BG := Color(0.07, 0.09, 0.12, 0.9)
+const BG := Color(0.07, 0.09, 0.12, 1.0)   # opaque: the 3D scene never shows through the diagnostics
 const ACCENT := Color("#3fc1d0")
 const TEXT := Color("#e6eef2")
 const DIM := Color("#8a96a3")
@@ -29,6 +29,7 @@ const NAME_W := 232.0
 const PIN_H := 16.0
 const AXIS_H := 18.0
 const FONT_SIZE := 13
+const LIVE_REPAINT_MS := 500
 const HORIZON := [["L0", "Anchor"], ["L1", "Halo"], ["L2", "Echo"], ["L3", "Wake"], ["L4", "Focus"],
 	["L5", "Contour"], ["L6", "Prism"], ["L7", "Haze"], ["L8", "Trail"]]
 ## The lanes built today, in order: [key, label].
@@ -53,6 +54,10 @@ var buttons := {}    # lane key -> {"solo": Button, "mute": Button, "bypass": Bu
 var decision_label: Label
 var _font: Font
 var _seen_version := -1
+var _next_live_repaint_ms := 0
+var _c: Control                        # the canvas being painted
+var _vp: SubViewport
+var _canvas: PanelCanvas
 var _drag := false
 
 
@@ -72,8 +77,37 @@ func setup(viewer_store: ViewerStore, seat_dispatcher: WorldDispatcher, first_ob
 	set_observer(first_observer)
 
 
+## Draws the panel when asked; lives in a SubViewport that renders only after a change.
+class PanelCanvas extends Control:
+	var viewer: LayerViewer
+
+	func _draw() -> void:
+		viewer.paint(self)
+
+
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
+	# Cost (ART_DIRECTION §3.1, measured in G4a): the panel is painted into its own texture only when
+	# its data, playhead or observer change (~4 times a second live), and each frame composites that
+	# one texture. Painting every frame cost ~5 ms of a software renderer's frame. The texture is
+	# the panel's size (about 2-5 MB). Buttons and the decision text stay outside it.
+	var holder := SubViewportContainer.new()
+	holder.name = "Paint"
+	holder.stretch = true
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(holder)
+	_vp = SubViewport.new()
+	_vp.transparent_bg = true
+	_vp.disable_3d = true
+	_vp.gui_disable_input = true
+	_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	holder.add_child(_vp)
+	_canvas = PanelCanvas.new()
+	_canvas.viewer = self
+	_canvas.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_vp.add_child(_canvas)
+	visibility_changed.connect(_repaint)
 	decision_label = Label.new()
 	decision_label.name = "DecisionPanel"
 	decision_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -122,7 +156,7 @@ func set_observer(avatar_id: String) -> void:
 	observer = avatar_id
 	selected_decision = ""
 	_refresh_decision()
-	queue_redraw()
+	_repaint()
 
 
 func set_solo(key: String, on: bool) -> void:
@@ -130,7 +164,7 @@ func set_solo(key: String, on: bool) -> void:
 		solo[key] = true
 	else:
 		solo.erase(key)
-	queue_redraw()
+	_repaint()
 
 
 func set_mute(key: String, on: bool) -> void:
@@ -138,7 +172,16 @@ func set_mute(key: String, on: bool) -> void:
 		muted[key] = true
 	else:
 		muted.erase(key)
-	queue_redraw()
+	_repaint()
+
+
+## Ask for one new paint of the panel (and one render of its texture).
+func _repaint() -> void:
+	if _canvas == null:
+		return
+	_canvas.size = size
+	_canvas.queue_redraw()
+	_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 ## What an empty HORIZON lane says (no layer is faked).
@@ -156,20 +199,24 @@ func lane_visible(key: String) -> bool:
 func _process(_delta: float) -> void:
 	if not visible or store == null:
 		return
-	if store.version != _seen_version:
+	# New live data repaints at most every LIVE_REPAINT_MS (input repaints at once): each repaint
+	# renders the panel's texture once, which a software renderer shows as one slower frame.
+	var now := Time.get_ticks_msec()
+	if store.version != _seen_version and now >= _next_live_repaint_ms:
 		_seen_version = store.version
+		_next_live_repaint_ms = now + LIVE_REPAINT_MS
 		if map_data.is_empty() and store.meta.has("map_id"):
 			map_data = WorldData.load_map(String(store.meta["map_id"]))
 		if follow_live and store.live:
 			playhead_ms = store.t_max
 		_refresh_decision()
-		queue_redraw()
+		_repaint()
 
 
 func scrub_to(t_ms: int) -> void:
 	playhead_ms = clampi(t_ms, 0, maxi(store.t_max if store != null else 0, 0))
 	follow_live = false
-	queue_redraw()
+	_repaint()
 
 
 func decisions() -> Array:
@@ -280,7 +327,7 @@ func _layout() -> void:
 			b["mute"].size = Vector2(22, bh)
 		b["bypass"].position = Vector2(NAME_W - 64, y)
 		b["bypass"].size = Vector2(60, bh)
-	queue_redraw()
+	_repaint()
 
 
 func time_window() -> Vector2i:
@@ -342,13 +389,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			follow_live = true
 			if store != null:
 				playhead_ms = store.t_max
-			queue_redraw()
+			_repaint()
 		KEY_MINUS:
 			window_ms = mini(window_ms * 2, 1920000)
-			queue_redraw()
+			_repaint()
 		KEY_EQUAL:
 			window_ms = maxi(window_ms >> 1, 7500)
-			queue_redraw()
+			_repaint()
 		_:
 			return
 	get_viewport().set_input_as_handled()
@@ -356,10 +403,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 # ---------------- drawing ----------------
 
-func _draw() -> void:
+## Paint the panel into `c` (the canvas inside the panel's SubViewport). Called only when something
+## changed; every other frame shows the texture of the last paint.
+func paint(c: Control) -> void:
+	_c = c
 	draws += 1
-	draw_rect(Rect2(Vector2.ZERO, size), BG)
-	draw_rect(Rect2(0, 0, 3, size.y), ACCENT)
+	_c.draw_rect(Rect2(Vector2.ZERO, size), BG)
+	_c.draw_rect(Rect2(0, 0, 3, size.y), ACCENT)
 	if store == null:
 		return
 	var a := _areas()
@@ -370,18 +420,18 @@ func _draw() -> void:
 	for i in card.size():
 		_text(Vector2(12, 34 + 14 * i), card[i], DIM, 11)
 	_draw_map(a["map"])
-	draw_rect(a["text"], Color(1, 1, 1, 0.04))
+	_c.draw_rect(a["text"], Color(1, 1, 1, 0.04))
 	_draw_lanes(a["plot"], a["row_h"], a["pins"])
 
 
 func _text(at: Vector2, s: String, color: Color, font_size := FONT_SIZE, max_w := -1.0) -> void:
-	draw_string(_font, at, s, HORIZONTAL_ALIGNMENT_LEFT, max_w, font_size, color)
+	_c.draw_string(_font, at, s, HORIZONTAL_ALIGNMENT_LEFT, max_w, font_size, color)
 
 
 ## Top-down view of the observer's own perception at the playhead: its pose, its head-anchored
 ## sight cone, its tracks where it estimated them, and speech it heard in the last 3 s as bearings.
 func _draw_map(r: Rect2) -> void:
-	draw_rect(r, Color(1, 1, 1, 0.04))
+	_c.draw_rect(r, Color(1, 1, 1, 0.04))
 	_text(r.position + Vector2(6, 14), "SIGHT · HEARING · TRACKS — seen by %s (its packets only)" % observer, DIM, 11)
 	if map_data.is_empty():
 		return
@@ -395,13 +445,13 @@ func _draw_map(r: Rect2) -> void:
 	var origin := inner.position
 	var to_px := func(x: float, z: float) -> Vector2: return origin + Vector2(x, z) * s
 	for wall in map_data["walls"]:
-		draw_line(to_px.call(float(wall["a"]["x"]), float(wall["a"]["z"])), to_px.call(float(wall["b"]["x"]), float(wall["b"]["z"])),
+		_c.draw_line(to_px.call(float(wall["a"]["x"]), float(wall["a"]["z"])), to_px.call(float(wall["b"]["x"]), float(wall["b"]["z"])),
 			DIM if bool(wall.get("blocks_sight", true)) else Color(DIM, 0.4), 2.0 if bool(wall.get("blocks_sight", true)) else 1.0)
 	for p in map_data.get("platforms", []):
 		var ar: Dictionary = p["area"]
 		var p0: Vector2 = to_px.call(float(ar["x_min"]), float(ar["z_min"]))
 		var p1: Vector2 = to_px.call(float(ar["x_max"]), float(ar["z_max"]))
-		draw_rect(Rect2(p0, p1 - p0), Color(DIM, 0.35), false, 1.0)
+		_c.draw_rect(Rect2(p0, p1 - p0), Color(DIM, 0.35), false, 1.0)
 	var sight := store.latest(observer, "sight", playhead_ms)
 	if sight.is_empty():
 		_text(inner.position + Vector2(4, 16), "no packet yet", DIM, 11)
@@ -420,11 +470,11 @@ func _draw_map(r: Rect2) -> void:
 	var frame := PackedVector2Array([inner.position, Vector2(inner.end.x, inner.position.y), inner.end,
 		Vector2(inner.position.x, inner.end.y)])
 	for piece in Geometry2D.intersect_polygons(cone, frame):   # draw only what is inside the map view
-		draw_colored_polygon(piece, Color(ACCENT, 0.08))
-		draw_polyline(piece + PackedVector2Array([piece[0]]), Color(ACCENT, 0.35), 1.0)
+		_c.draw_colored_polygon(piece, Color(ACCENT, 0.08))
+		_c.draw_polyline(piece + PackedVector2Array([piece[0]]), Color(ACCENT, 0.35), 1.0)
 	var fwd := Vector2(-sin(yaw), -cos(yaw))
 	var side := Vector2(fwd.y, -fwd.x)
-	draw_colored_polygon(PackedVector2Array([me + fwd * 9, me - fwd * 6 + side * 6, me - fwd * 6 - side * 6]), ACCENT)
+	_c.draw_colored_polygon(PackedVector2Array([me + fwd * 9, me - fwd * 6 + side * 6, me - fwd * 6 - side * 6]), ACCENT)
 	_text(me + Vector2(8, -6), observer, ACCENT, 11)
 	for item in sight["data"]["items"]:
 		if item.get("pos") == null:
@@ -433,15 +483,15 @@ func _draw_map(r: Rect2) -> void:
 		var validity := String(item["validity"])
 		var seen := validity == "OBSERVED" or validity == "DEGRADED"
 		if seen:
-			draw_circle(p, 5, OK_COLOR if validity == "OBSERVED" else WARN)
+			_c.draw_circle(p, 5, OK_COLOR if validity == "OBSERVED" else WARN)
 		else:
-			draw_arc(p, 5, 0, TAU, 12, DIM, 1.0)
+			_c.draw_arc(p, 5, 0, TAU, 12, DIM, 1.0)
 		var tag := "" if validity == "OBSERVED" else (" · partly" if validity == "DEGRADED" else " · %s" % String(item.get("reason", validity)).to_lower())
 		_text(p + Vector2(7, 4), store.track_label(observer, item["track"]) + tag, TEXT if seen else DIM, 10)
 	for heard in store.between(observer, "hearing", playhead_ms - 3000, playhead_ms):
 		var b := float(heard["data"].get("bearing", 0.0))
 		var dir := fwd.rotated(-b)   # bearings are relative to the body, positive left (screen y is +z)
-		draw_line(me, me + dir * 40, WARN, 2.0)
+		_c.draw_line(me, me + dir * 40, WARN, 2.0)
 		var txt := String(heard["data"].get("text", ""))
 		_text(me + dir * 44, "heard%s «%s»" % [" (to me)" if heard["data"].get("addressed") else "",
 			txt if txt.length() < 40 else txt.substr(0, 37) + "..."], WARN, 10)
@@ -460,7 +510,7 @@ func _draw_lanes(plot: Rect2, row_h: float, pins: Rect2) -> void:
 		var fb = rec["data"].get("fallback")
 		if fb is Dictionary:
 			col = BAD
-		draw_colored_polygon(PackedVector2Array([Vector2(x - 5, pins.position.y + 2), Vector2(x + 5, pins.position.y + 2),
+		_c.draw_colored_polygon(PackedVector2Array([Vector2(x - 5, pins.position.y + 2), Vector2(x + 5, pins.position.y + 2),
 			Vector2(x, pins.end.y - 1)]), col)
 	_text(Vector2(8, pins.end.y - 3), "decisions ▼ (click)", DIM, 10)
 	for i in lane_rows.size():
@@ -468,7 +518,8 @@ func _draw_lanes(plot: Rect2, row_h: float, pins: Rect2) -> void:
 		var key := String(row["key"])
 		var y := plot.position.y + i * row_h
 		var lane_r := Rect2(plot.position.x, y, plot.size.x, row_h)
-		draw_rect(Rect2(0, y, size.x, row_h), Color(1, 1, 1, 0.03 if i % 2 == 0 else 0.0))
+		if i % 2 == 0:
+			_c.draw_rect(Rect2(0, y, size.x, row_h), Color(1, 1, 1, 0.03))
 		var built := bool(row["built"])
 		var shown := built and lane_visible(key)
 		_text(Vector2(8, y + row_h * 0.7), String(row["label"]), TEXT if shown else DIM, 11, NAME_W - 120)
@@ -502,15 +553,16 @@ func _draw_lanes(plot: Rect2, row_h: float, pins: Rect2) -> void:
 	while tick_t <= win.y:
 		if tick_t >= win.x:
 			var x := _t_to_x(tick_t, plot)
-			draw_line(Vector2(x, plot.end.y), Vector2(x, plot.end.y + 4), DIM, 1.0)
+			_c.draw_line(Vector2(x, plot.end.y), Vector2(x, plot.end.y + 4), DIM, 1.0)
 			_text(Vector2(x + 2, axis_y), "%.0f s" % (tick_t / 1000.0), DIM, 10)
 		tick_t += step
 	var px := _t_to_x(playhead_ms, plot)
-	draw_line(Vector2(px, pins.position.y), Vector2(px, plot.end.y), ACCENT, 2.0)
+	_c.draw_line(Vector2(px, pins.position.y), Vector2(px, plot.end.y), ACCENT, 2.0)
 
 
 func _lane_sight(r: Rect2, win: Vector2i) -> void:
 	var last_x := -1.0
+	var segs := PackedVector2Array()   # one batched draw call for the whole lane
 	for rec in store.between(observer, "sight", win.x, win.y):
 		var x := _t_to_x(int(rec["t_ms"]), r)
 		if x - last_x < 1.0:
@@ -522,7 +574,10 @@ func _lane_sight(r: Rect2, win: Vector2i) -> void:
 				n += 1
 		if n > 0:
 			var hh := minf(r.size.y - 4, 4.0 * n)
-			draw_line(Vector2(x, r.end.y - 2), Vector2(x, r.end.y - 2 - hh), Color(OK_COLOR, 0.7), 1.0)
+			segs.append(Vector2(x, r.end.y - 2))
+			segs.append(Vector2(x, r.end.y - 2 - hh))
+	if not segs.is_empty():
+		_c.draw_multiline(segs, Color(OK_COLOR, 0.7), 1.0)
 
 
 func _lane_hearing(r: Rect2, win: Vector2i) -> void:
@@ -536,7 +591,7 @@ func _lane_tracks(r: Rect2, win: Vector2i) -> void:
 		var x := _t_to_x(int(rec["t_ms"]), r)
 		var ev := String(rec["data"]["event"])
 		var col := OK_COLOR if ev != "LOST" else DIM
-		draw_line(Vector2(x, r.position.y + 2), Vector2(x, r.end.y - 2), col, 1.0)
+		_c.draw_line(Vector2(x, r.position.y + 2), Vector2(x, r.end.y - 2), col, 1.0)
 		_text(Vector2(x + 2, r.end.y - 4), "%s %s" % [ev, store.track_label(observer, rec["data"]["track"])], col, 9)
 
 
@@ -551,7 +606,7 @@ func _lane_head(r: Rect2, win: Vector2i) -> void:
 		var hy := float(rec["data"]["pose"].get("head_yaw", 0.0))
 		pts.append(Vector2(x, r.get_center().y - clampf(hy / (PI / 2), -1, 1) * (r.size.y / 2 - 2)))
 	if pts.size() >= 2:
-		draw_polyline(pts, Color(ACCENT, 0.8), 1.0)
+		_c.draw_polyline(pts, Color(ACCENT, 0.8), 1.0)
 	for rec in store.between(observer, "pulse", win.x, win.y):
 		var ev := String(rec["data"]["event"])
 		if ev in ["GLANCE", "GAZE_HOLD", "GAZE_RETURN", "GAZE_PARTNER"]:
@@ -563,7 +618,7 @@ func _lane_pulse(r: Rect2, win: Vector2i) -> void:
 		var act = rec["data"].get("activity")
 		if act is Dictionary:
 			var x := maxf(_t_to_x(int(rec["t_ms"]), r), r.position.x)
-			draw_line(Vector2(x, r.position.y + 1), Vector2(x, r.end.y - 1), Color(TEXT, 0.4), 1.0)
+			_c.draw_line(Vector2(x, r.position.y + 1), Vector2(x, r.end.y - 1), Color(TEXT, 0.4), 1.0)
 			_text(Vector2(x + 2, r.position.y + 10), String(act.get("kind", "?")), TEXT, 9)
 	for rec in store.between(observer, "pulse", win.x, win.y):
 		var ev := String(rec["data"]["event"])
@@ -573,6 +628,8 @@ func _lane_pulse(r: Rect2, win: Vector2i) -> void:
 
 
 func _lane_model(r: Rect2, win: Vector2i) -> void:
+	var queue_segs := PackedVector2Array()
+	var model_segs := PackedVector2Array()
 	for rec in store.between(observer, "decision", win.x - 10000, win.y):
 		var t := int(rec["t_ms"])
 		for c in rec["data"].get("calls", []):
@@ -582,13 +639,16 @@ func _lane_model(r: Rect2, win: Vector2i) -> void:
 			var xq := _t_to_x(t + int(q), r)
 			var x1 := maxf(_t_to_x(t + int(total), r), x0 + 2)
 			var mid := r.get_center().y
-			draw_line(Vector2(x0, mid), Vector2(xq, mid), Color(DIM, 0.8), 3.0)          # queue
-			draw_line(Vector2(xq, mid), Vector2(x1, mid), Color(ACCENT, 0.9), 5.0)       # in the model
+			queue_segs.append_array([Vector2(x0, mid), Vector2(xq, mid)])     # queue
+			model_segs.append_array([Vector2(xq, mid), Vector2(x1, mid)])     # in the model
 			var outcome := String(c["outcome"])
 			var glyph := "✓" if outcome == "VALID" else ("T" if outcome == "TIMEOUT" else "✗")
 			if c.has("salvaged"):
 				glyph = "S"
 			_text(Vector2(x1 + 2, r.end.y - 3), glyph, OK_COLOR if glyph in ["✓", "S"] else BAD, 10)
+	if not queue_segs.is_empty():
+		_c.draw_multiline(queue_segs, Color(DIM, 0.8), 3.0)
+		_c.draw_multiline(model_segs, Color(ACCENT, 0.9), 5.0)
 
 
 func _lane_actions(r: Rect2, win: Vector2i) -> void:
@@ -609,7 +669,7 @@ func _lane_actions(r: Rect2, win: Vector2i) -> void:
 
 func _lane_beacon(r: Rect2, win: Vector2i) -> void:
 	var recs := store.records(observer, "beacon")
-	for i in recs.size():
+	for i in range(maxi(store.first_at_or_after(recs, win.x) - 1, 0), recs.size()):
 		var t0 := int(recs[i]["t_ms"])
 		var t1 := int(recs[i + 1]["t_ms"]) if i + 1 < recs.size() else maxi(store.t_max, playhead_ms)
 		if t1 < win.x or t0 > win.y:
@@ -617,5 +677,5 @@ func _lane_beacon(r: Rect2, win: Vector2i) -> void:
 		var x0 := maxf(_t_to_x(t0, r), r.position.x)
 		var x1 := minf(_t_to_x(t1, r), r.end.x)
 		var d: Dictionary = recs[i]["data"]
-		draw_rect(Rect2(x0, r.position.y + 3, maxf(x1 - x0 - 1, 1), r.size.y - 6), Color(ACCENT, 0.15))
+		_c.draw_rect(Rect2(x0, r.position.y + 3, maxf(x1 - x0 - 1, 1), r.size.y - 6), Color(ACCENT, 0.15))
 		_text(Vector2(x0 + 2, r.end.y - 4), String(d.get("ambient_state", d["expression_id"])).to_lower(), TEXT, 9, maxf(x1 - x0 - 3, 1))

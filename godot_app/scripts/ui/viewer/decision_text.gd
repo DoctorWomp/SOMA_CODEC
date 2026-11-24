@@ -123,9 +123,11 @@ static func describe(store: ViewerStore, observer: String, action: String, args:
 	if args.has("text"):
 		var text := String(args["text"])
 		parts.append("«%s»" % (text if text.length() <= 80 else text.substr(0, 77) + "..."))
-	for key in ["gesture", "expression_id", "duration_ms"]:
+	for key in ["gesture", "expression_id"]:
 		if args.has(key):
 			parts.append(str(args[key]))
+	if args.get("duration_ms") != null:
+		parts.append("%d ms" % int(args["duration_ms"]))
 	if args.get("destination") is Dictionary:
 		parts.append("to (%.1f, %.1f)" % [float(args["destination"]["x"]), float(args["destination"]["z"])])
 	return " ".join(parts)

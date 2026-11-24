@@ -1,7 +1,9 @@
 # G4a owner checklist: permissions, Spectator and the layer viewer v1
 
-**Gate:** G4a ([G4_PLAN.md](G4_PLAN.md)). **Decisions:** D-90 to D-95 (PROPOSED); your 2026-11-23 approval of D-62 and D-72 to D-74 is recorded in DECISIONS.md.
+**Gate:** G4a ([G4_PLAN.md](G4_PLAN.md)). **Decisions:** D-90 to D-96 (PROPOSED); your 2026-11-23 approval of D-62 and D-72 to D-74 is recorded in DECISIONS.md.
 **What is new:** every request goes through the world dispatcher with its seat's permissions (D-90); bodies and controllers are separate (D-91); watching never writes the journal (D-92); a viewer feed per observer, live and on replay (D-93); the layer viewer v1 (D-94); follow and POV cameras and a Sensor view drawn from packets only (D-95). Agents behave as before: every scenario's journal is the same as on main (G4_PLAN "G4a results").
+
+What the cloud showed (software rendering, fake model; D-96 and G4_PLAN "G4a results"): no journal changed in any scenario (three runs each); writing the live feed costs nothing measurable; the open viewer cost llvmpipe about 1–2 ms of frame p50 and 7 ms of p95, and 5.5 MiB of Godot's video memory. Screenshots: [live Spectator with the viewer](G4a_screenshots/live_spectator_viewer.png), [a decision with a drop before sending](G4a_screenshots/replay_decision_drop.png), [EVALUATOR TRUTH](G4a_screenshots/replay_evaluator_truth.png).
 
 Everything below is on your PC. Close what holds GPU memory first (OWNER_SETUP_WINDOWS.md "GPU memory"): the cost numbers in §4 compare runs, so keep the other programs the same in all of them.
 
@@ -98,6 +100,7 @@ uv run python tools/bakeoff.py live --models F3 --npc-model N3 --modes LIVE_REND
 
 - [ ] `results\bakeoff\results.md`'s render-tax table now has two rendered rows for F3 + N3: `1920x1080 v0` and `1920x1080 v0 · viewer open`, each against headless LIVE. The target table says whether Robot R still meets D-87 with the viewer open.
 - [ ] These numbers also decide D-114 (speculative decoding) later: note the free VRAM with the viewer open.
+- Note: since G4a a LIVE_RENDERED run writes the live viewer feed (`--viewer closed`, the default when watched); `--viewer off` reproduces G3's rendered runs exactly.
 
 ## 6. What to send back
 

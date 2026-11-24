@@ -4,7 +4,7 @@ All notable changes, by gate. Dates are when the work was done.
 
 ## G4a — Permissions, Spectator and the layer viewer v1 (2026-11-24; draft PR)
 
-`docs/gates/G4_PLAN.md` (G4 split into G4a, G4b, G4c), D-90 to D-95 PROPOSED, `docs/gates/G4a_OWNER_CHECKLIST.md`. Owner decisions recorded: D-62 and D-72 to D-74 APPROVED (the G3e watch).
+`docs/gates/G4_PLAN.md` (G4 split into G4a, G4b, G4c), D-90 to D-96 PROPOSED, `docs/gates/G4a_OWNER_CHECKLIST.md`. Owner decisions recorded: D-62 and D-72 to D-74 APPROVED (the G3e watch).
 
 ### Added
 - Seats and the world dispatcher (D-90): `configs/permissions.yaml` (contract `permissions`), Godot's `WorldDispatcher` for the link, the tape and every seat request, a Python mirror whose answers are compared with Godot's; the Evaluator is its own seat, the only one that sees evaluator truth.

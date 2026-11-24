@@ -11,14 +11,16 @@ extends Node
 const OBSERVER_FILE := "observer_feed.jsonl"
 const EVALUATOR_FILE := "evaluator_truth.jsonl"
 const POLL_MS := 250
-const MAX_READ_BYTES := 4 * 1024 * 1024   # per poll, so a large backlog never stalls a frame for long
+## Live: at most this much new feed is parsed per poll, so a backlog never stalls a frame (a watched
+## run writes ~25 KB/s; the rest waits for the next poll). Replay reads everything at open.
+const MAX_POLL_BYTES := 256 * 1024
 
 var dir := ""
 var dispatcher: WorldDispatcher
 var live := false
 var meta: Dictionary = {}
 var observers: Array = []
-## observer -> lane -> Array of records, sorted by t_ms when `_dirty` is cleared.
+## observer -> lane -> Array of records in time order (a lane that got one out of order is sorted on its next read).
 var lanes: Dictionary = {}
 ## Evaluator-only records: "" (run level) or observer -> lane -> Array. Empty for other seats.
 var evaluator: Dictionary = {}
@@ -31,7 +33,7 @@ var version := 0                 # bumps whenever new records arrive
 var refused := 0                 # records left out by the audience check
 var _offsets := {}
 var _partial := {}
-var _dirty := false
+var _unsorted := {}              # "observer|lane" -> true: a record arrived out of time order
 var _next_poll_ms := 0
 
 
@@ -47,7 +49,9 @@ func open(viewer_dir: String, seat_dispatcher: WorldDispatcher, is_live: bool) -
 	live = is_live
 	_offsets = {OBSERVER_FILE: 0, EVALUATOR_FILE: 0}
 	_partial = {OBSERVER_FILE: PackedByteArray(), EVALUATOR_FILE: PackedByteArray()}
-	poll()
+	var limit := MAX_POLL_BYTES if live else 1 << 40
+	while poll(limit) > 0 and not live:
+		pass
 	return FileAccess.file_exists(dir.path_join(OBSERVER_FILE))
 
 
@@ -61,16 +65,16 @@ func _process(_delta: float) -> void:
 
 
 ## Read what is new in the feed files. Returns how many records were stored.
-func poll() -> int:
-	var stored := _read(OBSERVER_FILE)
+func poll(limit := MAX_POLL_BYTES) -> int:
+	var stored := _read(OBSERVER_FILE, limit)
 	if dispatcher != null and dispatcher.allows("VIEW_EVALUATOR_TRUTH"):
-		stored += _read(EVALUATOR_FILE)
+		stored += _read(EVALUATOR_FILE, limit)
 	if stored > 0:
 		version += 1
 	return stored
 
 
-func _read(file_name: String) -> int:
+func _read(file_name: String, limit: int) -> int:
 	var path := dir.path_join(file_name)
 	if not FileAccess.file_exists(path):
 		return 0
@@ -82,7 +86,7 @@ func _read(file_name: String) -> int:
 	if length <= start:
 		return 0
 	f.seek(start)
-	var chunk := f.get_buffer(mini(length - start, MAX_READ_BYTES))
+	var chunk := f.get_buffer(mini(length - start, limit))
 	f.close()
 	_offsets[file_name] = start + chunk.size()
 	var data: PackedByteArray = _partial[file_name] + chunk
@@ -126,9 +130,11 @@ func ingest(rec: Dictionary) -> bool:
 	var per_lane: Dictionary = lanes[observer]
 	if not per_lane.has(lane):
 		per_lane[lane] = []
-	per_lane[lane].append(rec)
+	var list: Array = per_lane[lane]
+	if not list.is_empty() and int(list[list.size() - 1]["t_ms"]) > t:
+		_unsorted[observer + "|" + lane] = true      # rare: only these lanes are sorted again
+	list.append(rec)
 	t_max = maxi(t_max, t)
-	_dirty = true
 	var data: Dictionary = rec["data"]
 	match lane:
 		"action", "result":
@@ -151,19 +157,26 @@ func _request(observer: String, request_id: String) -> Dictionary:
 	return per[request_id]
 
 
-func _sort() -> void:
-	if not _dirty:
-		return
-	_dirty = false
-	for observer in lanes:
-		for lane in lanes[observer]:
-			(lanes[observer][lane] as Array).sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-				return int(a["t_ms"]) < int(b["t_ms"]))
-
-
 func records(observer: String, lane: String) -> Array:
-	_sort()
-	return lanes.get(observer, {}).get(lane, [])
+	var recs: Array = lanes.get(observer, {}).get(lane, [])
+	var key := observer + "|" + lane
+	if _unsorted.has(key):
+		_unsorted.erase(key)
+		recs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["t_ms"]) < int(b["t_ms"]))
+	return recs
+
+
+## Index of the first record with t_ms >= t (binary search; records are kept in time order).
+func first_at_or_after(recs: Array, t: int) -> int:
+	var lo := 0
+	var hi := recs.size()
+	while lo < hi:
+		var mid := (lo + hi) >> 1
+		if int(recs[mid]["t_ms"]) < t:
+			lo = mid + 1
+		else:
+			hi = mid
+	return lo
 
 
 ## The last record at or before `t` (ms), or {}.
@@ -184,13 +197,12 @@ func latest(observer: String, lane: String, t: int) -> Dictionary:
 
 ## Records with t0 <= t_ms <= t1.
 func between(observer: String, lane: String, t0: int, t1: int) -> Array:
+	var recs := records(observer, lane)
 	var out := []
-	for r in records(observer, lane):
-		var t := int(r["t_ms"])
-		if t > t1:
+	for i in range(first_at_or_after(recs, t0), recs.size()):
+		if int(recs[i]["t_ms"]) > t1:
 			break
-		if t >= t0:
-			out.append(r)
+		out.append(recs[i])
 	return out
 
 

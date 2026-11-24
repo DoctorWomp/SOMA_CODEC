@@ -36,6 +36,8 @@ var last_heard: Dictionary = {}
 ## source.call(observer: Avatar, now_ms: int) -> Array of observation items, at every sample.
 var extra_sources: Array[Callable] = []
 var _tracks: Dictionary = {}       # observer id -> {target id -> {"track_id", "last_seen_ms", "last_pos"}}
+## EVALUATOR ONLY (G4a, D-93): every track id ever issued, never dropped: observer -> {track id -> avatar id}.
+var _issued: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var _obs_counter := 0
 var _last_sample_tick := -1
@@ -144,6 +146,10 @@ func observe(observer: Avatar) -> Dictionary:
 		# Own head pose (D-72): relative to the body, so bearings stay relative to the body.
 		pose["head_yaw_rad"] = _r(observer.head_yaw)
 		pose["head_pitch_rad"] = _r(observer.head_pitch)
+	var issued: Dictionary = _issued.get(observer.avatar_id, {})   # evaluator only (truth_tracks)
+	_issued[observer.avatar_id] = issued
+	for target_id in tracks:
+		issued[String(tracks[target_id]["track_id"])] = String(target_id)
 	return {
 		"schema_version": "1.0",
 		"observer_id": observer.avatar_id,
@@ -205,18 +211,15 @@ func entity_for_track(observer_id: String, track_id: String) -> String:
 	return ""
 
 
-## EVALUATOR ONLY (G4a, D-93): every observer's tracks as {observer id: {track id: avatar id}}.
-## Read through the world dispatcher (Evaluator seat) or written at run end to the run folder's
-## viewer/truth_tracks.json; never in the journal or in anything an agent receives.
+## EVALUATOR ONLY (G4a, D-93): every track each observer was ever given, including tracks since
+## dropped, as {observer id: {track id: avatar id}}. Read through the world dispatcher (Evaluator
+## seat) or written at run end to viewer/truth_tracks.json; never in the journal or a packet.
 func truth_tracks() -> Dictionary:
 	var out := {}
-	var observers := _tracks.keys()
+	var observers := _issued.keys()
 	observers.sort()
 	for observer_id in observers:
-		var per := {}
-		for target_id in _tracks[observer_id]:
-			per[String(_tracks[observer_id][target_id]["track_id"])] = String(target_id)
-		out[String(observer_id)] = per
+		out[String(observer_id)] = (_issued[observer_id] as Dictionary).duplicate()
 	return out
 
 

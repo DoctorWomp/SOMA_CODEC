@@ -3023,8 +3023,8 @@ func test_evaluator_panel_only_for_the_evaluator() -> String:
 	for want in ["Private goals:", "visitor_x", "labels", "prompt as assembled", "## GUARDRAILS"]:
 		if not t.contains(want):
 			return "the panel lacks '%s'" % want
-	if not t.contains(" = visitor_x") and not t.contains(" = visitor_y"):
-		return "the panel does not map tracks to real ids"
+	if not t.contains(" (P1) = visitor_x") or not t.contains(" = visitor_y"):
+		return "the panel does not map every track (with its handle) to its real id: %s" % t.substr(0, 300)
 	return ""
 
 

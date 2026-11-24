@@ -1,6 +1,6 @@
 # G4 — Controls: Spectator, Director, Participant, layer viewer v1
 
-**Status:** G4a in progress (this branch, draft PR). G4b and G4c planned.
+**Status:** G4a built (draft PR; D-90 to D-96 PROPOSED; owner checks: [G4a](G4a_OWNER_CHECKLIST.md)). G4b and G4c planned.
 **Scope:** [RANGE_V0_SCOPE.md](../RANGE_V0_SCOPE.md) §2.4 (layer viewer) and §4 (G4 row) · [INTERACTION_MODES.md](../INTERACTION_MODES.md) §2, §4–§7, §10 · [HORIZON_OPERATIONAL_ARCHITECTURE.md](../HORIZON_OPERATIONAL_ARCHITECTURE.md) (per-observer labels, D-62) · [ART_DIRECTION.md](../ART_DIRECTION.md) §3.1, §7, §8 · Blueprint §7 (modes), §18 (T06–T12), §20 (G4 gate: *T06–T12 pass via real controls*) · [DECISIONS.md](../DECISIONS.md) D-03, D-12, D-13, D-25, D-51, D-62, D-63, D-69, D-72 to D-74, D-85, D-87, D-110, D-111
 
 ## Goal
@@ -69,3 +69,29 @@ Director and Participant controls (G4b, G4c; their capabilities answer `NOT_BUIL
 - **Python:** the permission table (every principal × capability; agents never get a view; only the Evaluator gets evaluator truth); the feed (observer records carry no real id of another avatar, no private goal, label or prompt text, never another observer's tracks; handles beside track ids; drops before sending with reasons; salvaged and dropped activities; reason_summary rules); live == replay; the canary run's observer feed holds no marker while the evaluator file holds them; contracts.
 - **Godot (headless):** dispatcher refusals for every seat (no UI); the link and tape routed through it with the same results; controller swap; T06 cameras; the sensor view drawn from packet pose; the layer viewer from a fixture feed (lanes, L0–L8 not built, Bypass disabled, Solo/Mute view only, scrub, decision panel with drop reasons, no evaluator panel for Spectator, evaluator panel for Evaluator); the Python/Godot permission matrices agree.
 - **End to end (`tools/godot_check.py`):** SB-04 with the fake model and the live feed on writes the same journal as without; the Godot replay of that run scrubs to every decision of Robot R (self-test) as Spectator and as Evaluator.
+
+## G4a results (cloud, 2026-11-24)
+
+**Checks:** `uv run python tools/check.py --require-godot`: all passed (Godot 4.7.2 installed in the session; 70 Godot tests including the eight new ones; 26 scenario runs; 11 min 31 s on 4 cores). `uv run pytest`: all passed.
+
+**Journals: the viewer changes none.** Each scenario three times on this branch: viewer off; the live feed written with random sidecar delays (25 ms); the viewer open (headless client). Every hash equals main's (taken from an untouched checkout of main before any change):
+
+| Scenario | Model | main | off / live feed / viewer open | Live feed = rebuilt feed |
+|---|---|---|---|---|
+| SB-04 | Demo | `50048b7e3d42` | same ×3 | yes |
+| SB-04 | fake | `a7854d66f268` | same ×3 | yes |
+| SB-05 | Demo | `3ef2e2e0e63c` | same ×3 | yes |
+| SB-06 | Demo | `b5b29006cad4` | same ×3 | yes |
+| SB-06 | fake | `f7b4d221a195` | same ×3 | yes |
+| SB-07 | Demo | `a486ddb7a471` | same ×3 | yes |
+| SB-08 | Demo | `f1f631e031c1` | same ×3 | yes |
+| SB-09 (21 min) | Demo | `e176ee2ca9be` | same ×3 (the viewer-open run after the store fix, D-94) | yes |
+| SB-10 | Demo | `ab5964d77f57` | same ×3 | yes |
+
+Also equal: SB-04 LIVE with `fake-slow:3000` (live feed = rebuilt, 3093 records).
+
+**The first end-to-end target, as far as G4a reaches** (INTERACTION_MODES §10): SB-04 watched in the Spectator seat (screenshot `G4a_screenshots/live_spectator_viewer.png`, Xvfb, fake model); Robot R's Sensor view and layer viewer; the replay scrubbed to every one of Robot R's decisions by `tools/godot_check.py` as Spectator and as Evaluator (11 decisions, 11 with model calls, no problems); a decision explained with a request dropped before sending and its reason (`replay_decision_drop.png`, the test fixture: the fake model never drops one in a stepped run, so the live run on the owner's PC is the real check); EVALUATOR TRUTH for the Evaluator seat only (`replay_evaluator_truth.png`).
+
+**Cost:** D-96 (software renderer in the cloud: closed costs nothing measurable; open about +1–2 ms frame p50, +7 ms p95, +5.5 MiB Godot video memory). The owner's GPU numbers come from the checklist §4–§5.
+
+**Bugs found and fixed on the way:** truth tracks forgot tracks the observer filter had dropped (fixed, and checked in `godot_check.py`); the viewer store re-sorted and scanned whole lanes as a long run grew (SB-09 with the viewer open did not finish in 900 s; now 188 s).

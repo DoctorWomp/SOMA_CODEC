@@ -765,8 +765,17 @@ def viewer_checks(results: dict, root: Path) -> tuple[list[str], str]:
         if not prompt_marks:
             problems.append(f"{name}: no prompt in the evaluator truth file")
         problems += [f"{name} viewer: {p}" for p in feed.observer_leaks(obs, sorted(scen["cast"]), secrets + prompt_marks)[:5]]
-        if not any(e["lane"] == "truth_tracks" for e in ev):
+        truth = {e["observer"]: e["data"]["tracks"] for e in ev if e["lane"] == "truth_tracks"}
+        if not truth:
             problems.append(f"{name}: Godot wrote no truth_tracks.json for the EVALUATOR TRUTH panel")
+        # Every track an observer ever perceived is named, also one the filter dropped later (a
+        # visitor who left): the EVALUATOR TRUTH panel must be able to say who each track was.
+        for r_ in obs:
+            if r_["lane"] == "sight":
+                missing = {i["track"] for i in r_["data"]["items"] if i["track"]} - set(truth.get(r_["observer"], {}))
+                if missing:
+                    problems.append(f"{name}: truth_tracks.json lacks {r_['observer']}'s tracks {sorted(missing)[:2]}")
+                    break
     shown = []
     for seat in ("spectator", "evaluator"):
         code, out = _run([find_godot() or "godot", "--headless", "--path", str(PROJECT_DIR), "res://scenes/main.tscn", "--",
