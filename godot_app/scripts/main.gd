@@ -68,6 +68,7 @@ var dispatcher: WorldDispatcher        # the world's, or a stand-alone one in re
 var viewer_store: ViewerStore
 var layer_viewer: LayerViewer
 var evaluator_panel: EvaluatorPanel
+var director_panel: DirectorPanel       # G4b: the Director console (Director seat only, F6)
 var viewer_open_s := 0.0
 
 
@@ -214,6 +215,7 @@ func _run_scenario() -> void:
 	if viewer_dir != "" and viewer_mode != "off":
 		_setup_viewer(viewer_dir, true, camera_rig.selected_id())
 		sense_view.store = viewer_store
+	_setup_director_panel()
 	_start_link_if_asked()
 	if link == null and link_port > 0:
 		var cast: Array = scen["cast"].keys()
@@ -310,6 +312,23 @@ func _setup_viewer(dir: String, live: bool, first_observer: String) -> void:
 		toggle_viewer()
 
 
+## G4b: the Director console, created only for the Director seat (F6 shows it).
+func _setup_director_panel() -> void:
+	director_panel = DirectorPanel.create(world, camera_rig)
+	if director_panel == null:
+		return
+	var layer := CanvasLayer.new()
+	layer.name = "DirectorLayer"
+	layer.layer = 6
+	add_child(layer)
+	director_panel.anchor_top = 0.55
+	director_panel.anchor_right = 0.41
+	director_panel.anchor_bottom = 1.0
+	director_panel.offset_left = 8
+	director_panel.offset_bottom = -8
+	layer.add_child(director_panel)
+
+
 ## F3: open or close the layer viewer for the selected observer (VIEW_LAYERS, D-90).
 func toggle_viewer() -> bool:
 	if layer_viewer == null:
@@ -335,7 +354,11 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("viewer_toggle"):
+	if event.is_action_pressed("director_toggle") and director_panel != null:
+		director_panel.visible = not director_panel.visible
+		if director_panel.visible:
+			director_panel.input.grab_focus()
+	elif event.is_action_pressed("viewer_toggle"):
 		toggle_viewer()
 	elif event.is_action_pressed("evaluator_toggle") and evaluator_panel != null:
 		evaluator_panel.visible = not evaluator_panel.visible
@@ -404,6 +427,7 @@ func self_test() -> int:
 	var list := lv.decisions()
 	var drops := 0
 	var with_calls := 0
+	var changes := 0          # G4b: decisions whose panel lists what changed since the previous one
 	for rec in list:
 		if not lv.select_decision(String(rec["data"]["decision_id"])):
 			problems.append("could not select %s" % rec["data"]["decision_id"])
@@ -414,6 +438,8 @@ func self_test() -> int:
 		if not text.contains("seen by %s" % obs) or not text.contains("Triggers:") or not text.contains("Actions:"):
 			problems.append("decision text of %s lacks its observer, triggers or actions" % rec["data"]["decision_id"])
 		drops += text.count("DROPPED before sending")
+		if text.contains("new since its previous decision"):
+			changes += 1
 		if not rec["data"]["calls"].is_empty():
 			with_calls += 1
 			if not text.contains("Model call"):
@@ -441,9 +467,12 @@ func self_test() -> int:
 			problems.append("the EVALUATOR TRUTH panel shows no private goals")
 	if lv.capability_card().find("[%s |" % obs) < 0:
 		problems.append("no capability card for %s" % obs)
-	print("VIEWER SELF TEST observer=%s seat=%s decisions=%d with_model_calls=%d drops_shown=%d horizon_not_built=%d evaluator_panel=%s evaluator_records=%d refused=%d problems=%d" % [
+	var markers := viewer_store.records("", "intervention").size()
+	if truth_allowed and markers > 0 and evaluator_panel != null and not evaluator_panel.text_for().contains("Interventions (before → after)"):
+		problems.append("the EVALUATOR TRUTH panel does not show the interventions' before/after")
+	print("VIEWER SELF TEST observer=%s seat=%s decisions=%d with_model_calls=%d drops_shown=%d horizon_not_built=%d evaluator_panel=%s evaluator_records=%d refused=%d intervention_markers=%d decisions_with_changes=%d problems=%d" % [
 		obs, seat_name, list.size(), with_calls, drops, not_built, "present" if evaluator_panel != null else "absent",
-		viewer_store.evaluator.size(), viewer_store.refused, problems.size()])
+		viewer_store.evaluator.size(), viewer_store.refused, markers, changes, problems.size()])
 	for p in problems:
 		print("VIEWER PROBLEM " + p)
 	return 0 if problems.is_empty() and not list.is_empty() else 1

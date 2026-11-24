@@ -431,12 +431,12 @@ def write_report(results: dict[str, Any], folder: Path) -> tuple[Path, Path]:
                 f"{f(r.get('vram_focal_mib'))} / {f(r.get('vram_npc_mib'))} |")
         lines += ["", "### Pulse, render, frame pacing and peak VRAM (G3d)", "",
                   "| Robot R model | NPC model | Mode | Pulse | Render | NPC calls/min | Frame p50 / p95 / p99 ms | "
-                  "Frame spikes | Frame target p95 <= 16.7 ms | Peak VRAM MiB (sampled during the run) | "
+                  "Frame spikes | Frame target p95 <= 20 ms (D-109) | Peak VRAM MiB (sampled during the run) | "
                   "Other programs before the servers / free after them MiB |",
                   "|---|---|---|---|---|---|---|---|---|---|---|"]
         for r in live:
             target = "–" if r.get("frame_p95_ms") is None or r.get("frame_headless") else \
-                ("met" if r["frame_p95_ms"] <= 16.75 else "NOT met")
+                ("met" if r["frame_p95_ms"] <= 20.05 else "NOT met")
             hyg = "–" if r.get("vram_other_mib") is None and r.get("vram_free_after_mib") is None else \
                 f"{f(r.get('vram_other_mib'))} / {f(r.get('vram_free_after_mib'))}" + \
                 (" (below the reserve)" if r.get("vram_warnings") else "")

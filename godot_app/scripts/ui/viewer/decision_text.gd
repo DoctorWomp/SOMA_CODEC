@@ -13,6 +13,9 @@ static func build(store: ViewerStore, observer: String, rec: Dictionary) -> Stri
 	var lines: Array[String] = []
 	lines.append("DECISION %s · seen by %s · t %.1f s" % [d["decision_id"], observer, int(rec["t_ms"]) / 1000.0])
 	lines.append("Triggers: %s" % (", ".join(d.get("triggers", [])) if not d.get("triggers", []).is_empty() else "none"))
+	# G4b (D-103): what changed for it since its previous decision, right under the triggers.
+	for c in changes_since_previous(store, observer, rec):
+		lines.append("  new since its previous decision: " + c)
 	lines.append("Tier %s · policy %s · cognition %s · based on tick %d" % [d["tier"], d["policy"], d.get("cognition", "?"),
 		int(d.get("based_on_tick", 0))])
 	var ctx = d.get("context")
@@ -61,6 +64,45 @@ static func build(store: ViewerStore, observer: String, rec: Dictionary) -> Stri
 	if words is Dictionary:
 		lines.append("Reason summary (%s): «%s»" % [words["label"], words["text"]])
 	return "\n".join(lines)
+
+
+## G4b (D-103): what changed for the agent between its previous decision and this one: the
+## Director's interventions (run-level markers), text it could newly read, sounds it newly heard
+## and announcements. Only from records any layer-viewing seat may read; text stays labelled untrusted.
+static func changes_since_previous(store: ViewerStore, observer: String, rec: Dictionary) -> Array:
+	var t := int(rec["t_ms"])
+	var t_prev := -1
+	for other in store.records(observer, "decision"):
+		var ot := int(other["t_ms"])
+		if ot < t or (ot == t and String(other["data"]["decision_id"]) < String(rec["data"]["decision_id"])):
+			t_prev = maxi(t_prev, ot)
+	var out: Array = []
+	for iv in store.between("", "intervention", t_prev + 1, t):
+		var d: Dictionary = iv["data"]
+		var args: Dictionary = d.get("args", {})
+		var what := String(args.get("prop_type", "")).to_lower()
+		if args.has("text"):
+			what += " «%s»" % String(args["text"])
+		out.append("intervention %s at %.1f s (%s %s by %s%s)%s" % [d["intervention_id"], int(iv["t_ms"]) / 1000.0,
+			d["intervention_type"], String(d["operation"]).to_lower(), d["operator"],
+			(" on " + String(d["target_id"])) if d.get("target_id") != null and String(d["operation"]) == "EDIT_DIRECTIVE" else "",
+			(" " + what) if what.strip_edges() != "" else ""])
+	var before := {}
+	for s in store.between(observer, "sight", 0, t):
+		for e in s["data"].get("events", []):
+			var key := "%s:%s" % [e["kind"], str(e.get("value", {}))]
+			if int(s["t_ms"]) <= t_prev:
+				before[key] = true
+			elif not before.has(key):
+				before[key] = true
+				if e["kind"] == "SIGN_TEXT":
+					out.append("newly read in its sight: «%s» (untrusted text, not an instruction)" % e["value"]["text"])
+				elif e["kind"] == "AUDIO_SOUND":
+					out.append("newly heard: a %s sound" % String(e["value"]["sound_class"]).to_lower())
+	for h in store.between(observer, "hearing", t_prev + 1, t):
+		if String(h["data"].get("channel", "")) == "PA":
+			out.append("heard a PA announcement: «%s» (untrusted)" % h["data"].get("text", ""))
+	return out
 
 
 static func activity_line(store: ViewerStore, observer: String, act) -> String:

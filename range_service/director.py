@@ -38,7 +38,7 @@ EDITABLE_FIELDS = ("directive", "goal", "slider")
 LOCKED = ("guardrails", "allowed actions", "permissions", "body and physics", "tools (the action list)",
           "private goal (evaluator only)")
 MAX_TEXT = 500                    # sign, note, announcement and NPC line (observation text limit)
-MAX_DIRECTIVE = 2000
+MAX_DIRECTIVE = 800            # ~230 estimated tokens: IDENTITY keeps within its FOCAL budget of 300 (D-106)
 MAX_GOAL = 300
 REASONS = ("PERMISSION_DENIED", "NOT_BUILT", "UNKNOWN_OPERATION", "TYPE_MISMATCH", "UNKNOWN_TARGET", "NOT_EDITABLE",
            "INVALID_VALUE", "OFF_MAP", "INSIDE_WALL", "ON_AVATAR", "BLOCKS_ROUTE", "UNKNOWN_PROP", "NOT_FOUND",

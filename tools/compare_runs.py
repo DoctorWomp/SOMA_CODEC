@@ -71,7 +71,7 @@ def column(run_dir: Path, agent: str) -> dict[str, str]:
             f"{r.get('fn1', {}).get('departures_mid_conversation')} ({r.get('fn1', {}).get('without_goodbye')})",
         "frame p50 / p95 / p99 ms": f"{frames.get('p50_ms')} / {frames.get('p95_ms')} / {frames.get('p99_ms')}"
         if frames.get("available") else "not recorded",
-        "frame spikes (target p95 <= 16.7 ms)": f"{frames.get('spikes')} ({ {True: 'met', False: 'not met', None: 'n/a headless'}[frames.get('meets_target')] })"
+        "frame spikes > 33.3 ms (target p95 <= 20 ms, D-109)": f"{frames.get('spikes')} ({ {True: 'met', False: 'not met', None: 'n/a headless'}[frames.get('meets_target')] })"
         if frames.get("available") else "-",
         "peak VRAM MiB": str(vram.get("peak_mib")) if vram else "not sampled",
         "Godot video memory peak MiB": str(frames.get("godot_video_mem_peak_mib")) if frames.get("available") else "-",

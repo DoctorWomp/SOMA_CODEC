@@ -9,4 +9,4 @@ interventions:
     intervention_type: ENVIRONMENTAL_INFLUENCE
     operation: PLACE_PROP
     target_id: null
-    args: {prop_type: SIGN, x: 13.5, z: 7.0, yaw_rad: 0.0, text: "Demo moved to Booth C"}
+    args: {prop_type: SIGN, x: 13.5, z: 7.0, yaw_rad: 3.1416, text: "Demo moved to Booth C"}   # facing the desk (+z)

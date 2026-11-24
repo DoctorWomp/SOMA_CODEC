@@ -23,11 +23,14 @@ def _frames(tmp: Path, frame_ms: list[float], server: str = "X11") -> Path:
 
 
 def test_frame_summary_reports_tails_and_spikes_against_the_target(tmp_path):
-    frames = [500.0] + [16.6] * 900 + [17.5] * 80 + [40.0] * 20         # first second is loading: skipped
+    frames = [500.0] + [16.6] * 900 + [21.5] * 80 + [40.0] * 20         # first second is loading: skipped
     s = frame_summary(_frames(tmp_path, frames))
     assert s["available"] and s["skipped_start_frames"] == 32           # 500 ms + 31 frames = the first second
-    assert s["p50_ms"] == 16.6 and s["p95_ms"] == 17.5 and s["p99_ms"] == 40.0 and s["spikes"] == 20
-    assert s["meets_target"] is False and s["target_p95_ms"] == round(FRAME_TARGET_MS, 1)
+    assert s["p50_ms"] == 16.6 and s["p95_ms"] == 21.5 and s["p99_ms"] == 40.0 and s["spikes"] == 20
+    assert s["meets_target"] is False and s["target_p95_ms"] == FRAME_TARGET_MS == 20.0     # D-109
+    # D-109: ordinary jitter just above the 16.7 ms frame period meets the target; D-69's did not.
+    jitter = frame_summary(_frames(tmp_path, [16.7] * 900 + [17.9] * 100))
+    assert jitter["meets_target"] is True and jitter["spikes"] == 0
     assert frame_summary(_frames(tmp_path, [16.0] * 200))["meets_target"] is True
     assert frame_summary(_frames(tmp_path, [1.0] * 2000, "headless"))["meets_target"] is None   # headless: no claim
     assert frame_summary(tmp_path / "none.json")["available"] is False

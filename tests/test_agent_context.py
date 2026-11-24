@@ -336,3 +336,24 @@ def test_never_cut_sections_over_the_budget_are_recorded_never_silent():
     reasons = [c["reason"] for c in job.assembled.cut_reasons]
     assert "LATEST_TURN_SHORTENED" in reasons and "NEVER_CUT_OVER_BUDGET" in reasons
     asyncio.run(y.decide(job)) if job.proposals is None else y.decide_now(job)
+
+
+def test_focal_guardrails_fit_their_own_budget_d106():
+    """G4b (D-106): Robot R's guardrails ran over their section budget (762 of 650) once LEAN became
+    the default. Every robot body and answer format must fit, and the tier total is unchanged."""
+    from range_service import expressions as ex
+    from range_service.agents import guardrails
+    from range_service.agents.context import BUDGETS, tier_budget
+    from range_service.agents.tokenizer import ApproxTokenizer
+    from range_service.configs import load_and_check
+
+    cs, _ = load_and_check()
+    tok = ApproxTokenizer()
+    actions = cs.items["personas"]["robot_r"]["allowed_actions"]
+    for body_id in ("legged_humanoid", "wheeled_humanoid", "quadruped", "quadruped_arm"):
+        body = cs.items["bodies"][body_id]
+        for answer in ("LEAN", "FULL", "SHORT"):
+            text = guardrails.guardrails_section("FOCAL", actions, body, ex.available(body, cs.items["expressions"]),
+                                                 activity=True, answer=answer)
+            assert tok.count(text) <= BUDGETS["FOCAL"]["GUARDRAILS"], (body_id, answer, tok.count(text))
+    assert tier_budget("FOCAL") == 3750

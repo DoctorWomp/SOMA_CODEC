@@ -17,7 +17,7 @@
           "prop_type": "SIGN",
           "x": 13.5,
           "z": 7.0,
-          "yaw_rad": 0.0,
+          "yaw_rad": 3.1416,
           "text": "Demo moved to Booth C"
         }
       }

@@ -227,3 +227,31 @@ def test_recipes_are_valid_and_checked_against_their_scenario():
     bad["interventions"][1]["at_tick"] = 99999
     found = director.recipe_problems(bad, cs.items["scenarios"], cs.items["personas"])
     assert any("nobody" in p for p in found) and any("after the scenario ends" in p for p in found)
+
+
+def test_recipe_tool_saves_applied_interventions_and_renames_props(tmp_path):
+    """tools/recipe.py: scenario ticks from world ticks; refused attempts left out; a prop placed in
+    the run is renamed for the recipe so a later removal still names it (D-102)."""
+    from tools.recipe import recipe_from_run
+
+    def iv(tick, rid, status, op, itype, target, args, rec_target=None):
+        req = {"request_id": rid, "operator": "director", "intervention_type": itype, "operation": op,
+               "target_id": target, "args": args, "pre_scheduled": False}
+        rec = None if status != "APPLIED" else {
+            "schema_version": "1.0", "intervention_id": rid, "tick_id": tick, "sim_time_ms": tick * 1000 // 60,
+            "operator": "director", "intervention_type": itype, "operation": op, "target_id": rec_target or target,
+            "args": args, "before": None, "after": "x", "pre_scheduled": False, "trial_tainted": True}
+        return {"schema_version": "1.0", "seq": 0, "tick_id": tick, "sim_time_ms": 0, "kind": "INTERVENTION", "actor_id": None,
+                "payload": {"status": status, "reason": None if status == "APPLIED" else "INSIDE_WALL", "request": req,
+                            "intervention": rec}}
+    journal = [{"schema_version": "1.0", "seq": 0, "tick_id": 4, "sim_time_ms": 66, "kind": "RUN_STARTED", "actor_id": None, "payload": {}},
+               iv(64, "dir_0001", "REFUSED", "PLACE_PROP", "WORLD_CHANGE", None, {"prop_type": "CRATE", "x": 10.0, "z": 9.0}),
+               iv(124, "dir_0002", "APPLIED", "PLACE_PROP", "WORLD_CHANGE", None, {"prop_type": "CRATE", "x": 20.0, "z": 16.0},
+                  rec_target="prop_dir_0002"),
+               iv(184, "dir_0003", "APPLIED", "REMOVE_PROP", "WORLD_CHANGE", "prop_dir_0002", {})]
+    (tmp_path / "journal.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal), encoding="utf-8")
+    (tmp_path / "run_manifest.json").write_text(json.dumps({"scenario_id": "SB04_POLITE_BID"}), encoding="utf-8")
+    r = recipe_from_run(tmp_path, "saved")
+    assert [(i["at_tick"], i["operation"], i["target_id"]) for i in r["interventions"]] == \
+        [(20, "PLACE_PROP", None), (30, "REMOVE_PROP", "prop_dir_0001")]
+    assert not contracts.problems("recipe", r)

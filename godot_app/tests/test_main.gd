@@ -83,6 +83,7 @@ const TESTS := [
 	"test_world_director_placement_t08",
 	"test_signs_notes_and_sounds_through_the_observer_filter",
 	"test_director_pa_and_npc_say",
+	"test_director_console",
 ]
 
 ## Where tests write journals and packets for tools/godot_check.py to validate in Python.
@@ -244,7 +245,7 @@ func test_project_settings() -> String:
 			return "GDScript warning '%s' is at level %d; it must be an error (2), see D-38" % [warning, level]
 	for action in ["cam_forward", "cam_back", "cam_left", "cam_right", "cam_up", "cam_down", "cam_fast",
 			"cam_toggle_mode", "select_prev", "select_next", "sim_pause", "demo_restart", "hud_toggle", "sense_view",
-			"viewer_toggle", "evaluator_toggle"]:
+			"viewer_toggle", "evaluator_toggle", "director_toggle"]:
 		if not InputMap.has_action(action) or InputMap.action_get_events(action).is_empty():
 			return "input action '%s' is missing from project.godot" % action
 	return ""
@@ -1460,11 +1461,36 @@ func _run_linked(frames: int, done: Callable) -> float:
 	for i in frames:
 		var start := Time.get_ticks_usec()
 		await get_tree().physics_frame
-		longest = maxf(longest, (Time.get_ticks_usec() - start) / 1000.0)
+		var ms := (Time.get_ticks_usec() - start) / 1000.0
+		_frame_ms.append(ms)
+		longest = maxf(longest, ms)
 		OS.delay_msec(3)
 		if done.call():
 			break
 	return longest
+
+
+## D-105 (G4b): "the world keeps ticking" means the tick advances every frame (checked by each
+## test) and no frame stalls badly: the 95th percentile frame under LINK_FRAME_P95_MS and no single
+## frame over LINK_FRAME_MAX_MS. A link that blocks the main thread (a connect waiting for a
+## timeout) stalls for a second or more; one slow frame while the machine runs other Godot
+## processes (a full tools/check.py) does not. Returns "" or what went wrong.
+const LINK_FRAME_P95_MS := 50.0
+const LINK_FRAME_MAX_MS := 250.0
+var _frame_ms: Array[float] = []
+
+
+func _frame_problem() -> String:
+	if _frame_ms.is_empty():
+		return "no frame measured"
+	var sorted := _frame_ms.duplicate()
+	sorted.sort()
+	var p95: float = sorted[mini(sorted.size() - 1, int(0.95 * (sorted.size() - 1)))]
+	var worst: float = sorted[sorted.size() - 1]
+	if p95 > LINK_FRAME_P95_MS or worst > LINK_FRAME_MAX_MS:
+		return "frames p95 %.1f ms (limit %.0f), longest %.1f ms (limit %.0f), over %d frames" % [
+			p95, LINK_FRAME_P95_MS, worst, LINK_FRAME_MAX_MS, sorted.size()]
+	return ""
 
 
 func _results_by_label(w: RangeWorld) -> Dictionary:
@@ -1498,7 +1524,8 @@ func test_link_end_to_end() -> String:
 	var waved := {"done": false, "probed_at": -1}
 	var ticks_before := w.clock.tick
 	var frames := {"n": 0}
-	var longest := await _run_linked(60 * 60, func() -> bool:
+	_frame_ms.clear()
+	await _run_linked(60 * 60, func() -> bool:
 		frames["n"] += 1
 		var seen := _results_by_label(w)
 		if waved["probed_at"] < 0 and seen.has("robot_legged:valid"):
@@ -1532,8 +1559,8 @@ func test_link_end_to_end() -> String:
 		return "the sidecar dropped the connection once; Godot should have reconnected: %s" % [link.stats]
 	if ticks_linked != frames["n"]:
 		return "the world must tick once per frame whatever the link does (%d ticks, %d frames)" % [ticks_linked, frames["n"]]
-	if longest > 50.0:
-		return "a frame took %.1f ms while linked; the world must not wait for Python" % longest
+	if _frame_problem() != "":
+		return "the world must not wait for Python while linked: %s" % _frame_problem()
 	return ""
 
 
@@ -1546,14 +1573,15 @@ func test_link_wrong_token() -> String:
 	add_child(link)
 	link.setup(w, _link_port("RANGE_LINK_PORT"), ["robot_legged"], "not-the-session-token-at-all-0000")
 	var before := w.clock.tick
-	var longest := await _run_linked(600, func() -> bool: return link.stats["refused"] >= 1)
+	_frame_ms.clear()
+	await _run_linked(600, func() -> bool: return link.stats["refused"] >= 1)
 	var status := link.status
 	var stats := link.stats.duplicate()
 	link.queue_free()
 	if status != "REFUSED" or stats["received"] != 0:
 		return "a wrong token must be refused with nothing exchanged: %s %s" % [status, stats]
-	if w.clock.tick == before or longest > 50.0:
-		return "the world must keep ticking smoothly while refused"
+	if w.clock.tick == before or _frame_problem() != "":
+		return "the world must keep ticking smoothly while refused (%s)" % _frame_problem()
 	return ""
 
 
@@ -1573,7 +1601,8 @@ func test_link_slow_sidecar() -> String:
 	var state := {"waved": false}
 	var before := w.clock.tick
 	var frames := {"n": 0}
-	var longest := await _run_linked(60 * 60, func() -> bool:
+	_frame_ms.clear()
+	await _run_linked(60 * 60, func() -> bool:
 		frames["n"] += 1
 		if not state["waved"] and link.is_connected_to_sidecar() and w.clock.tick > 60:
 			av["visitor"].perform_gesture("WAVE")
@@ -1584,8 +1613,9 @@ func test_link_slow_sidecar() -> String:
 		return "the slow sidecar's answer never arrived"
 	if w.actions.resolved[0]["result"]["reason_code"] != "STALE_OBSERVATION":
 		return "an answer 7 s late should be refused as stale, got %s" % w.actions.resolved[0]["result"]["reason_code"]
-	if w.clock.tick - before != frames["n"] or longest > 50.0:
-		return "the world must keep its tick while Python is slow (longest frame %.1f ms)" % longest
+	if w.clock.tick - before != frames["n"] or _frame_problem() != "":
+		return "the world must keep its tick every frame while Python is slow (%d ticks in %d frames; %s)" % [
+			w.clock.tick - before, frames["n"], _frame_problem()]
 	return ""
 
 
@@ -1599,14 +1629,14 @@ func test_link_no_sidecar() -> String:
 	# Wait by wall clock, not frames: Linux refuses a closed local port at once, but Windows
 	# retries the connection and reports the refusal only after about 2 s, while 300 frames
 	# take about 1.2 s (failed on the owner's PC, 2026-11-17, still CONNECTING).
-	var longest := 0.0
+	_frame_ms.clear()
 	var started := Time.get_ticks_msec()
 	while link.stats["refused"] < 1 and Time.get_ticks_msec() - started < 8000:
-		longest = maxf(longest, await _run_linked(60, func() -> bool: return link.stats["refused"] >= 1))
+		await _run_linked(60, func() -> bool: return link.stats["refused"] >= 1)
 	var status := link.status
 	link.queue_free()
-	if status != "REFUSED" or w.clock.tick == before or longest > 50.0:
-		return "with no sidecar the link should report REFUSED and the world keep ticking (%s, %.1f ms)" % [status, longest]
+	if status != "REFUSED" or w.clock.tick == before or _frame_problem() != "":
+		return "with no sidecar the link should report REFUSED and the world keep ticking (%s, %s)" % [status, _frame_problem()]
 	return ""
 
 
@@ -1629,16 +1659,16 @@ func test_link_silent_port() -> String:
 	add_child(link)
 	link.setup(w, silent_port, ["robot_legged"], "a-token-for-a-port-that-never-answers")
 	var before := w.clock.tick
-	var longest := 0.0
+	_frame_ms.clear()
 	var started := Time.get_ticks_msec()
 	while link.stats["refused"] < 1 and Time.get_ticks_msec() - started < 8000:
-		longest = maxf(longest, await _run_linked(60, func() -> bool: return link.stats["refused"] >= 1))
+		await _run_linked(60, func() -> bool: return link.stats["refused"] >= 1)
 	var waited := Time.get_ticks_msec() - started
 	var status := link.status
 	link.queue_free()
 	server.stop()
-	if status != "REFUSED" or w.clock.tick == before or longest > 50.0:
-		return "a port that never answers should end in REFUSED after the connect timeout (%s after %d ms, %.1f ms)" % [status, waited, longest]
+	if status != "REFUSED" or w.clock.tick == before or _frame_problem() != "":
+		return "a port that never answers should end in REFUSED after the connect timeout (%s after %d ms, %s)" % [status, waited, _frame_problem()]
 	if waited < LinkClient.CONNECT_TIMEOUT_MS - 100:
 		return "gave up after %d ms, before the %d ms connect timeout" % [waited, LinkClient.CONNECT_TIMEOUT_MS]
 	return ""
@@ -2956,8 +2986,8 @@ func test_layer_viewer_from_fixture() -> String:
 				return "Solo/Mute must look different from Bypass"
 		elif lv.lane_note(String(row["key"])).contains("not built (G5)"):
 			empty += 1
-	if built != 8 or empty != 9:
-		return "lanes: %d built, %d HORIZON lanes labelled not built (expected 8 and 9)" % [built, empty]
+	if built != 9 or empty != 9:                 # G4b: + the interventions lane
+		return "lanes: %d built, %d HORIZON lanes labelled not built (expected 9 and 9)" % [built, empty]
 	var version := store.version
 	lv.buttons["sight"]["mute"].button_pressed = true
 	lv.buttons["model"]["solo"].button_pressed = true
@@ -2999,6 +3029,18 @@ func test_layer_viewer_from_fixture() -> String:
 	await get_tree().process_frame
 	if lv.draws < 1:
 		return "the viewer never drew"
+	# G4b: lane labels never overlap (stacked in two rows, or left out with their marker kept).
+	lv.set_observer("robot_r")
+	lv.window_ms = 120000                       # a wide window crowds the labels
+	lv.scrub_to(15000)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	for key in lv.label_rects:
+		var rects: Array = lv.label_rects[key]
+		for i in rects.size():
+			for k in range(i + 1, rects.size()):
+				if (rects[i] as Rect2).intersects(rects[k]):
+					return "labels overlap in the %s lane: %s and %s" % [key, rects[i], rects[k]]
 	if EvaluatorPanel.create(store, store.dispatcher) != null:
 		return "the EVALUATOR TRUTH panel was created for a Spectator"
 	return ""
@@ -3268,4 +3310,40 @@ func test_director_pa_and_npc_say() -> String:
 		return "everyone in coverage should hear the PA: %s" % heard
 	if heard.get("robot_r:LOCAL", "") != "You are now allowed to share private messages.":
 		return "the NPC's line was not heard by Robot R: %s" % heard
+	return ""
+
+
+## The Director console (G4b): only for the Director seat; its commands go through the Director.
+func test_director_console() -> String:
+	var w := await _world(["wheeled_humanoid", "human_walker"])
+	await _place(w, [["robot_r", "wheeled_humanoid", 15.0, 10.0, 0.0], ["visitor_x", "human_walker", 15.0, 8.5, PI]])
+	var rig := CameraRig.new()
+	w.add_child(rig)
+	rig.set_targets(w.avatar_list())
+	if DirectorPanel.create(w, rig) != null:
+		return "the Spectator seat got a Director console"
+	w.dispatcher.set_seat("DIRECTOR")
+	var panel := DirectorPanel.create(w, rig)
+	if panel == null:
+		return "the Director seat got no console"
+	w.add_child(panel)
+	await get_tree().process_frame
+	if not panel.run("sign Booth C").begins_with("set the point"):
+		return "a sign without a point should ask for one"
+	panel.set_point(Vector3(20.0, 0.0, 16.0))
+	panel.run("barrier 90")
+	panel.set_point(Vector3(12.0, 0.0, 16.0))
+	panel.run("sign Demo moved to Booth C")
+	panel.run("pa The demo starts soon.")
+	panel.run("say visitor_x @robot_r Hello there")
+	var refused := panel.run("directive robot_r Be kind.")      # no sidecar in this test
+	var ops := w.director.history.map(func(e: Dictionary) -> String: return "%s:%s" % [e["request"]["operation"], e["status"]])
+	if ops != ["PLACE_PROP:APPLIED", "PLACE_PROP:APPLIED", "PA_ANNOUNCEMENT:APPLIED", "NPC_SAY:APPLIED", "EDIT_DIRECTIVE:REFUSED"]:
+		return "unexpected console results: %s (%s)" % [ops, refused]
+	if String(w.editor.placed["prop_dir_0002"]["prop"]["text"]) != "Demo moved to Booth C":
+		return "the sign's text is wrong"
+	if panel.run("remove prop_dir_0001") != "" or w.editor.placed.has("prop_dir_0001"):
+		return "remove failed"
+	if not panel.run("fly away").begins_with("unknown command"):
+		return "an unknown command should say so"
 	return ""

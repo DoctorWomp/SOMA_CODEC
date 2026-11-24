@@ -43,8 +43,12 @@ CUT_ORDER = ("EPISODES", "FACTS", "SETTING", "OBSERVATIONS", "CONVERSATION")
 BUDGETS: dict[str, dict[str, int]] = {
     # Totals as in §4.1 (focal 3750, C2 1900, C1 500). The guardrails and action list measured
     # ~600 estimated tokens, so guardrails got more and observations less than §4.1's starting split.
-    "FOCAL": {"GUARDRAILS": 650, "IDENTITY": 300, "COMMITMENTS": 200, "SETTING": 200, "FACTS": 350,
-              "EPISODES": 350, "CONVERSATION": 750, "OBSERVATIONS": 800, "DECISION": 150},
+    # G4b (D-106): since LEAN (D-85, D-111, D-112) Robot R's guardrails measure 762 estimated tokens
+    # (humanoids; 725-743 for the quadrupeds), over their 650. They get 850 (+11%: real tokenizers
+    # counted ~7% more at G3g, D-88), taken from COMMITMENTS (max 26 used) and OBSERVATIONS (max 59
+    # used) in every Robot R decision of 802 measured. The total stays 3750.
+    "FOCAL": {"GUARDRAILS": 850, "IDENTITY": 300, "COMMITMENTS": 100, "SETTING": 200, "FACTS": 350,
+              "EPISODES": 350, "CONVERSATION": 750, "OBSERVATIONS": 700, "DECISION": 150},
     # G3c-1 (D-59): C2 guardrails +50 for the promise-keeping rule, taken from observations.
     "C2": {"GUARDRAILS": 650, "IDENTITY": 200, "COMMITMENTS": 100, "SETTING": 100, "FACTS": 100,
            "EPISODES": 100, "CONVERSATION": 300, "OBSERVATIONS": 250, "DECISION": 100},

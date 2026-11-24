@@ -35,7 +35,11 @@ const HORIZON := [["L0", "Anchor"], ["L1", "Halo"], ["L2", "Echo"], ["L3", "Wake
 ## The lanes built today, in order: [key, label].
 const LANES := [["sight", "Sight (in view)"], ["hearing", "Hearing (bearings)"], ["tracks", "Tracks (own ids)"],
 	["head", "Head & gaze"], ["pulse", "Pulse · activity · wake"], ["model", "Model calls"],
-	["actions", "Actions → host"], ["beacon", "Beacon & ambient"]]
+	["actions", "Actions → host"], ["beacon", "Beacon & ambient"], ["interventions", "Interventions (Director)"]]
+## G4b (D-103): one glyph per intervention kind, with its operator beside it.
+const KIND_GLYPH := {"DIRECTIVE_EDIT": "D", "WORLD_CHANGE": "W", "EVENT_TRIGGER": "E", "ENVIRONMENTAL_INFLUENCE": "I",
+	"SOCIAL_INFLUENCE": "S"}
+const MIN_LABEL_PX := 14.0
 const BYPASS_REASON := "Bypass removes this layer from the avatar's perception (an ablation, logged; mid-run it taints the run, D-03). Not available until G5: no HORIZON layer exists yet to remove."
 
 var store: ViewerStore
@@ -49,6 +53,8 @@ var solo := {}       # lane key -> true
 var muted := {}      # lane key -> true
 var map_data: Dictionary = {}
 var draws := 0       # how many times the panel was drawn (cost accounting)
+var label_rects: Dictionary = {}   # lane key -> [Rect2] of the labels drawn last (tests: never overlapping)
+var labels_left_out := 0           # labels with no room this paint (their markers stay)
 var lane_rows: Array = []   # [{"key", "label", "built"}] in display order
 var buttons := {}    # lane key -> {"solo": Button, "mute": Button, "bypass": Button}
 var decision_label: Label
@@ -488,6 +494,17 @@ func _draw_map(r: Rect2) -> void:
 			_c.draw_arc(p, 5, 0, TAU, 12, DIM, 1.0)
 		var tag := "" if validity == "OBSERVED" else (" · partly" if validity == "DEGRADED" else " · %s" % String(item.get("reason", validity)).to_lower())
 		_text(p + Vector2(7, 4), store.track_label(observer, item["track"]) + tag, TEXT if seen else DIM, 10)
+	# G4b (D-100): text it could read and sounds it heard at that sample (from its packet's events).
+	for e in sight["data"].get("events", []):
+		if e["kind"] == "SIGN_TEXT" and e.get("pos") != null:
+			var sp: Vector2 = to_px.call(float(e["pos"]["x"]), float(e["pos"]["z"]))
+			_c.draw_rect(Rect2(sp - Vector2(4, 4), Vector2(8, 8)), WARN, false, 2.0)
+			var st := String(e["value"]["text"])
+			_text(sp + Vector2(7, 14), "reads «%s» (untrusted)" % (st if st.length() <= 34 else st.substr(0, 31) + "..."), WARN, 10)
+		elif e["kind"] == "AUDIO_SOUND" and e.get("bearing") != null:
+			var sdir := fwd.rotated(-float(e["bearing"]))
+			_c.draw_line(me, me + sdir * 30, Color(WARN, 0.6), 1.0)
+			_text(me + sdir * 34, "%s sound" % String(e["value"]["sound_class"]).to_lower(), WARN, 10)
 	for heard in store.between(observer, "hearing", playhead_ms - 3000, playhead_ms):
 		var b := float(heard["data"].get("bearing", 0.0))
 		var dir := fwd.rotated(-b)   # bearings are relative to the body, positive left (screen y is +z)
@@ -546,6 +563,8 @@ func _draw_lanes(plot: Rect2, row_h: float, pins: Rect2) -> void:
 				_lane_actions(lane_r, win)
 			"beacon":
 				_lane_beacon(lane_r, win)
+			"interventions":
+				_lane_interventions(lane_r, win)
 	# Time axis and playhead.
 	var axis_y := plot.end.y + 12
 	var step := 5000 if window_ms <= 60000 else (30000 if window_ms <= 480000 else 120000)
@@ -586,13 +605,58 @@ func _lane_hearing(r: Rect2, win: Vector2i) -> void:
 		_text(Vector2(x - 3, r.end.y - 4), "▲" if rec["data"].get("addressed") else "·", WARN, 11)
 
 
+## Lane labels that would overlap (G4b): each goes in the first of two stacked rows where it fits
+## whole; a label that fits in neither is left out (its marker stays; the decision panel and the
+## evaluator panel have the full text). Never wider than the lane.
+func _place_labels(key: String, labels: Array, r: Rect2) -> void:
+	labels.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	var row_end := [-INF, -INF]
+	var rows_y := [r.end.y - 4, r.position.y + UiStyle.fs(9) + 1]
+	var rects: Array = []
+	for lab in labels:
+		var x: float = maxf(float(lab[0]), r.position.x)
+		var text := String(lab[1])
+		var size_px := UiStyle.fs(int(lab[3]))
+		var w := minf(_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size_px).x, r.end.x - x)
+		if w < MIN_LABEL_PX:
+			labels_left_out += 1
+			continue
+		var placed := false
+		for k in 2:
+			if x >= float(row_end[k]):
+				_c.draw_string(_font, Vector2(x, float(rows_y[k])), text, HORIZONTAL_ALIGNMENT_LEFT, w, size_px, lab[2])
+				row_end[k] = x + w + 4.0
+				rects.append(Rect2(x, float(rows_y[k]) - size_px, w, size_px))
+				placed = true
+				break
+		if not placed:
+			labels_left_out += 1
+	label_rects[key] = rects
+
+
 func _lane_tracks(r: Rect2, win: Vector2i) -> void:
+	var labels := []
 	for rec in store.between(observer, "tracks", win.x, win.y):
 		var x := _t_to_x(int(rec["t_ms"]), r)
 		var ev := String(rec["data"]["event"])
 		var col := OK_COLOR if ev != "LOST" else DIM
 		_c.draw_line(Vector2(x, r.position.y + 2), Vector2(x, r.end.y - 2), col, 1.0)
-		_text(Vector2(x + 2, r.end.y - 4), "%s %s" % [ev, store.track_label(observer, rec["data"]["track"])], col, 9)
+		labels.append([x + 2, "%s %s" % [ev, store.track_label(observer, rec["data"]["track"])], col, 9])
+	_place_labels("tracks", labels, r)
+
+
+## G4b (D-103): the Director's interventions, run-level (every observer sees the same markers):
+## the kind's glyph and the operator; a recipe's in its planned look ("·" before the glyph).
+func _lane_interventions(r: Rect2, win: Vector2i) -> void:
+	var labels := []
+	for rec in store.between("", "intervention", win.x, win.y):
+		var d: Dictionary = rec["data"]
+		var x := _t_to_x(int(rec["t_ms"]), r)
+		var col := ACCENT if bool(d.get("pre_scheduled", false)) else WARN
+		_c.draw_line(Vector2(x, r.position.y + 1), Vector2(x, r.end.y - 1), col, 2.0)
+		labels.append([x + 3, "%s%s %s %s" % ["·" if bool(d.get("pre_scheduled", false)) else "", KIND_GLYPH.get(String(d["intervention_type"]), "?"),
+			String(d["operation"]).to_lower(), String(d["operator"])], col, 9])
+	_place_labels("interventions", labels, r)
 
 
 func _lane_head(r: Rect2, win: Vector2i) -> void:
@@ -614,12 +678,14 @@ func _lane_head(r: Rect2, win: Vector2i) -> void:
 
 
 func _lane_pulse(r: Rect2, win: Vector2i) -> void:
+	var labels := []
 	for rec in store.between(observer, "decision", win.x - window_ms, win.y):
 		var act = rec["data"].get("activity")
 		if act is Dictionary:
 			var x := maxf(_t_to_x(int(rec["t_ms"]), r), r.position.x)
 			_c.draw_line(Vector2(x, r.position.y + 1), Vector2(x, r.end.y - 1), Color(TEXT, 0.4), 1.0)
-			_text(Vector2(x + 2, r.position.y + 10), String(act.get("kind", "?")), TEXT, 9)
+			labels.append([x + 2, String(act.get("kind", "?")), TEXT, 9])
+	_place_labels("pulse", labels, r)
 	for rec in store.between(observer, "pulse", win.x, win.y):
 		var ev := String(rec["data"]["event"])
 		var glyph := String({"WAKE": "W", "REVIEW": "R", "CONTINUE": "c", "IDLE_DEBIT": "$", "ACTIVITY_DROPPED": "×", "PREEMPTED": "p"}.get(ev, ""))
@@ -678,4 +744,5 @@ func _lane_beacon(r: Rect2, win: Vector2i) -> void:
 		var x1 := minf(_t_to_x(t1, r), r.end.x)
 		var d: Dictionary = recs[i]["data"]
 		_c.draw_rect(Rect2(x0, r.position.y + 3, maxf(x1 - x0 - 1, 1), r.size.y - 6), Color(ACCENT, 0.15))
-		_text(Vector2(x0 + 2, r.end.y - 4), String(d.get("ambient_state", d["expression_id"])).to_lower(), TEXT, 9, maxf(x1 - x0 - 3, 1))
+		if x1 - x0 - 3 >= MIN_LABEL_PX:      # a span too short for its name shows no half-word (G4b)
+			_text(Vector2(x0 + 2, r.end.y - 4), String(d.get("ambient_state", d["expression_id"])).to_lower(), TEXT, 9, x1 - x0 - 3)
