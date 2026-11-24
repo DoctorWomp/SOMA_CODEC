@@ -1,0 +1,215 @@
+{
+  "schema_version": "1.0",
+  "permissions_id": "permissions",
+  "principals": {
+    "SPECTATOR": {
+      "kind": "SEAT",
+      "about": "Watches: cameras and views, never changes the world"
+    },
+    "DIRECTOR": {
+      "kind": "SEAT",
+      "about": "Spectator plus logged interventions (G4b)"
+    },
+    "PARTICIPANT": {
+      "kind": "SEAT",
+      "about": "Inside an avatar body: only what that body can do (G4c)"
+    },
+    "EVALUATOR": {
+      "kind": "SEAT",
+      "about": "Spectator plus evaluator truth: real ids, labels, private goals, prompts"
+    },
+    "AGENT": {
+      "kind": "INTERNAL",
+      "about": "The sidecar session: proposes actions for the avatars it controls"
+    },
+    "HOST": {
+      "kind": "INTERNAL",
+      "about": "The scenario's event tape, played by the world (D-48)"
+    }
+  },
+  "capabilities": {
+    "ACT_IN_WORLD": {
+      "about": "Move, speak, gesture or express through the action gate",
+      "grants": {
+        "AGENT": "CONTROLLED",
+        "HOST": "ANY",
+        "PARTICIPANT": "OWN_AVATAR"
+      },
+      "built": true
+    },
+    "EDIT_DIRECTIVE": {
+      "about": "Change an agent's directive (DIRECTIVE_EDIT)",
+      "grants": {
+        "DIRECTOR": "ANY"
+      },
+      "built": false,
+      "gate": "G4b",
+      "logged_for": [
+        "DIRECTOR"
+      ]
+    },
+    "WORLD_CHANGE": {
+      "about": "Place, move or remove props, barriers, signs, sound sources (WORLD_CHANGE)",
+      "grants": {
+        "DIRECTOR": "ANY"
+      },
+      "built": false,
+      "gate": "G4b",
+      "logged_for": [
+        "DIRECTOR"
+      ]
+    },
+    "TRIGGER_EVENT": {
+      "about": "Trigger events and PA announcements (EVENT_TRIGGER)",
+      "grants": {
+        "DIRECTOR": "ANY"
+      },
+      "built": false,
+      "gate": "G4b",
+      "logged_for": [
+        "DIRECTOR"
+      ]
+    },
+    "POSSESS": {
+      "about": "Take control of an existing NPC's body (P4)",
+      "grants": {
+        "DIRECTOR": "ANY"
+      },
+      "built": false,
+      "gate": "G4c",
+      "logged_for": [
+        "DIRECTOR"
+      ]
+    },
+    "BYPASS_LAYER": {
+      "about": "Remove a HORIZON layer from an avatar's perception (an ablation; mid-run it taints the run, D-03)",
+      "grants": {
+        "DIRECTOR": "ANY"
+      },
+      "built": false,
+      "gate": "G5",
+      "logged_for": [
+        "DIRECTOR"
+      ]
+    },
+    "TIME_CONTROL": {
+      "about": "Time scale and single steps",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY"
+      },
+      "built": false,
+      "gate": "G4b"
+    },
+    "PAUSE": {
+      "about": "Pause and resume the simulation",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY",
+        "PARTICIPANT": "ANY"
+      },
+      "built": true
+    },
+    "SELECT_AVATAR": {
+      "about": "Choose which avatar the cameras and views follow",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY",
+        "PARTICIPANT": "OWN_AVATAR"
+      },
+      "built": true
+    },
+    "CAMERA_FREE": {
+      "about": "Free-fly camera",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY"
+      },
+      "built": true
+    },
+    "CAMERA_ORBIT": {
+      "about": "Orbit the selected avatar",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY"
+      },
+      "built": true
+    },
+    "CAMERA_FOLLOW": {
+      "about": "Follow behind the selected avatar (third person)",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY",
+        "PARTICIPANT": "OWN_AVATAR"
+      },
+      "built": true
+    },
+    "CAMERA_POV": {
+      "about": "The selected avatar's own point of view",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY",
+        "PARTICIPANT": "OWN_AVATAR"
+      },
+      "built": true
+    },
+    "VIEW_WORLD": {
+      "about": "The ordinary scene and status panel",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY",
+        "PARTICIPANT": "ANY"
+      },
+      "built": true
+    },
+    "VIEW_SENSOR": {
+      "about": "What an avatar's senses received (its observation packets)",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY",
+        "PARTICIPANT": "OWN_AVATAR"
+      },
+      "built": true,
+      "logged_for": [
+        "PARTICIPANT"
+      ]
+    },
+    "VIEW_LAYERS": {
+      "about": "The layer viewer (per observer lanes, decisions, capability cards)",
+      "grants": {
+        "SPECTATOR": "ANY",
+        "DIRECTOR": "ANY",
+        "EVALUATOR": "ANY",
+        "PARTICIPANT": "OWN_AVATAR",
+        "AGENT": "EVERYTHING"
+      },
+      "built": true,
+      "logged_for": [
+        "PARTICIPANT"
+      ]
+    },
+    "VIEW_EVALUATOR_TRUTH": {
+      "about": "EVALUATOR TRUTH: real ids of tracks, scenario labels, private goals, prompt text",
+      "grants": {
+        "EVALUATOR": "ANY"
+      },
+      "built": true,
+      "logged_for": [
+        "EVALUATOR"
+      ]
+    }
+  },
+  "audiences": {
+    "OBSERVER": "VIEW_LAYERS",
+    "EVALUATOR": "VIEW_EVALUATOR_TRUTH"
+  }
+}

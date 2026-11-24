@@ -1,0 +1,89 @@
+{
+  "audience": "OBSERVER",
+  "data": {
+    "bodies": {
+      "robot_r": {
+        "acoustic_range_m": 10,
+        "body_id": "wheeled_humanoid",
+        "channels": [
+          "SPEECH",
+          "FACE",
+          "LIGHT"
+        ],
+        "fov_deg": 120,
+        "gestures": 11,
+        "kind": "WHEELED_HUMANOID",
+        "max_speed_mps": 1.0,
+        "neck": true,
+        "ramp": true,
+        "sensor_height_m": 1.35,
+        "stairs": false,
+        "visual_range_m": 20
+      },
+      "visitor_x": {
+        "acoustic_range_m": 12,
+        "body_id": "human_walker",
+        "channels": [
+          "SPEECH",
+          "FACE"
+        ],
+        "fov_deg": 180,
+        "gestures": 12,
+        "kind": "HUMAN_WALKER",
+        "max_speed_mps": 1.4,
+        "neck": false,
+        "ramp": true,
+        "sensor_height_m": 1.6,
+        "stairs": true,
+        "visual_range_m": 25
+      },
+      "visitor_y": {
+        "acoustic_range_m": 12,
+        "body_id": "human_walker",
+        "channels": [
+          "SPEECH",
+          "FACE"
+        ],
+        "fov_deg": 180,
+        "gestures": 12,
+        "kind": "HUMAN_WALKER",
+        "max_speed_mps": 1.4,
+        "neck": false,
+        "ramp": true,
+        "sensor_height_m": 1.6,
+        "stairs": true,
+        "visual_range_m": 25
+      }
+    },
+    "capability_cards": {
+      "robot_r": "[robot_r | LLM: fake | HORIZON: H0 | memory: RCC | sensors: STANDARD | actions: v1]",
+      "visitor_x": "[visitor_x | C0 routine, C1/C2 NPC model: fake | HORIZON: H0 | memory: RCC | sensors: STANDARD | actions: v1]",
+      "visitor_y": "[visitor_y | C0 routine, C1/C2 NPC model: fake | HORIZON: H0 | memory: RCC | sensors: STANDARD | actions: v1]"
+    },
+    "duration_ms": 90000,
+    "focal_answer": "LEAN",
+    "horizon_layers": {
+      "L0": "not built (G5)",
+      "L1": "not built (G5)",
+      "L2": "not built (G5)",
+      "L3": "not built (G5)",
+      "L4": "not built (G5)",
+      "L5": "not built (G5)",
+      "L6": "not built (G5)",
+      "L7": "not built (G5)",
+      "L8": "not built (G5)"
+    },
+    "map_id": "sandbox_flats",
+    "observers": [
+      "robot_r",
+      "visitor_x",
+      "visitor_y"
+    ],
+    "run_mode": "STEPPED",
+    "scenario_id": "SB04_POLITE_BID"
+  },
+  "lane": "meta",
+  "observer": "robot_r",
+  "schema_version": "1.0",
+  "t_ms": 0
+}

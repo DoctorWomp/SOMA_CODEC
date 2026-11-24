@@ -42,6 +42,7 @@ KINDS: dict[str, tuple[str, str]] = {
 SINGLE_FILES: dict[str, tuple[str, str]] = {
     "inference": ("inference", "inference_id"),
     "pulse": ("pulse", "pulse_id"),
+    "permissions": ("permissions", "permissions_id"),
 }
 
 
@@ -179,6 +180,12 @@ def _cross_checks(cs: ConfigSet) -> list[ConfigProblem]:
         if npc != inf["tiers"]["FOCAL"]["server"] and any(inf["tiers"][t]["pin_slot"] for t in ("C2", "C1")):
             found.append(ConfigProblem(cs.files[("inference", inference_id)],
                                        "the NPC server has no pinned slots: C2 and C1 cannot pin_slot in Option C"))
+
+    from .viewer.permissions import table_problems   # noqa: PLC0415
+
+    for permissions_id, table in cs.items["permissions"].items():
+        for problem in table_problems(table):
+            found.append(ConfigProblem(cs.files[("permissions", permissions_id)], problem))
 
     for body_id, b in cs.items["bodies"].items():
         for problem in body_rules.body_problems(b):

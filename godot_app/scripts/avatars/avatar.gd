@@ -31,6 +31,10 @@ const AVOID_NEIGHBOR_DISTANCE_M := 5.0
 const AVOID_TIME_HORIZON_S := 2.0
 
 var avatar_id := ""
+## Who drives this body (D-91): SCRIPTED, LLM_AGENT, HUMAN_INPUT or REPLAY_TAPE. Swapping it changes
+## only who may send this body's actions (the world dispatcher checks it); the body, its senses,
+## COMMS and the action gate stay the same. Not in the journal: it changes nothing the world does.
+var controller := "SCRIPTED"
 var body: Dictionary = {}
 var kind := ""
 var radius := 0.25                   # turning radius: the circle the body sweeps turning on the spot

@@ -19,6 +19,10 @@ A run folder holds:
   cold or warm (G3c-1). Wall-clock values stay out of the journal, so stepped runs stay exact;
 - ``frames.json`` (rendered runs, or ``frame_stats``): frame times and Godot's video memory (G3d);
 - ``sidecar/delivery.jsonl``: requests held back or dropped before sending, and why (G3d);
+- ``viewer/observer_feed.jsonl`` and ``viewer/evaluator_truth.jsonl``: the layer viewer's feed (G4a,
+  D-93), rebuilt from the logs above at the end of every run (written live as well in a watched
+  run); ``viewer/truth_tracks.json`` (Godot, evaluator only): which avatar each track was;
+  ``operator.jsonl``: the seat's requests and refusals (D-92), never the journal;
 - ``summary.json``: counts for a quick look (evaluator only), with ``render`` (frame pacing, peak
   VRAM sampled during the run) and ``report`` (offered vs accepted actions, response latency,
   timeouts and fallbacks, model calls, glances, FN-1 continuity) per agent (G3d, D-69).
@@ -129,6 +133,9 @@ class RunOptions:
     sample_vram: bool | None = None    # None = for LIVE, rendered or llama runs (nvidia-smi once a second)
     presence: str | None = None        # G3e (D-74): the presence dial for every robot (subtle/default/performative/0..1)
     presence_value: float | None = None   # resolved from `presence` by check_options
+    viewer: str = "auto"               # G4a (D-93): off, closed, open; auto = closed when watched, else off
+    seat: str = "SPECTATOR"            # G4a (D-90): the client's seat (SPECTATOR, DIRECTOR, EVALUATOR)
+    observer: str | None = None        # G4a: the avatar the viewer opens on (default: the first LLM agent)
 
 
 @dataclass
@@ -166,6 +173,12 @@ def check_options(opts: RunOptions, cs: ConfigSet) -> dict[str, Any]:
             opts.presence_value = resolve(opts.presence, cs.items["pulse"]["pulse"])
         except ValueError as exc:
             raise RunError(str(exc)) from exc
+    if opts.viewer not in ("auto", "off", "closed", "open"):
+        raise RunError("--viewer must be off, closed or open")
+    if opts.seat not in ("SPECTATOR", "DIRECTOR", "EVALUATOR"):
+        raise RunError("--seat must be spectator, director or evaluator (a participant seat comes with G4c)")
+    if opts.observer is not None and opts.observer not in scenario["cast"]:
+        raise RunError(f"--observer: {opts.observer!r} is not in the cast of {opts.scenario_id}")
     if opts.render_preset not in RENDER_PRESETS:
         raise RunError(f"unknown render preset {opts.render_preset!r}; use one of {', '.join(RENDER_PRESETS)}")
     if opts.resolution is not None and not re.fullmatch(r"\d{3,5}x\d{3,5}", opts.resolution):
@@ -202,7 +215,27 @@ def godot_command(opts: RunOptions, scenario: dict[str, Any], run_dir: Path, por
         cmd.append(f"--frame-stats={(run_dir / 'frames.json').as_posix()}")
     if opts.presence_value is not None:
         cmd.append(f"--presence-amplitude={opts.presence_value:g}")
+    # G4a: which avatar each track was, written at run end (evaluator only, never the journal), and
+    # the seat's operator log (D-92). The viewer reads the live feed from viewer/ (D-93).
+    cmd += [f"--truth-tracks={(run_dir / 'viewer' / 'truth_tracks.json').as_posix()}",
+            f"--operator-log={(run_dir / 'operator.jsonl').as_posix()}", f"--seat={opts.seat.lower()}"]
+    viewer = viewer_mode(opts)
+    if viewer != "off":
+        cmd += [f"--viewer-dir={(run_dir / 'viewer').as_posix()}", f"--viewer={viewer}",
+                f"--observer={opts.observer or default_observer(scenario)}"]
     return cmd
+
+
+def viewer_mode(opts: RunOptions) -> str:
+    if opts.viewer == "auto":
+        return "off" if opts.headless else "closed"
+    return opts.viewer
+
+
+def default_observer(scenario: dict[str, Any]) -> str:
+    """The avatar the viewer opens on: the first LLM agent (Robot R), else the first in the cast."""
+    llm = sorted(a for a, e in scenario["cast"].items() if e.get("controller") == "LLM_AGENT")
+    return llm[0] if llm else sorted(scenario["cast"])[0]
 
 
 def _frame_stats_on(opts: RunOptions) -> bool:
@@ -403,6 +436,48 @@ def promotion_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+def _start_live_feed(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: int, run_id: str,
+                     run_dir: Path, models: RunModels) -> Any:
+    """G4a (D-93): the live viewer feed of a watched run, with the run-level records first."""
+    from range_service.viewer import feed   # noqa: PLC0415
+
+    settings = models.manifest_settings()
+    cards = manifest(opts, cs, scenario, seed, run_id, [], {},
+                     npc_spec=models.npc_spec if models.npc is not None else None)["avatars"]
+    builder = feed.FeedBuilder(feed.words_evaluator_only(scenario, cs.items["personas"]), cs.items["expressions"])
+    builder.meta(feed.meta_record(scenario, cs, opts.mode, {a["avatar_id"]: a["capability_card"] for a in cards},
+                                  {a["avatar_id"]: a["body_id"] for a in cards}, settings.get("focal.answer")))
+    builder.truth(scenario, cs.items["personas"])
+    live = feed.LiveFeed(run_dir / "viewer", builder)
+    live.flush()
+    return live
+
+
+def _finish_viewer(opts: RunOptions, cs: ConfigSet, run_dir: Path, was_live: bool) -> dict[str, Any]:
+    """Rebuild the viewer feed from the run's logs (every run, so every run can be replayed), and
+    compare it with the live feed when there was one. Counts only (summary.json is shared)."""
+    from range_service.viewer import feed   # noqa: PLC0415
+
+    live = feed.read_jsonl(run_dir / "viewer" / feed.OBSERVER_FILE) if was_live else None
+    live_eval = feed.read_jsonl(run_dir / "viewer" / feed.EVALUATOR_FILE) if was_live else None
+    try:
+        obs, ev = feed.build_run(run_dir, cs)
+    except (OSError, KeyError, ValueError) as exc:
+        return {"mode": viewer_mode(opts), "error": f"viewer feed not built: {exc}"}
+    lanes: dict[str, int] = {}
+    for r in obs:
+        lanes[r["lane"]] = lanes.get(r["lane"], 0) + 1
+    out: dict[str, Any] = {"mode": viewer_mode(opts), "seat": opts.seat, "observer_records": len(obs),
+                           "evaluator_records": len(ev), "lanes": dict(sorted(lanes.items())),
+                           "observer_feed_bytes": (run_dir / "viewer" / feed.OBSERVER_FILE).stat().st_size}
+    if live is not None:
+        # The end-of-run feed adds Godot's truth_tracks; everything else must be what the live run wrote.
+        out["live_matches_replay"] = feed.compare(live, obs)
+        out["live_matches_replay_evaluator"] = feed.compare(
+            live_eval or [], [r for r in ev if r["lane"] != "truth_tracks"])
+    return out
+
+
 async def run_scenario(opts: RunOptions) -> RunResult:
     if opts.configs is not None:
         cs, problems = opts.configs, []
@@ -424,6 +499,7 @@ async def run_scenario(opts: RunOptions) -> RunResult:
 
     details: dict[str, Any] = {}
     tokenizer = None
+    live_feed = None
     try:
         models = models_from_specs(opts.model, opts.npc_model, run_dir=run_dir, seed=seed, prewarm=opts.prewarm,
                                    snapshots=opts.snapshots, conditions=opts.conditions)
@@ -459,7 +535,10 @@ async def run_scenario(opts: RunOptions) -> RunResult:
                                   seed=seed)
         await snapshot_personas(runtimes, models)            # T5: at scene load, before the world starts
         token = secrets.token_hex(24)
-        sidecar = Sidecar(token, {}, record_dir=run_dir / "sidecar", runtimes=runtimes, jitter_ms=opts.jitter_ms)
+        if viewer_mode(opts) != "off":
+            live_feed = _start_live_feed(opts, cs, scenario, seed, run_id, run_dir, models)
+        sidecar = Sidecar(token, {}, record_dir=run_dir / "sidecar", runtimes=runtimes, jitter_ms=opts.jitter_ms,
+                          viewer=live_feed)
         port = await sidecar.start()
         env = dict(os.environ, RANGE_SESSION_TOKEN=token)
         if opts.npc_load_streams and models.npc is not None and opts.npc_load_prompts:
@@ -548,6 +627,7 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     if found:
         raise RunError(f"run manifest does not match its contract: {found[0]}")
     (run_dir / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    summary["viewer"] = _finish_viewer(opts, cs, run_dir, live_feed is not None)
     summary["journal_sha256"] = digest
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return RunResult(run_dir, code, digest, summary, errors)

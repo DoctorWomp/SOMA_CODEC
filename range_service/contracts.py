@@ -24,7 +24,7 @@ SCHEMA_SUFFIX = ".schema.json"
 
 # Who each contract is for. "agent" contracts may reach an agent's context and
 # must never carry evaluator-only fields.
-AUDIENCES = ("agent", "evaluator", "config", "transport", "shared")
+AUDIENCES = ("agent", "evaluator", "config", "transport", "shared", "viewer")
 
 
 @dataclass(frozen=True)

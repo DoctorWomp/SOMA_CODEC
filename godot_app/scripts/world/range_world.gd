@@ -30,6 +30,8 @@ var seed_value := 1
 var senses: ObserverFilter
 var comms: CommsRouter
 var actions: ActionGate
+## The one door for every request (G4a, D-90): agents, the event tape and every seat.
+var dispatcher: WorldDispatcher
 var journal: Journal
 ## The expression catalog (configs/expressions/, D-52), by id.
 var expressions: Dictionary = {}
@@ -97,6 +99,9 @@ func build(map_id: String, body_ids: Array) -> bool:
 	actions = ActionGate.new()
 	add_child(actions)
 	actions.setup(self)
+	dispatcher = WorldDispatcher.new()
+	add_child(dispatcher)
+	dispatcher.setup(self)
 	add_child(PoseStep.new(self))
 	add_child(TickGate.new(self))
 	return true
@@ -430,6 +435,15 @@ func spawn_at(avatar_id: String, body_id: String, spawn_id: String, appearance :
 		push_error("RangeWorld: unknown spawn point '%s'" % spawn_id)
 		return null
 	return spawn_avatar(avatar_id, body_id, spawn["position"], spawn["yaw"], appearance)
+
+
+## Swap who drives an avatar (D-91): only its controller changes, never its body. Returns false for
+## an unknown avatar or controller.
+func set_controller(avatar_id: String, controller: String) -> bool:
+	if not avatars.has(avatar_id) or not WorldDispatcher.CONTROLLERS.has(controller):
+		return false
+	(avatars[avatar_id] as Avatar).controller = controller
+	return true
 
 
 func avatar_list() -> Array:

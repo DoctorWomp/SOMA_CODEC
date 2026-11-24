@@ -1,6 +1,6 @@
 class_name Hud
 extends CanvasLayer
-## Minimal status and help panel for G1. The full operator HUD and layer viewer come at G4.
+## Status and help panel (G1; seat and cameras G4a). The layer viewer is ui/viewer/layer_viewer.gd.
 ## Diagnostic look (dark panel, cyan accent) so it is never confused with in-world objects
 ## (ART_DIRECTION §8). Also handles pause (Space), restart (R) and hide (H).
 
@@ -56,8 +56,9 @@ func status_text() -> String:
 	lines.append("SOMA RANGE · Sandbox Flats · greybox (G2a)")
 	lines.append("Tick %d (60 Hz) · %.1f s · %s" % [world.clock.tick, world.clock.seconds(), state])
 	var target: Node3D = rig.selected_target() if rig != null else null
-	var mode_name := "ORBIT" if rig != null and rig.mode == CameraRig.Mode.ORBIT else "FREE"
-	lines.append("Camera: %s" % mode_name)
+	var mode_name := String(CameraRig.Mode.keys()[rig.mode]) if rig != null else "FREE"
+	var seat := world.dispatcher.seat if world.dispatcher != null else "?"
+	lines.append("Seat: %s · camera %s" % [seat, mode_name])
 	if link != null:
 		lines.append("Python link: %s · agents %s · sent %d · received %d" % [link.status, ", ".join(link.agents),
 			link.stats["sent"], link.stats["received"]])
@@ -72,8 +73,9 @@ func status_text() -> String:
 		lines.append("  links used: %s" % (", ".join(a.links_used) if not a.links_used.is_empty() else "none yet"))
 		lines.append("  senses (F2 shows them): " + senses_line(world, a))
 	lines.append("")
-	lines.append("C camera mode · [ ] select avatar · right mouse look/orbit · wheel zoom")
-	lines.append("W A S D move · Q E down/up · Shift fast · Space pause · R restart · H hide · F2 senses")
+	lines.append("C camera (free, orbit, follow, POV) · [ ] select avatar · right mouse look/orbit · wheel zoom")
+	lines.append("W A S D move · Q E down/up · Shift fast · Space pause · R restart · H hide")
+	lines.append("F2 sensor view · F3 layer viewer · F4 EVALUATOR TRUTH (Evaluator seat only)")
 	return "\n".join(lines)
 
 
@@ -123,7 +125,8 @@ static func gesture_line(a: Avatar) -> String:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("sim_pause"):
-		get_tree().paused = not get_tree().paused
+		if world == null or world.dispatcher == null or world.dispatcher.seat_request("PAUSE")["code"] == "OK":
+			get_tree().paused = not get_tree().paused
 	elif event.is_action_pressed("demo_restart"):
 		get_tree().paused = false
 		get_tree().reload_current_scene()

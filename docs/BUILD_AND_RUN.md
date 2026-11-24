@@ -109,6 +109,26 @@ uv run python tools/run_scenario.py SB04_POLITE_BID --model fake --mode live --w
 
 `--watch` opens the Godot window (it closes by itself when the scenario ends). `--model` takes `none` (Demo policy), `fake`, `fake-slow:MS`, `fake-malformed` or `replay:<run folder>/sidecar/decision_records.jsonl`; no real model is called before G3b. `--mode live` never holds the world (not repeatable).
 
+### Watch a run: seats, cameras and the layer viewer (G4a)
+
+```bash
+uv run python tools/run_scenario.py SB04_POLITE_BID --model fake --mode live --watch --viewer open
+```
+
+Opens the run in the **Spectator** seat with the layer viewer open (D-90 to D-95). In the window: `C` cycles the cameras (free, orbit, follow, the avatar's POV), `[` `]` select the avatar, F2 its **Sensor view** (what its packets held), F3 the **layer viewer** for that avatar (lanes, decision pins, the capability card; click a pin or press N / P to see why it decided; `,` `.` scrub, Shift for 10 s; L follows live again; `-` `=` zoom). Bypass is shown but disabled until G5. A watched run writes its viewer feed live (`--viewer closed` is the default with `--watch`; `--viewer off` writes none).
+
+```bash
+uv run python tools/run_scenario.py SB04_POLITE_BID --model fake --mode live --watch --seat evaluator
+```
+
+The **Evaluator** seat adds the `EVALUATOR TRUTH` panel (F4): which avatar each track was, scenario labels, private goals, the selected decision's prompt and raw answer. No other seat can open it.
+
+```bash
+uv run python tools/view_run.py runs/<run folder>
+```
+
+Replays a finished run in the layer viewer (`--seat evaluator`, `--observer visitor_y`; `[` `]` change observer). Every run writes its feed at the end (`viewer/`); older folders are rebuilt from their logs. `--self-test` scrubs to every decision headless and checks the panels.
+
 ### Repeat the determinism checks under CPU load
 
 ```bash

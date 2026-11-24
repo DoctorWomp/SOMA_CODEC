@@ -71,6 +71,14 @@ const TESTS := [
 	"test_ambient_display_loops_and_rates",
 	"test_presence_dial_scales_amplitude_never_rate",
 	"test_presence_motion_never_changes_the_world",
+	"test_dispatcher_permissions_without_ui",
+	"test_agent_requests_and_controller_swap",
+	"test_permission_matrix",
+	"test_spectator_cameras_t06",
+	"test_sensor_view_draws_the_packet",
+	"test_layer_viewer_from_fixture",
+	"test_evaluator_panel_only_for_the_evaluator",
+	"test_viewer_store_reads_a_growing_file",
 ]
 
 ## Where tests write journals and packets for tools/godot_check.py to validate in Python.
@@ -231,7 +239,8 @@ func test_project_settings() -> String:
 		if level != 2:
 			return "GDScript warning '%s' is at level %d; it must be an error (2), see D-38" % [warning, level]
 	for action in ["cam_forward", "cam_back", "cam_left", "cam_right", "cam_up", "cam_down", "cam_fast",
-			"cam_toggle_mode", "select_prev", "select_next", "sim_pause", "demo_restart", "hud_toggle", "sense_view"]:
+			"cam_toggle_mode", "select_prev", "select_next", "sim_pause", "demo_restart", "hud_toggle", "sense_view",
+			"viewer_toggle", "evaluator_toggle"]:
 		if not InputMap.has_action(action) or InputMap.action_get_events(action).is_empty():
 			return "input action '%s' is missing from project.godot" % action
 	return ""
@@ -2685,4 +2694,367 @@ func test_presence_motion_never_changes_the_world() -> String:
 		return "the dial changed the journal: %s" % [digests]
 	if necks[1] <= necks[0] + deg_to_rad(0.5):
 		return "head adjustments did not run at amplitude 1 (max neck yaw %.2f° vs %.2f°)" % [rad_to_deg(necks[1]), rad_to_deg(necks[0])]
+	return ""
+
+
+# ---------- G4a: permissions, Spectator, layer viewer (D-90 to D-93) ----------
+
+const VIEWER_FIXTURE := "res://tests/fixtures/viewer_sb04"
+
+
+func _standalone_dispatcher(seat: String, own := "") -> WorldDispatcher:
+	var d := WorldDispatcher.new()
+	d.setup(null)
+	d.set_seat(seat, own)
+	return d
+
+
+## Permission tests without any UI (INTERACTION_MODES §10 step 1): no viewer seat can send an action
+## for an agent's body or change a directive; only the Evaluator sees evaluator truth; refusals go to
+## the operator log, never the gate or the journal.
+func test_dispatcher_permissions_without_ui() -> String:
+	var w := await _world(["wheeled_humanoid", "human_walker"])
+	await _place(w, [["robot_r", "wheeled_humanoid", 15.0, 10.0, 0.0], ["visitor_x", "human_walker", 15.0, 8.5, PI]])
+	w.avatars["robot_r"].controller = "LLM_AGENT"
+	DirAccess.make_dir_recursive_absolute(artifacts_dir.path_join("operator"))
+	var log_path := artifacts_dir.path_join("operator/operator_log.jsonl")   # not a journal: kept apart
+	if FileAccess.file_exists(log_path):
+		DirAccess.remove_absolute(log_path)
+	w.dispatcher.operator_log_path = log_path
+	w.senses.sample()
+	var track := w.senses.track_id_for("robot_r", "visitor_x")
+	var gate_before := w.actions.resolved.size()
+	var n := 0
+	for seat in ["SPECTATOR", "DIRECTOR", "EVALUATOR", "PARTICIPANT"]:
+		w.dispatcher.set_seat(seat, "visitor_x" if seat == "PARTICIPANT" else "")
+		for agent in ["robot_r", "visitor_x"]:
+			n += 1
+			var r := w.dispatcher.seat_action(_req(agent, w.clock.tick, "SPEAK", {"channel": "LOCAL", "text": "hi"}, 900 + n))
+			if r.get("code", "") == "OK" or r.has("accepted"):
+				return "%s sent an action for %s: %s" % [seat, agent, r]
+		var edit := String(w.dispatcher.seat_request("EDIT_DIRECTIVE", "robot_r")["code"])
+		if edit != ("NOT_BUILT" if seat == "DIRECTOR" else "PERMISSION_DENIED"):
+			return "%s EDIT_DIRECTIVE gave %s" % [seat, edit]
+		var truth := String(w.dispatcher.seat_request("VIEW_EVALUATOR_TRUTH", "robot_r")["code"])
+		if (truth == "OK") != (seat == "EVALUATOR"):
+			return "%s VIEW_EVALUATOR_TRUTH gave %s" % [seat, truth]
+		var tracks := w.dispatcher.truth_tracks("robot_r")
+		if (not tracks.is_empty()) != (seat == "EVALUATOR"):
+			return "%s read the world's track table: %s" % [seat, tracks]
+		if seat == "EVALUATOR" and String(tracks.get(track, "")) != "visitor_x":
+			return "the Evaluator's track table does not say %s is visitor_x" % track
+		if w.dispatcher.audiences("robot_r").has("EVALUATOR") != (seat == "EVALUATOR"):
+			return "%s may read EVALUATOR records: %s" % [seat, w.dispatcher.audiences("robot_r")]
+	if w.actions.resolved.size() != gate_before:
+		return "a refused seat request reached the action gate"
+	# A participant drives only its own HUMAN_INPUT body (D-91), through the same gate as everyone.
+	w.dispatcher.set_seat("PARTICIPANT", "visitor_x")
+	if w.dispatcher.seat_action(_req("visitor_x", w.clock.tick, "NO_OP", {}, 990))["code"] != "NOT_OWN_AVATAR":
+		return "a participant drove a body whose controller is not HUMAN_INPUT"
+	w.set_controller("visitor_x", "HUMAN_INPUT")
+	var own := w.dispatcher.seat_action(_req("visitor_x", w.clock.tick, "NO_OP", {}, 991))
+	if own.get("reason_code", "") != "OK":
+		return "the participant's own body was refused: %s" % own
+	if w.dispatcher.seat_request("VIEW_SENSOR", "robot_r")["code"] != "NOT_OWN_AVATAR":
+		return "a participant opened another avatar's sensor view"
+	if not w.dispatcher.seat_request("VIEW_SENSOR", "visitor_x")["logged"]:
+		return "a participant opening its own sensor view must be logged"
+	# Internal principals: agents never open a view.
+	for cap in ["VIEW_WORLD", "VIEW_SENSOR", "VIEW_LAYERS", "VIEW_EVALUATOR_TRUTH", "EDIT_DIRECTIVE", "CAMERA_FREE"]:
+		if WorldDispatcher.decide(w.dispatcher.table, "AGENT", cap, "robot_r", "", ["robot_r"])["code"] != "PERMISSION_DENIED":
+			return "AGENT was allowed %s" % cap
+	var logged := FileAccess.get_file_as_string(log_path)
+	if not logged.contains("PERMISSION_DENIED") or not logged.contains("NOT_OWN_AVATAR") or logged.contains("visitor_x\":\"anon"):
+		return "the operator log misses the refusals"
+	return ""
+
+
+## The link's agent requests and the tape go through the dispatcher with the same results as
+## before; swapping a body's controller (D-91) changes only who may drive it.
+func test_agent_requests_and_controller_swap() -> String:
+	var w := await _world(["wheeled_humanoid", "human_walker"])
+	var av := await _place(w, [["robot_r", "wheeled_humanoid", 15.0, 10.0, 0.0], ["visitor_x", "human_walker", 15.0, 8.5, PI]])
+	w.avatars["robot_r"].controller = "LLM_AGENT"
+	var linked := ["robot_r", "visitor_x"]
+	if w.dispatcher.agent_controlled(linked) != ["robot_r", "visitor_x"]:
+		return "the agent session should drive both linked bodies: %s" % [w.dispatcher.agent_controlled(linked)]
+	var r := w.dispatcher.agent_request(_req("robot_r", w.clock.tick, "NO_OP", {}, 1), linked)
+	if r["reason_code"] != "OK":
+		return "an agent request was refused: %s" % r
+	var body_before: Dictionary = av["visitor_x"].body
+	var pos_before: Vector3 = av["visitor_x"].global_position
+	if not w.set_controller("visitor_x", "HUMAN_INPUT"):
+		return "set_controller failed"
+	r = w.dispatcher.agent_request(_req("visitor_x", w.clock.tick, "NO_OP", {}, 2), linked)
+	if r["reason_code"] != "CAPABILITY_DENIED":
+		return "the agent session drove a HUMAN_INPUT body: %s" % r
+	if av["visitor_x"].body != body_before or av["visitor_x"].global_position != pos_before:
+		return "swapping the controller changed the body"
+	w.set_controller("visitor_x", "SCRIPTED")
+	if w.dispatcher.agent_request(_req("visitor_x", w.clock.tick, "NO_OP", {}, 3), linked)["reason_code"] != "OK":
+		return "swapping back did not give the body back to the agent session"
+	if w.set_controller("visitor_x", "TELEPATHY") or w.set_controller("nobody", "SCRIPTED"):
+		return "an unknown controller or avatar was accepted"
+	var host := w.dispatcher.host_request(_req("visitor_x", w.clock.tick, "NO_OP", {}, 4), "visitor_x")
+	if host["reason_code"] != "OK":
+		return "the tape was refused: %s" % host
+	return ""
+
+
+## The Godot dispatcher answers every case like range_service/viewer/permissions.py (compared in
+## tools/godot_check.py from the file written here).
+func test_permission_matrix() -> String:
+	var table := WorldData.load_config("permissions", "permissions")
+	if table.is_empty():
+		return "no exported permissions table"
+	var m := WorldDispatcher.matrix(table)
+	if m["SPECTATOR VIEW_EVALUATOR_TRUTH any"] != "PERMISSION_DENIED" or m["EVALUATOR VIEW_EVALUATOR_TRUTH any"] != "OK":
+		return "evaluator truth is not the Evaluator's only"
+	var f := FileAccess.open(artifacts_dir.path_join("permissions_matrix.json"), FileAccess.WRITE)
+	f.store_string(JSON.stringify(m, "", true))
+	f.close()
+	return ""
+
+
+## T06: free fly, orbit, follow, the avatar's POV, switching targets; walls do not swallow the camera;
+## a participant seat only gets its own body's follow and POV.
+func test_spectator_cameras_t06() -> String:
+	var w := await _world(["wheeled_humanoid", "human_walker"])
+	var r := w.spawn_avatar("robot_r", "wheeled_humanoid", Vector3(10, 0, 10), 0.6)
+	w.spawn_avatar("visitor_x", "human_walker", Vector3(20, 0, 15), 0.0)
+	var rig := CameraRig.new()
+	rig.dispatcher = w.dispatcher
+	w.add_child(rig)
+	rig.set_targets(w.avatar_list())
+	await get_tree().process_frame
+	if not rig.select_avatar("robot_r") or rig.selected_id() != "robot_r":
+		return "select_avatar failed"
+	if not rig.set_mode(CameraRig.Mode.FOLLOW):
+		return "a spectator may follow"
+	await get_tree().process_frame
+	var cam := rig.camera.global_transform
+	var focus := r.global_position + Vector3.UP * CameraRig.ORBIT_FOCUS_HEIGHT
+	if (-cam.basis.z).dot((focus - cam.origin).normalized()) < 0.99:
+		return "follow camera does not look at the avatar"
+	if (cam.origin - r.global_position).dot(SenseModel.forward_of(r)) > -1.0:
+		return "follow camera is not behind the avatar"
+	if not rig.set_mode(CameraRig.Mode.POV):
+		return "a spectator may take the POV"
+	r.head_yaw = 0.5
+	rig._apply()
+	cam = rig.camera.global_transform
+	if cam.origin.distance_to(SenseModel.sensor_origin(r)) > 0.01:
+		return "POV camera is not at the sensor point"
+	if (-cam.basis.z).dot(SenseModel.head_forward_of(r)) < 0.99:
+		return "POV camera does not face where the head faces (D-72)"
+	rig.cycle_mode()
+	if rig.mode != CameraRig.Mode.FREE:
+		return "C after POV should come back to free fly, got %s" % rig.mode
+	rig.select_next()
+	if rig.selected_id() != "visitor_x":
+		return "switching targets failed"
+	# A wall between the avatar and the orbit camera: the camera stops in front of it.
+	var wall := w.spawn_avatar("near_wall", "human_walker", Vector3(1.0, 0, 10), 0.0)
+	rig.set_targets(w.avatar_list())
+	rig.select_avatar("near_wall")
+	rig.orbit_yaw = -PI / 2     # camera west of the avatar, beyond the x = 0 wall
+	rig.orbit_pitch = 0.0
+	rig.orbit_distance = 6.0
+	rig.set_mode(CameraRig.Mode.ORBIT)
+	await get_tree().process_frame
+	if not rig.clipped or rig.camera.global_position.x < 0.0:
+		return "orbit camera went through the wall (x %.2f)" % rig.camera.global_position.x
+	if wall == null:
+		return "could not place the wall test avatar"
+	# Participant (G4c): only its own body.
+	w.dispatcher.set_seat("PARTICIPANT", "visitor_x")
+	rig.set_mode(CameraRig.Mode.FREE)
+	if rig.set_mode(CameraRig.Mode.ORBIT):
+		return "a participant may not orbit"
+	rig.select_avatar("visitor_x")
+	if not rig.set_mode(CameraRig.Mode.POV):
+		return "a participant may take its own POV"
+	if rig.select_avatar("robot_r"):
+		return "a participant selected another avatar"
+	rig.queue_free()
+	return ""
+
+
+## The Sensor view draws from the observer's packet only: its pose, head yaw, ids and handles.
+func test_sensor_view_draws_the_packet() -> String:
+	var w := await _world(["wheeled_humanoid", "human_walker"])
+	var av := await _place(w, [["robot_r", "wheeled_humanoid", 15.0, 10.0, 0.0], ["visitor_x", "human_walker", 15.0, 8.0, PI]])
+	var rig := CameraRig.new()
+	w.add_child(rig)
+	rig.set_targets(w.avatar_list())
+	var view := SenseView.new()
+	view.setup(w, rig)
+	w.add_child(view)
+	var store := ViewerStore.new()
+	w.add_child(store)
+	store.dispatcher = _standalone_dispatcher("SPECTATOR")
+	store.add_child(store.dispatcher)
+	var packet: Dictionary = w.senses.sample()["robot_r"]
+	var track := w.senses.track_id_for("robot_r", "visitor_x")
+	store.ingest({"schema_version": "1.0", "audience": "OBSERVER", "observer": "robot_r", "lane": "handles", "t_ms": 0,
+		"data": {"decision_id": "dec_1", "handles": {"P1": track}}})
+	view.store = store
+	# Move the body after the sample: the view must still draw where the packet says it was.
+	av["robot_r"].global_position = Vector3(5, 0, 5)
+	packet["observer_pose"]["head_yaw_rad"] = 0.4
+	view.draw_packet(av["robot_r"], packet)
+	var d := view.last_drawn
+	var eye: Vector3 = d["eye"]
+	if absf(eye.x - 15.0) > 0.01 or absf(eye.z - 10.0) > 0.01:
+		return "the view drew from the body's live position, not the packet's pose (%s)" % eye
+	var want := Vector3(-sin(0.4), 0, -cos(0.4))
+	if (d["cone_dir"] as Vector3).dot(want) < 0.999:
+		return "the sight cone does not follow the packet's head yaw"
+	var labels := ", ".join(d["labels"])
+	if not labels.contains(track + " (P1)") or labels.contains("visitor_x"):
+		return "track label should be its own id with its handle, never the real id: %s" % labels
+	return ""
+
+
+func _fixture_store(seat: String) -> ViewerStore:
+	var store := ViewerStore.new()
+	add_child(store)
+	var d := _standalone_dispatcher(seat)
+	store.add_child(d)
+	store.open(VIEWER_FIXTURE, d, false)
+	return store
+
+
+## Layer viewer v1 on a fixture feed: per-observer labels, HORIZON lanes empty and labelled, Solo
+## and Mute view only, Bypass disabled with its reason, scrubbing, and a decision explained from
+## evidence including a request dropped before sending, a salvaged call and a dropped activity.
+func test_layer_viewer_from_fixture() -> String:
+	var store := _fixture_store("SPECTATOR")
+	_node = store
+	if store.records("robot_r", "decision").is_empty():
+		return "the fixture has no decisions for robot_r"
+	if not store.evaluator.is_empty():
+		return "a Spectator stored evaluator records"
+	var lv := LayerViewer.new()
+	lv.setup(store, store.dispatcher, "robot_r")
+	lv.size = Vector2(1100, 1000)
+	store.add_child(lv)
+	await get_tree().process_frame
+	var built := 0
+	var empty := 0
+	for row in lv.lane_rows:
+		var b: Dictionary = lv.buttons[row["key"]]
+		if not b["bypass"].disabled or not String(b["bypass"].tooltip_text).contains("G5"):
+			return "Bypass must be disabled and say why (%s)" % row["key"]
+		if bool(row["built"]):
+			built += 1
+			if b["solo"].text == b["bypass"].text or not b["solo"].toggle_mode:
+				return "Solo/Mute must look different from Bypass"
+		elif lv.lane_note(String(row["key"])).contains("not built (G5)"):
+			empty += 1
+	if built != 8 or empty != 9:
+		return "lanes: %d built, %d HORIZON lanes labelled not built (expected 8 and 9)" % [built, empty]
+	var version := store.version
+	lv.buttons["sight"]["mute"].button_pressed = true
+	lv.buttons["model"]["solo"].button_pressed = true
+	if lv.lane_visible("sight") or lv.lane_visible("pulse") or not lv.lane_visible("model"):
+		return "Solo/Mute did not change what is shown"
+	if store.version != version:
+		return "Solo/Mute changed the data"
+	# Scrub and select decisions.
+	lv.scrub_to(5000)
+	if lv.playhead_ms != 5000 or lv.follow_live:
+		return "scrub failed"
+	var dropped_text := ""
+	var words_text := ""
+	for rec in lv.decisions():
+		lv.select_decision(String(rec["data"]["decision_id"]))
+		var t := lv.decision_text()
+		if not t.contains("seen by robot_r"):
+			return "decision text is not labelled with its observer"
+		if t.contains("visitor_x") or t.contains("visitor_y"):
+			return "decision text names a person by a real id: %s" % t
+		if t.contains("DROPPED before sending"):
+			dropped_text = t
+		if t.contains("Reason summary"):
+			words_text = t
+	if not dropped_text.contains("DROPPED before sending: TARGET_NOT_PERCEIVED") or not dropped_text.contains("salvaged") \
+			or not dropped_text.contains("activity dropped: rule TARGET_NOT_PERCEIVED") or not dropped_text.contains("(P1)"):
+		return "the decision with the drop does not explain it: %s" % dropped_text
+	if not words_text.contains("Reason summary (the model's own words)"):
+		return "reason_summary is not labelled as the model's own words"
+	lv.step_decision(-1)
+	if lv.selected_decision == "" or lv.playhead_ms != int(lv.selected_decision_record()["t_ms"]):
+		return "stepping decisions did not move the playhead"
+	if not lv.capability_card().contains("[robot_r |") or not lv.capability_card().contains("sees 120"):
+		return "capability card missing: %s" % lv.capability_card()
+	lv.set_observer("visitor_y")
+	if lv.decision_text().contains("robot_r") and not lv.decision_text().contains("seen by visitor_y"):
+		return "switching observer kept robot_r's panel"
+	lv.queue_redraw()
+	await get_tree().process_frame
+	if lv.draws < 1:
+		return "the viewer never drew"
+	if EvaluatorPanel.create(store, store.dispatcher) != null:
+		return "the EVALUATOR TRUTH panel was created for a Spectator"
+	return ""
+
+
+## EVALUATOR TRUTH: present and filled for the Evaluator seat only.
+func test_evaluator_panel_only_for_the_evaluator() -> String:
+	for seat in ["SPECTATOR", "DIRECTOR", "PARTICIPANT"]:
+		var s := _fixture_store(seat)
+		var refused := EvaluatorPanel.create(s, s.dispatcher) == null and s.evaluator.is_empty()
+		s.free()
+		if not refused:
+			return "%s got evaluator truth" % seat
+	var store := _fixture_store("EVALUATOR")
+	_node = store
+	var panel := EvaluatorPanel.create(store, store.dispatcher)
+	if panel == null:
+		return "no panel for the Evaluator"
+	store.add_child(panel)
+	await get_tree().process_frame
+	var first := String(store.records("robot_r", "decision")[1]["data"]["decision_id"])
+	panel.show_for("robot_r", first)
+	var t := panel.text_for()
+	if not (panel.get_node("Box/Title") as Label).text.begins_with("EVALUATOR TRUTH"):
+		return "the panel is not labelled EVALUATOR TRUTH"
+	for want in ["Private goals:", "visitor_x", "labels", "prompt as assembled", "## GUARDRAILS"]:
+		if not t.contains(want):
+			return "the panel lacks '%s'" % want
+	if not t.contains(" (P1) = visitor_x") or not t.contains(" = visitor_y"):
+		return "the panel does not map every track (with its handle) to its real id: %s" % t.substr(0, 300)
+	return ""
+
+
+## Live: the store reads only complete lines as the sidecar appends them.
+func test_viewer_store_reads_a_growing_file() -> String:
+	var dir := artifacts_dir.path_join("live_viewer")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var path := dir.path_join(ViewerStore.OBSERVER_FILE)
+	var rec := {"schema_version": "1.0", "audience": "OBSERVER", "observer": "robot_r", "lane": "pulse", "t_ms": 100,
+		"data": {"event": "WAKE"}}
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(rec) + "\n" + JSON.stringify(rec).substr(0, 20))
+	f.close()
+	var store := ViewerStore.new()
+	_node = store
+	add_child(store)
+	var d := _standalone_dispatcher("SPECTATOR")
+	store.add_child(d)
+	store.open(dir, d, true)
+	if store.records("robot_r", "pulse").size() != 1:
+		return "expected one complete record, got %d" % store.records("robot_r", "pulse").size()
+	f = FileAccess.open(path, FileAccess.READ_WRITE)
+	f.seek_end()
+	f.store_string(JSON.stringify(rec).substr(20) + "\n")
+	f.close()
+	store.poll()
+	if store.records("robot_r", "pulse").size() != 2:
+		return "the line completed later was not read"
+	store.ingest({"schema_version": "1.0", "audience": "EVALUATOR", "observer": null, "lane": "truth_goals", "t_ms": 0,
+		"data": {"goals": {}}})
+	if not store.evaluator.is_empty():
+		return "a Spectator store kept an evaluator record"
 	return ""

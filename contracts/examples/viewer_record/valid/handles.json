@@ -1,0 +1,13 @@
+{
+  "audience": "OBSERVER",
+  "data": {
+    "decision_id": "dec_robot_r_000001",
+    "handles": {
+      "P1": "anon_wodzgiwd7a"
+    }
+  },
+  "lane": "handles",
+  "observer": "robot_r",
+  "schema_version": "1.0",
+  "t_ms": 100
+}

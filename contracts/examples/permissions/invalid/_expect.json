@@ -1,0 +1,5 @@
+{
+  "not_built_without_gate": "required",
+  "unknown_scope": "enum",
+  "unknown_principal": "enum"
+}

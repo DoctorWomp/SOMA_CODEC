@@ -49,7 +49,7 @@ CLOSE_BUSY = 4409
 class Sidecar:
     def __init__(self, token: str, agents: dict[str, str], record_dir: Path | None = None,
                  delay_ms: int = 0, drop_after: int = 0, runtimes: dict[str, AgentRuntime] | None = None,
-                 jitter_ms: int = 0) -> None:
+                 jitter_ms: int = 0, viewer: Any = None) -> None:
         if len(token) < 16:
             raise ValueError("the session token must be at least 16 characters")
         self._token = token
@@ -57,6 +57,9 @@ class Sidecar:
         self.agents: dict[str, ScriptedAgent | AgentRuntime] = {}
         self.runtimes = runtimes or {}       # agent id -> AgentRuntime (G3a)
         self.jitter_ms = jitter_ms           # test: random extra delay before answering (determinism checks)
+        # G4a (D-93): the live viewer feed (range_service/viewer/feed.LiveFeed), or None. It only reads
+        # what passes and appends to files; it never changes a message or a decision.
+        self.viewer = viewer
         self.run_mode = "LIVE"
         self._step_jobs: list[tuple[AgentRuntime, DecisionJob]] = []
         self._step_presence: dict[str, list[dict[str, Any]]] = {}     # stepped: presence actions per agent
@@ -115,6 +118,9 @@ class Sidecar:
         self.write_memory()
         self.write_records()
         self.write_delivery()
+        if self.viewer is not None:
+            self.viewer.poll_logs(self.runtimes)
+            self.viewer.close()
 
     def write_delivery(self) -> None:
         """What each runtime held back or dropped before sending, and why (G3d, D-63, D-66)."""
@@ -173,6 +179,8 @@ class Sidecar:
                 self._problem(f"refused to send an invalid {kind}: {found[0]}")
                 return
             self._record("sidecar_sent.jsonl", env)
+            if self.viewer is not None and kind == "agent.action_request":
+                self.viewer.builder.sent(payload, env["tick_id"])
         else:
             self._record("sidecar_probes_deliberately_invalid.jsonl", env)
         await ws.send(json.dumps(env))
@@ -206,11 +214,14 @@ class Sidecar:
             agent = self.agents.get(payload["observer_id"])
             if agent is None:
                 return
+            if self.viewer is not None:
+                self.viewer.builder.packet(payload)
             if isinstance(agent, AgentRuntime):
                 await self._runtime_observation(ws, agent, payload)
             else:
                 await self._scripted_observation(ws, agent, payload)
             self._observations += 1
+            self._viewer_flush()
             if self.drop_after and not self._dropped_once and self._observations >= self.drop_after:
                 self._dropped_once = True
                 await ws.close(code=1001, reason="sidecar test: dropping the connection once")
@@ -222,6 +233,9 @@ class Sidecar:
             if agent is not None:
                 agent.on_result(payload)
             self._record("sidecar_results.jsonl", payload)
+            if self.viewer is not None:
+                self.viewer.builder.result(payload)
+                self._viewer_flush()
         elif kind == "link.heartbeat":
             await self._send(ws, "link.heartbeat", {})
         # Other valid types are not for the sidecar; they are ignored.
@@ -313,6 +327,11 @@ class Sidecar:
             await self._send(ws, "agent.action_request", request)
         self.write_records()
 
+    def _viewer_flush(self) -> None:
+        if self.viewer is not None:
+            self.viewer.poll_logs(self.runtimes)
+            self.viewer.flush()
+
     def write_records(self) -> None:
         """Append new decision records (one JSON line each) for every runtime, in agent-id order."""
         if self.record_dir is None:
@@ -326,6 +345,9 @@ class Sidecar:
             done = getattr(runtime, "_prompts_flushed", 0)
             prompts += [dict(p, agent_id=agent_id) for p in runtime.prompts[done:]]
             runtime._prompts_flushed = len(runtime.prompts)
+        if self.viewer is not None and (new or prompts):
+            self.viewer.records(new, prompts)
+            self._viewer_flush()
         if new or prompts:
             self.record_dir.mkdir(parents=True, exist_ok=True)
         if new:

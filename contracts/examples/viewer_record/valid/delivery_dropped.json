@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "audience": "OBSERVER",
+  "observer": "robot_r",
+  "lane": "delivery",
+  "t_ms": 31200,
+  "data": {
+    "event": "DROPPED",
+    "decision_id": "dec_robot_r_000012",
+    "action_request_id": "act_robot_r_00031",
+    "action": "SPEAK",
+    "target": "anon_wodzgiwd7a",
+    "reason": "TARGET_NOT_PERCEIVED"
+  }
+}

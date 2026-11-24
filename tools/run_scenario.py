@@ -13,6 +13,9 @@
     uv run python tools/run_scenario.py SB06_LONG_WAIT --no-pulse    # the same run with the pulse off (G3d)
     uv run python tools/compare_runs.py runs/<run A> runs/<run B>      # side by side, from the summaries
     uv run python tools/run_scenario.py SB06_LONG_WAIT --watch --presence subtle   # the presence dial (G3e)
+    uv run python tools/run_scenario.py SB04_POLITE_BID --watch --viewer open      # the layer viewer (G4a, F3)
+    uv run python tools/run_scenario.py SB04_POLITE_BID --watch --seat evaluator   # with EVALUATOR TRUTH (F4)
+    uv run python tools/view_run.py runs/<run>                         # replay a finished run in the viewer
     uv run python tools/run_scenario.py SB04_POLITE_BID --mode live --model fake-gpu --npc-load 3 --gpu-guard on
         # G3f: Robot R (F3) and NPCs (N3) on a simulated shared GPU, with a condition (D-75 to D-78)
 
@@ -58,6 +61,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--render-preset", default="v0", help="rendered runs (--watch): v0 or v0_compat")
     parser.add_argument("--presence", default=None, metavar="LEVEL",
                         help="the presence dial for every robot (G3e): subtle, default, performative, or 0..1")
+    parser.add_argument("--viewer", default="auto", choices=["auto", "off", "closed", "open"],
+                        help="G4a: the live layer-viewer feed and panel (auto: closed when watched, off headless; "
+                             "every run's feed is rebuilt at its end for tools/view_run.py)")
+    parser.add_argument("--seat", default="spectator", choices=["spectator", "director", "evaluator"],
+                        help="G4a: the client's seat (only evaluator sees EVALUATOR TRUTH, D-90)")
+    parser.add_argument("--observer", default=None, help="G4a: the avatar the views open on (default: Robot R)")
     parser.add_argument("--frame-stats", action="store_true",
                         help="record frame times in a headless run too (always on with --watch)")
     parser.add_argument("--no-prewarm", action="store_true",
@@ -100,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
                       prewarm=False if args.no_prewarm else None, pulse="off" if args.no_pulse else args.pulse,
                       resolution=args.resolution, render_preset=args.render_preset,
                       frame_stats=True if args.frame_stats else None, presence=args.presence,
+                      viewer=args.viewer, seat=args.seat.upper(), observer=args.observer,
                       conditions=Conditions(args.focal_layout, args.focal_answer,
                                             None if args.gpu_guard is None else args.gpu_guard == "on", args.npc_cap,
                                             args.guard_hold, False if args.no_salvage else None),
@@ -162,6 +172,13 @@ def main(argv: list[str] | None = None) -> int:
               f"(n={lat['n']}, unanswered {lat['unanswered']}); {r['model_calls']} model calls, {r['timeouts']} timeouts, "
               f"fallbacks {r['fallbacks'] or 0}; {r['glances_accepted']} glances; FN-1 departures mid-conversation "
               f"{r['fn1']['departures_mid_conversation']} ({r['fn1']['without_goodbye']} without a goodbye first)")
+    v = s.get("viewer") or {}
+    if v:
+        live = v.get("live_matches_replay")
+        print(f"  viewer ({v.get('mode')}, seat {v.get('seat')}): {v.get('observer_records')} observer records, "
+              f"{v.get('evaluator_records')} evaluator records"
+              + ("" if live is None else f"; live feed {'matches' if live['match'] else 'DIFFERS from'} the rebuilt one")
+              + (f"; {v['error']}" if v.get("error") else ""))
     for state in s["final_states"]:
         links = ", ".join(state["links_used"]) or "none"
         print(f"  {state['avatar_id']} ended at ({state['x']:.1f}, {state['y']:.2f}, {state['z']:.1f}); links used: {links}")

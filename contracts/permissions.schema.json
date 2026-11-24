@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.soma-range.invalid/v1/permissions.schema.json",
+  "title": "Permissions",
+  "description": "configs/permissions.yaml (G4a, D-90; INTERACTION_MODES §2.2): who may do what. The world dispatcher (Godot) enforces it for every request; the viewer feed is filtered with it.",
+  "x-audience": "config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "permissions_id", "principals", "capabilities", "audiences"],
+  "properties": {
+    "schema_version": {"$ref": "common.schema.json#/$defs/schema_version"},
+    "permissions_id": {"const": "permissions"},
+    "principals": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/principal"},
+      "required": ["SPECTATOR", "DIRECTOR", "PARTICIPANT", "EVALUATOR", "AGENT", "HOST"],
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "about"],
+        "properties": {
+          "kind": {"enum": ["SEAT", "INTERNAL"]},
+          "about": {"type": "string", "minLength": 1, "maxLength": 200}
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/capability"},
+      "required": ["ACT_IN_WORLD", "EDIT_DIRECTIVE", "WORLD_CHANGE", "TRIGGER_EVENT", "POSSESS", "BYPASS_LAYER",
+                   "TIME_CONTROL", "PAUSE", "SELECT_AVATAR", "CAMERA_FREE", "CAMERA_ORBIT", "CAMERA_FOLLOW",
+                   "CAMERA_POV", "VIEW_WORLD", "VIEW_SENSOR", "VIEW_LAYERS", "VIEW_EVALUATOR_TRUTH"],
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["about", "grants", "built"],
+        "properties": {
+          "about": {"type": "string", "minLength": 1, "maxLength": 200},
+          "grants": {
+            "type": "object",
+            "propertyNames": {"$ref": "#/$defs/principal"},
+            "additionalProperties": {"enum": ["ANY", "CONTROLLED", "OWN_AVATAR"]}
+          },
+          "built": {"type": "boolean"},
+          "gate": {"type": "string", "pattern": "^G[0-9][a-z]?$"},
+          "logged_for": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/principal"}}
+        },
+        "if": {"properties": {"built": {"const": false}}},
+        "then": {"required": ["gate"]}
+      }
+    },
+    "audiences": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["OBSERVER", "EVALUATOR"],
+      "properties": {
+        "OBSERVER": {"$ref": "#/$defs/capability"},
+        "EVALUATOR": {"$ref": "#/$defs/capability"}
+      }
+    }
+  },
+  "$defs": {
+    "principal": {"enum": ["SPECTATOR", "DIRECTOR", "PARTICIPANT", "EVALUATOR", "AGENT", "HOST"]},
+    "capability": {"enum": ["ACT_IN_WORLD", "EDIT_DIRECTIVE", "WORLD_CHANGE", "TRIGGER_EVENT", "POSSESS",
+                            "BYPASS_LAYER", "TIME_CONTROL", "PAUSE", "SELECT_AVATAR", "CAMERA_FREE", "CAMERA_ORBIT",
+                            "CAMERA_FOLLOW", "CAMERA_POV", "VIEW_WORLD", "VIEW_SENSOR", "VIEW_LAYERS",
+                            "VIEW_EVALUATOR_TRUTH"]}
+  }
+}

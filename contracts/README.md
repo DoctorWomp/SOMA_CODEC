@@ -21,6 +21,8 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 | `decision_record` | evaluator | One agent decision: triggers, context sizes per section, model calls with responses (record and replay), the requests it made (G3a, D-49–D-51) |
 | `map`, `persona`, `body`, `scenario`, `preset`, `expression`, `directive` | config | The YAML content files in `configs/` |
 | `pulse` | config | The pulse protocol settings, configs/pulse.yaml (G3c-2, D-61) |
+| `permissions` | config | Who may do what: seats, internal principals, capabilities and scopes, configs/permissions.yaml (G4a, D-90) |
+| `viewer_record` | viewer | One line of a run's viewer feed: `OBSERVER` (one observer's own records) or `EVALUATOR` (evaluator truth) (G4a, D-93) |
 | `model_catalog`, `inference`, `model_registry` | config | The pinned model files, the real-model settings and the local (git-ignored) list of model files on this machine (G3b, D-57) |
 
 `x-audience` in each file records its audience. **Agent-facing contracts can never carry evaluator-only fields** (private goals, scenario labels, delivery lists; the list is `common.schema.json#/$defs/evaluator_only_field`). Tests insert every one of those names at every level of every agent-facing example and check that each is rejected.
@@ -42,6 +44,7 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 - G3c-2 (D-60, D-61): `decision_record.activity` now holds an activity (`common` `activity_kind`, `wake_condition`, with `horizon` reserved for G5); new trigger values `WAKE_CONDITION` and `PULSE_REVIEW`; optional model-call field `other_server_busy_ms`; scenario fields `pulse` and `post_duty`; new config contract `pulse`. All backward-compatible, versions unchanged.
 - G3f/G3g (D-77, D-78, D-85, D-86, D-89): `inference` `focal.answer` takes FULL, SHORT or LEAN; optional `gpu_guard.hold` (ALL, DECISIONS) and top-level `salvage`; `decision_record` model calls gain optional `salvaged` (the field cut off, the actions used). All backward-compatible, versions unchanged.
 - G3h (D-110): `decision_record` model calls gain optional `activity_dropped` (the rule kind an answer's activity broke, the actions kept); `fallback.reason` gains `FN1_HELD`. Observer-local handles (D-111) never reach a contract: requests, packets and the journal keep the anonymous ids. All backward-compatible, versions unchanged.
+- G4a (D-90, D-93): new config contract `permissions` and the record contract `viewer_record` (audience `viewer`: never sent to an agent; its `OBSERVER` records may not use an evaluator lane, and its `sight` tracks are anonymous ids only). No message contract changed; the live viewer feed is files, not link messages.
 - Gestures come from one shared vocabulary, `common.schema.json#/$defs/gesture`, used by `body`, `action_request` and `observation` (D-36). Expression channels likewise (`SPEECH`, `FACE`, `LIGHT`).
 
 ## Examples

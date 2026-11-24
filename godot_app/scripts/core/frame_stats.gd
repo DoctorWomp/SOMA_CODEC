@@ -14,6 +14,7 @@ const KEEP_FRAMES := 200000
 var frame_ms: PackedFloat32Array = PackedFloat32Array()
 var dropped := 0
 var video_mem_peak_bytes := 0.0
+var extra: Dictionary = {}          # G4a: the viewer's state for the run (open time, draws)
 var _last_usec := 0
 var _next_sample_usec := 0
 
@@ -47,6 +48,7 @@ func write(path: String) -> bool:
 		"vsync_mode": DisplayServer.window_get_vsync_mode(),
 		"godot_video_mem_peak_mib": snappedf(video_mem_peak_bytes / 1048576.0, 0.1),
 	}
+	out.merge(extra)
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		push_error("frame_stats: cannot write %s" % path)

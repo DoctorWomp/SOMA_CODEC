@@ -1,0 +1,11 @@
+{
+  "audience": "OBSERVER",
+  "data": {
+    "event": "NEW",
+    "track": "anon_wodzgiwd7a"
+  },
+  "lane": "tracks",
+  "observer": "robot_r",
+  "schema_version": "1.0",
+  "t_ms": 100
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "audience": "EVALUATOR",
+  "observer": "robot_r",
+  "lane": "truth_tracks",
+  "t_ms": 90000,
+  "data": {
+    "tracks": {
+      "anon_wodzgiwd7a": "visitor_x"
+    }
+  }
+}

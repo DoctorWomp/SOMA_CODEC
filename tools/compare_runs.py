@@ -74,6 +74,11 @@ def column(run_dir: Path, agent: str) -> dict[str, str]:
         "frame spikes (target p95 <= 16.7 ms)": f"{frames.get('spikes')} ({ {True: 'met', False: 'not met', None: 'n/a headless'}[frames.get('meets_target')] })"
         if frames.get("available") else "-",
         "peak VRAM MiB": str(vram.get("peak_mib")) if vram else "not sampled",
+        "Godot video memory peak MiB": str(frames.get("godot_video_mem_peak_mib")) if frames.get("available") else "-",
+        "layer viewer (G4a): mode / open s / redraws":
+            f"{frames.get('viewer_mode')} / {frames.get('viewer_open_s')} / {frames.get('viewer_draws')}"
+            if frames.get("available") and frames.get("viewer_mode") else "-",
+        "event loop lag p95 ms": str((s.get("event_loop_lag_ms") or {}).get("p95")),
     }
 
 

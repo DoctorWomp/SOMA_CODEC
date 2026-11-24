@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "audience": "OBSERVER",
+  "observer": "robot_r",
+  "lane": "beacon",
+  "t_ms": 200,
+  "data": {
+    "expression_id": "ambient_attending",
+    "request_id": "act_robot_r_00003",
+    "ambient_state": "ATTENDING",
+    "light": "OFF",
+    "light_pattern": "STEADY"
+  }
+}
