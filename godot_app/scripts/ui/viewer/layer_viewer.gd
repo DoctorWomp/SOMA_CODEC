@@ -55,6 +55,7 @@ var map_data: Dictionary = {}
 var draws := 0       # how many times the panel was drawn (cost accounting)
 var label_rects: Dictionary = {}   # lane key -> [Rect2] of the labels drawn last (tests: never overlapping)
 var labels_left_out := 0           # labels with no room this paint (their markers stay)
+var map_labels: Array[Rect2] = []   # the top-down view's labels drawn last (never overlapping)
 var lane_rows: Array = []   # [{"key", "label", "built"}] in display order
 var buttons := {}    # lane key -> {"solo": Button, "mute": Button, "bypass": Button}
 var decision_label: Label
@@ -434,9 +435,31 @@ func _text(at: Vector2, s: String, color: Color, font_size := FONT_SIZE, max_w :
 	_c.draw_string(_font, at, s, HORIZONTAL_ALIGNMENT_LEFT, max_w, UiStyle.fs(font_size), color)
 
 
+## A label in the top-down view that never overlaps one drawn before it: moved down a line at a
+## time until it is clear (G4b: a sign's text and the speech heard collided).
+func _map_label(at: Vector2, s: String, color: Color, font_size: int) -> Rect2:
+	var fs := UiStyle.fs(font_size)
+	var w := _font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var h := float(fs) + 2.0
+	var box := Rect2(at.x, at.y - fs, w, h)
+	for _i in 12:
+		var hit := false
+		for other in map_labels:
+			if box.intersects(other):
+				hit = true
+				break
+		if not hit:
+			break
+		box.position.y += h
+	map_labels.append(box)
+	_text(Vector2(box.position.x, box.position.y + fs), s, color, font_size)
+	return box
+
+
 ## Top-down view of the observer's own perception at the playhead: its pose, its head-anchored
 ## sight cone, its tracks where it estimated them, and speech it heard in the last 3 s as bearings.
 func _draw_map(r: Rect2) -> void:
+	map_labels.clear()
 	_c.draw_rect(r, Color(1, 1, 1, 0.04))
 	_text(r.position + Vector2(6, 14), "SIGHT · HEARING · TRACKS — seen by %s (its packets only)" % observer, DIM, 11)
 	if map_data.is_empty():
@@ -481,7 +504,7 @@ func _draw_map(r: Rect2) -> void:
 	var fwd := Vector2(-sin(yaw), -cos(yaw))
 	var side := Vector2(fwd.y, -fwd.x)
 	_c.draw_colored_polygon(PackedVector2Array([me + fwd * 9, me - fwd * 6 + side * 6, me - fwd * 6 - side * 6]), ACCENT)
-	_text(me + Vector2(8, -6), observer, ACCENT, 11)
+	_map_label(me + Vector2(8, -6), observer, ACCENT, 11)
 	for item in sight["data"]["items"]:
 		if item.get("pos") == null:
 			continue
@@ -493,24 +516,24 @@ func _draw_map(r: Rect2) -> void:
 		else:
 			_c.draw_arc(p, 5, 0, TAU, 12, DIM, 1.0)
 		var tag := "" if validity == "OBSERVED" else (" · partly" if validity == "DEGRADED" else " · %s" % String(item.get("reason", validity)).to_lower())
-		_text(p + Vector2(7, 4), store.track_label(observer, item["track"]) + tag, TEXT if seen else DIM, 10)
+		_map_label(p + Vector2(7, 4), store.track_label(observer, item["track"]) + tag, TEXT if seen else DIM, 10)
 	# G4b (D-100): text it could read and sounds it heard at that sample (from its packet's events).
 	for e in sight["data"].get("events", []):
 		if e["kind"] == "SIGN_TEXT" and e.get("pos") != null:
 			var sp: Vector2 = to_px.call(float(e["pos"]["x"]), float(e["pos"]["z"]))
 			_c.draw_rect(Rect2(sp - Vector2(4, 4), Vector2(8, 8)), WARN, false, 2.0)
 			var st := String(e["value"]["text"])
-			_text(sp + Vector2(7, 14), "reads «%s» (untrusted)" % (st if st.length() <= 34 else st.substr(0, 31) + "..."), WARN, 10)
+			_map_label(sp + Vector2(7, 14), "reads «%s» (untrusted)" % (st if st.length() <= 34 else st.substr(0, 31) + "..."), WARN, 10)
 		elif e["kind"] == "AUDIO_SOUND" and e.get("bearing") != null:
 			var sdir := fwd.rotated(-float(e["bearing"]))
 			_c.draw_line(me, me + sdir * 30, Color(WARN, 0.6), 1.0)
-			_text(me + sdir * 34, "%s sound" % String(e["value"]["sound_class"]).to_lower(), WARN, 10)
+			_map_label(me + sdir * 34, "%s sound" % String(e["value"]["sound_class"]).to_lower(), WARN, 10)
 	for heard in store.between(observer, "hearing", playhead_ms - 3000, playhead_ms):
 		var b := float(heard["data"].get("bearing", 0.0))
 		var dir := fwd.rotated(-b)   # bearings are relative to the body, positive left (screen y is +z)
 		_c.draw_line(me, me + dir * 40, WARN, 2.0)
 		var txt := String(heard["data"].get("text", ""))
-		_text(me + dir * 44, "heard%s «%s»" % [" (to me)" if heard["data"].get("addressed") else "",
+		_map_label(me + dir * 44, "heard%s «%s»" % [" (to me)" if heard["data"].get("addressed") else "",
 			txt if txt.length() < 40 else txt.substr(0, 37) + "..."], WARN, 10)
 
 

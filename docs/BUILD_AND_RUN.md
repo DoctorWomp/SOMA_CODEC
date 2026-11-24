@@ -129,6 +129,24 @@ uv run python tools/view_run.py runs/<run folder>
 
 Replays a finished run in the layer viewer (`--seat evaluator`, `--observer visitor_y`; `[` `]` change observer). Every run writes its feed at the end (`viewer/`); older folders are rebuilt from their logs. `--self-test` scrubs to every decision headless and checks the panels.
 
+### Direct a run: the Director seat and recipes (G4b)
+
+```bash
+uv run python tools/run_scenario.py SB04_POLITE_BID --model fake --mode live --watch --viewer open --seat director
+```
+
+The **Director** seat adds the Director console (F6; D-97 to D-101). Ctrl + left click on the floor sets the point where props go; `help` lists the commands: `inspect robot_r`, `directive robot_r <text>`, `goal`, `slider`; `sign <text>`, `note <text>`, `barrier [yaw°]`, `cone`, `crate`, `sound <class> [dB] [s]`, `move <prop_id>`, `remove <prop_id>`; `pa <text>`; `say <npc> [@<avatar>] <text>`; `event <type> <actor> [<target>]`. Every attempt the seat may make is journaled (`INTERVENTION`, applied or refused with a reason), and an unscheduled change taints the run (`MID_RUN_INTERVENTION`). Guardrails, permissions, physics and tools are never editable. Signs and sounds reach agents only through their senses; their text is untrusted evidence.
+
+```bash
+uv run python tools/recipe.py save runs/<run folder> --id my_recipe
+```
+
+```bash
+uv run python tools/run_scenario.py SB04_POLITE_BID --recipe my_recipe
+```
+
+Saves a run's applied interventions as `configs/recipes/my_recipe.yaml` (checked by `tools/validate_configs.py`) and schedules them again at the same scenario ticks (`operator: recipe:<id>`, not tainted; D-102). `tools/recipe.py show ID` lists one. Checked-in recipes: `director_tour` (SB-04, one of each kind) and `sign_booth_c` (SB-11, a sign at the info desk; D-104): `uv run python tools/run_scenario.py SB11_SIGN_AT_DESK --recipe sign_booth_c --watch --viewer open`.
+
 ### Repeat the determinism checks under CPU load
 
 ```bash
@@ -228,7 +246,7 @@ uv run python tools/contention_sim.py
 uv run python tools/run_scenario.py SB10_GLANCE_WHILE_WALKING --watch
 ```
 
-`diagnose` breaks Robot R's calls in existing bake-off run folders down by outcome and cost (folders the pre-G3f harness reused are split run by run). The live and offline bake-off take three named conditions: `--focal-layout SYSTEM_PREFIX` (Robot R's persona prefix as a system message), `--focal-answer SHORT` (shorter reason and speech), `--gpu-guard on [--npc-cap N]` (the NPC server holds new calls while a Robot R call is in flight); defaults are in `configs/inference.yaml` (`focal`, `gpu_guard`). `--model fake-gpu` runs Robot R (F3 speeds) and NPCs (N3) on a simulated shared GPU; `contention_sim.py` runs the condition matrix on it faster than real time: a model of the mechanism, not a measurement. SB-10 shows a glance while walking.
+`diagnose` breaks Robot R's calls in existing bake-off run folders down by outcome and cost (folders the pre-G3f harness reused are split run by run). The live and offline bake-off take three named conditions: `--focal-layout SYSTEM_PREFIX` (Robot R's persona prefix as a system message), `--focal-answer SHORT` (shorter reason and speech), `--gpu-guard on [--npc-cap N]` (the NPC server holds new calls while a Robot R call is in flight); defaults are in `configs/inference.yaml` (`focal`, `gpu_guard`). `--model fake-gpu` runs Robot R (F3 speeds) and NPCs (N3) on a simulated shared GPU; `contention_sim.py` runs the condition matrix on it faster than real time: a model of the mechanism, not a measurement. SB-10 shows a glance while walking. `--model fake-talkative[:MS]` (G4b, D-107) is the Demo policy with each spoken line lengthened to about F3's length and MS ms per call (default 1500): it reproduces live presence gaps without a GPU (`--mode live`).
 
 **Presence and expression (G3e, D-72 to D-74):** `uv run python tools/run_scenario.py SB06_LONG_WAIT --watch --presence subtle` (or `default`, `performative`, or a number from 0 to 1) sets the presence dial for every robot. The humanoids' head is world state now: they glance with the head while walking, and their sight cone follows it.
 

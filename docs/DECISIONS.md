@@ -1416,7 +1416,7 @@ No answer failed for an unknown target or a disallowed action. The causes:
 ## D-109 — A frame target that can be met at a 60 FPS cap
 **Status:** PROPOSED (2026-11-24), owner's G4a checklist item 12. Amends D-69's initial target.
 
-- D-69's "frame p95 ≤ 16.7 ms" cannot be met at a 60 FPS cap: 16.67 ms is the frame period itself, so ordinary scheduling jitter puts p95 just above it (the owner's rendered runs; the cloud's G4a runs at 17.9–18.1 ms with nothing wrong).
+- D-69's "frame p95 ≤ 16.7 ms" cannot be met at a 60 FPS cap: 16.67 ms is the frame period itself, so ordinary scheduling jitter puts p95 just above it (the owner's G4a checklist asked for a realistic target; the cloud's G4a rendered runs, viewer off or closed, had p95 17.9–18.1 ms with nothing wrong, D-96).
 - **Proposed:** **p95 ≤ 20 ms** at the 60 FPS cap (a frame period plus 20%), with **spikes** (frames over 33.3 ms, two periods: a dropped frame or worse) always counted and reported beside it; p99 and the longest frame reported as before. `run_report.FRAME_TARGET_MS = 20.0`; the run summary, `compare_runs.py` and results.md say "target p95 ≤ 20 ms (D-109)". Headless runs still make no claim.
 
 ## D-110 — An invalid activity never costs the actions; FN-1 holds are counted apart

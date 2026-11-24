@@ -3042,6 +3042,13 @@ func test_layer_viewer_from_fixture() -> String:
 			for k in range(i + 1, rects.size()):
 				if (rects[i] as Rect2).intersects(rects[k]):
 					return "labels overlap in the %s lane: %s and %s" % [key, rects[i], rects[k]]
+	# ... nor in the top-down view (its own name, its tracks, speech it heard, text it read).
+	if lv.map_labels.size() < 2:
+		return "the top-down view drew %d labels; expected the observer and its tracks" % lv.map_labels.size()
+	for i in lv.map_labels.size():
+		for k in range(i + 1, lv.map_labels.size()):
+			if lv.map_labels[i].intersects(lv.map_labels[k]):
+				return "top-down labels overlap: %s and %s" % [lv.map_labels[i], lv.map_labels[k]]
 	if EvaluatorPanel.create(store, store.dispatcher) != null:
 		return "the EVALUATOR TRUTH panel was created for a Spectator"
 	return ""
