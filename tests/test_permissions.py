@@ -25,13 +25,15 @@ def test_configs_are_valid():
 
 @pytest.mark.parametrize("seat", perm.SEATS)
 def test_no_seat_acts_for_an_agent_or_edits_a_directive(seat):
-    """A viewer seat can never send an action for an agent's body, nor change a directive in G4a."""
+    """A viewer seat can never send an action for an agent's body; only the Director intervenes (G4b)."""
     for target in ("robot_r", "visitor_x"):
         d = perm.check(TABLE, seat, "ACT_IN_WORLD", target, own_avatar=None)
         assert not d.ok, (seat, target, d)
-    d = perm.check(TABLE, seat, "EDIT_DIRECTIVE", "robot_r")
-    assert not d.ok
-    assert d.code == ("NOT_BUILT" if seat == "DIRECTOR" else "PERMISSION_DENIED")
+    # G4b (D-97): only the Director may intervene, through every kind of intervention.
+    for capability in ("EDIT_DIRECTIVE", "WORLD_CHANGE", "TRIGGER_EVENT", "INFLUENCE"):
+        d = perm.check(TABLE, seat, capability, "robot_r")
+        assert d.ok == (seat == "DIRECTOR"), (seat, capability, d)
+        assert d.code == ("OK" if seat == "DIRECTOR" else "PERMISSION_DENIED")
 
 
 def test_participant_acts_only_for_its_own_body():
@@ -68,8 +70,9 @@ def test_views_per_seat():
 
 
 def test_not_built_names_its_gate():
-    assert perm.check(TABLE, "DIRECTOR", "WORLD_CHANGE").gate == "G4b"
+    assert perm.check(TABLE, "DIRECTOR", "WORLD_CHANGE").ok          # built at G4b
     assert perm.check(TABLE, "DIRECTOR", "BYPASS_LAYER", "robot_r").gate == "G5"
+    assert perm.check(TABLE, "SPECTATOR", "TIME_CONTROL").gate == "G4b"   # not built yet: time scale and step
     assert perm.check(TABLE, "DIRECTOR", "POSSESS", "visitor_x").gate == "G4c"
 
 

@@ -75,7 +75,7 @@ func status_text() -> String:
 	lines.append("")
 	lines.append("C camera (free, orbit, follow, POV) · [ ] select avatar · right mouse look/orbit · wheel zoom")
 	lines.append("W A S D move · Q E down/up · Shift fast · Space pause · R restart · H hide")
-	lines.append("F2 sensor view · F3 layer viewer · F4 EVALUATOR TRUTH (Evaluator seat only)")
+	lines.append("F2 sensor view · F3 layer viewer · F4 EVALUATOR TRUTH (Evaluator seat) · F6 Director console (Director seat)")
 	return "\n".join(lines)
 
 

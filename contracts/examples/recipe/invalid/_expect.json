@@ -1,0 +1,5 @@
+{
+  "type_operation_mismatch": "const",
+  "nested_args": "oneOf",
+  "empty": "minItems"
+}

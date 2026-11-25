@@ -37,6 +37,7 @@ KINDS: dict[str, tuple[str, str]] = {
     "expressions": ("expression", "expression_id"),
     "directives": ("directive", "directive_id"),
     "models": ("model_catalog", "catalog_id"),
+    "recipes": ("recipe", "recipe_id"),
 }
 # Single files directly in configs/: file stem -> (contract, id field). Loaded as kind "<stem>".
 SINGLE_FILES: dict[str, tuple[str, str]] = {
@@ -186,6 +187,12 @@ def _cross_checks(cs: ConfigSet) -> list[ConfigProblem]:
     for permissions_id, table in cs.items["permissions"].items():
         for problem in table_problems(table):
             found.append(ConfigProblem(cs.files[("permissions", permissions_id)], problem))
+
+    from .director import recipe_problems   # noqa: PLC0415
+
+    for recipe_id, recipe in cs.items["recipes"].items():
+        for problem in recipe_problems(recipe, scenarios, personas):
+            found.append(ConfigProblem(cs.files[("recipes", recipe_id)], problem))
 
     for body_id, b in cs.items["bodies"].items():
         for problem in body_rules.body_problems(b):

@@ -142,6 +142,25 @@ def scripted_responses(texts: list[str]) -> Callable[[ModelRequest], str]:
     return respond
 
 
+TALKATIVE_TAIL = " I can also show you where the other booths are, and the platform demo runs every half hour today."
+
+
+def talkative(request: "ModelRequest") -> str:
+    """The Demo policy's answer with every spoken line lengthened, about as long as F3's lines on the
+    owner's PC (G4b, D-107): a stand-in for a verbose model, to reproduce what long speech does to
+    the presence loop. Deterministic."""
+    text = request.demo_hint or '{"actions": [{"action": "WAIT", "args": {"duration_ms": 1000}}]}'
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return text
+    for action in data.get("actions", []):
+        args = action.get("args") or {}
+        if action.get("action") == "SPEAK" and isinstance(args.get("text"), str):
+            args["text"] = (args["text"] + TALKATIVE_TAIL)[:480]
+    return json.dumps(data)
+
+
 class ReplayModel:
     """Serves the model responses recorded in a run's decision records, in order, per agent."""
 
@@ -655,6 +674,9 @@ def gateway_from_spec(spec: str, *, log_path: Path | None = None, seed: int | No
         return ModelGateway(FakeModel())
     if spec.startswith("fake-slow:"):
         return ModelGateway(FakeModel(delay_ms=int(spec.split(":", 1)[1]), model_id="fake-slow-v1"))
+    if spec == "fake-talkative" or spec.startswith("fake-talkative:"):
+        delay = int(spec.split(":", 1)[1]) if ":" in spec else 0
+        return ModelGateway(FakeModel(responder=talkative, delay_ms=delay, model_id="fake-talkative-v1"))
     if spec == "fake-malformed":
         return ModelGateway(FakeModel(responder=scripted_responses(MALFORMED_SAMPLES), model_id="fake-malformed-v1"))
     if spec.startswith("replay:"):
@@ -678,5 +700,5 @@ def gateway_from_spec(spec: str, *, log_path: Path | None = None, seed: int | No
                                         warm_up=False, parallel_slots=slots)
         return ModelGateway(provider, deadlines_ms={t: s["deadline_ms"] for t, s in inf["tiers"].items()},
                             max_concurrent=slots, scheduler=make_scheduler(inf))
-    raise ValueError(f"unknown model {spec!r}: use none, fake, fake-slow:MS, fake-malformed, replay:PATH, "
+    raise ValueError(f"unknown model {spec!r}: use none, fake, fake-slow:MS, fake-talkative[:MS], fake-malformed, replay:PATH, "
                      "llama, llama:MODEL or llama-attach:PORT")

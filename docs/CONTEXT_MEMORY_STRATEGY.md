@@ -59,6 +59,8 @@ This order serves two purposes. The engine's prefix cache reuses everything up t
 | | **Total input** | | **~3.75K** | **~1.9K** | |
 | | Output cap | | ~200 | ~120 | |
 
+*Amended at G4b (D-106; measured, approximate tokenizer): the table above is the planning estimate; the budgets in use are `BUDGETS` in `range_service/agents/context.py`. Robot R's (FOCAL) are now: guardrails **850**, identity 300, commitments **100**, setting 200, facts 350, episodes 350, conversation 750, observations **700**, decision 150 (total 3750, unchanged). Since LEAN became the default (D-85) its guardrails measure 762 tokens on the humanoids and 725–743 on the quadrupeds, over the 650 they had; the 200 come from commitments (at most 26 used) and observations (at most 59 used) over 802 Robot R decisions. A Director's directive edit is capped at 800 characters so the identity section stays within 300.*
+
 C1 reactive NPCs use only sections 1, 2, 7 (last turn) and 9: about 0.5K tokens. C0 uses no model. *Amended at G3c-2 (D-60, measured on the owner's NPC bake-off): C1 also gets the argument formats in section 1 and a minimal section 8 (who it perceives nearby, from its own senses), about 0.78K tokens in all; without them small models invented arguments and target ids.*
 
 Budgets are starting values. They are measured with the real tokenizer, not estimated. *G3g (D-88): the total counted is the whole prompt as sent (section headers included); if the never-cut sections and the latest turn do not fit, the latest turn is shortened (never dropped) and marked; C1's split was re-measured with the Qwen3.5 tokenizer (guardrails with the pulse's activity format 403 tokens), its total staying 0.78K.*

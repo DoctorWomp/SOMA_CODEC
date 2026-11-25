@@ -83,3 +83,19 @@ def test_if_the_closing_line_is_refused_the_agent_stays():
     assert any(e["event"] == "FN1_STAYED" for e in rt.pulse_log)
     assert rt.delivery_log[-1]["event"] == "DROPPED"
     assert rt.activity is not None and rt.activity.kind == "CONVERSE" and rt.activity.target_id == P
+
+
+def test_after_the_partners_farewell_leaving_is_no_violation_d108():
+    """The runtime side of tests/test_run_report.py::test_fn1_report_agrees_with_the_runtime_definition_d108:
+    once the partner says goodbye the conversation is closing, so the agent may move away without
+    its own goodbye: no repair, no FN-1 hold, no violation. Mid-conversation the same answer is held."""
+    fake = FakeModel()
+    rt = robot(ModelGateway(fake))
+    s = _in_conversation(rt)
+    fake.responder = scripted_responses([_answer(_say("Glad I could help.", P), AWAY)])
+    _, out = run(rt, s.see(P, 15, 8.5).hear(P, "Great, thanks. Bye!").packet())
+    assert [c["outcome"] for c in rt.records[-1]["model_calls"]] == ["VALID"]
+    assert "MOVE_TO" in [r["action"] for r in out]
+    assert not any(e["event"] in ("FN1_VIOLATION", "FN1_HELD") for e in rt.pulse_log)
+    rt2, _, out2, rec2 = _leave_with(_answer(AWAY), _answer(AWAY))
+    assert "MOVE_TO" not in [r["action"] for r in out2] and any(e["event"] == "FN1_HELD" for e in rt2.pulse_log)

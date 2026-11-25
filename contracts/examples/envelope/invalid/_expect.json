@@ -7,5 +7,7 @@
   "unknown_field": "additionalProperties",
   "unknown_type": "enum",
   "wrong_version": "const",
-  "link_step_bad_phase": "enum"
+  "link_step_bad_phase": "enum",
+  "director_unknown_operation": "enum",
+  "director_refused_with_record": "type"
 }

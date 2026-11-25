@@ -23,10 +23,10 @@ def test_export_covers_the_map_and_every_body():
     assert [n for n in names if not n.startswith("expressions/")] == [
         "bodies/human_walker.json", "bodies/legged_humanoid.json", "bodies/quadruped.json",
         "bodies/quadruped_arm.json", "bodies/wheeled_humanoid.json", "maps/sandbox_flats.json",
-        "permissions/permissions.json",
+        "permissions/permissions.json", "recipes/director_tour.json", "recipes/sign_booth_c.json",
         "scenarios/SB04_POLITE_BID.json", "scenarios/SB05_RAMP_VS_STAIRS.json",
         "scenarios/SB06_LONG_WAIT.json", "scenarios/SB07_EMPTY_HALL.json", "scenarios/SB08_PERIPHERAL_SPEAKER.json",
-        "scenarios/SB09_SOAK.json", "scenarios/SB10_GLANCE_WHILE_WALKING.json"]
+        "scenarios/SB09_SOAK.json", "scenarios/SB10_GLANCE_WHILE_WALKING.json", "scenarios/SB11_SIGN_AT_DESK.json"]
     assert len([n for n in names if n.startswith("expressions/")]) == len(list((export_godot_data.REPO / "configs" / "expressions").glob("*.yaml")))
 
 

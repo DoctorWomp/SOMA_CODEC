@@ -118,7 +118,8 @@ class AgentRuntime:
                  own_private_goal: str | None = None, prewarm: bool = True, pa_operator: bool = False,
                  pulse: dict[str, Any] | None = None, seed: int = 0, post: dict[str, float] | None = None,
                  post_duty: bool = False, survey_area: dict[str, float] | None = None,
-                 ambient: dict[str, str] | None = None, expression_holds: dict[str, int] | None = None) -> None:
+                 ambient: dict[str, str] | None = None, expression_holds: dict[str, int] | None = None,
+                 style: dict[str, int] | None = None) -> None:
         self.agent_id = agent_id
         self.body = body
         self.focal = focal
@@ -142,6 +143,10 @@ class AgentRuntime:
         self.identity = Identity(agent_id, persona["display_name"], persona["role"], persona["public_goal"], directive,
                                  list(persona.get("knows", [])), _body_summary(body, expressions),
                                  own_private_goal=own_private_goal or None)
+        # G4b (D-98): persona sliders, editable by the Director and shown on inspection. No policy
+        # reads them yet: style stays out of prompts (D-13).
+        self.style: dict[str, int] = dict(style or {})
+        self.edits: list[dict[str, Any]] = []          # Director edits applied, in order (evaluator)
         self.cognition = CognitionLevel(persona["cognition_level"], pinned=pin or focal)
         self.memory = AgentMemory(agent_id)
         self.ws = WorkingSet(agent_id)
@@ -167,6 +172,7 @@ class AgentRuntime:
         # these evaluator records, never in anything sent to the world (stepped runs stay exact).
         self._prefixes: dict[str, tuple[str, str]] = {}      # tier -> (key, prefix)
         self.prewarm_wanted: list[tuple[str, str, str]] = []  # (tier, key, prefix) for the sidecar to warm
+        self.snapshots_wanted: list[tuple[str, str, str]] = []  # G4b: new prefixes after a directive edit (T5)
         self._prewarm_asked: set[str] = set()
         self.promotions: list[dict[str, Any]] = []
         self._open_promotions: list[dict[str, Any]] = []
@@ -680,6 +686,57 @@ class AgentRuntime:
                   actions=[[r["action_request_id"], r["action"], r["args"].get("addressee_id", r["args"].get("target_id"))]
                            for r in reqs])
         return chosen.record()
+
+    # ---------- the Agent Director (G4b, D-98) ----------
+
+    def editable(self) -> dict[str, Any]:
+        """What the Director may see and edit (Blueprint §10.2), and what it can see but never edit."""
+        from range_service.director import LOCKED   # noqa: PLC0415
+
+        return {"directive": self.identity.directive, "goal": self.task or self.identity.public_goal,
+                "sliders": dict(sorted(self.style.items())), "locked": list(LOCKED)}
+
+    def apply_edit(self, field: str, value: Any, name: str | None = None) -> tuple[str | None, str | None, str | None]:
+        """Apply a Director edit; it takes effect at the next decision (the next assembled prompt) and
+        never rewrites past context: records, prompts and memory are untouched. Returns
+        (refusal reason or None, before, after). A directive edit changes the persona prefix, so its
+        key changes and no warm slot or snapshot of the old persona is used again; an NPC's new
+        prefix is queued for a snapshot (T5/T6)."""
+        from range_service.director import MAX_DIRECTIVE, MAX_GOAL   # noqa: PLC0415
+
+        if field == "directive":
+            if not isinstance(value, str) or not 0 < len(value) <= MAX_DIRECTIVE:
+                return "INVALID_VALUE", None, None
+            before, self.identity.directive = self.identity.directive, value
+            self._prefixes.clear()
+            if self.npc_model and self.gateway is not None:
+                for tier in self.model_tiers():
+                    key, prefix = self.persona_prefix(tier)
+                    self.snapshots_wanted.append((tier, key, prefix))
+            after = value
+        elif field == "goal":
+            if not isinstance(value, str) or not 0 < len(value) <= MAX_GOAL:
+                return "INVALID_VALUE", None, None
+            before = self.task or self.identity.public_goal
+            self.task = value
+            after = value
+        elif field == "slider":
+            if name not in self.style:
+                return "NOT_EDITABLE", None, None
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 100 \
+                    or not float(value).is_integer():
+                return "INVALID_VALUE", None, None
+            before = json.dumps(self.style, sort_keys=True)
+            self.style[name] = int(value)
+            after = json.dumps(self.style, sort_keys=True)
+        else:
+            return "NOT_EDITABLE", None, None
+        self.edits.append({"at_ms": self.ws.now_ms, "field": field, "name": name})
+        return None, before, after
+
+    def take_snapshots(self) -> list[tuple[str, str, str]]:
+        wanted, self.snapshots_wanted = self.snapshots_wanted, []
+        return wanted
 
     # ---------- persona prefixes, pre-warming and promotion latency (G3c-1; T5, T6) ----------
 

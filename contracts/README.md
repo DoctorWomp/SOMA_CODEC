@@ -22,6 +22,7 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 | `map`, `persona`, `body`, `scenario`, `preset`, `expression`, `directive` | config | The YAML content files in `configs/` |
 | `pulse` | config | The pulse protocol settings, configs/pulse.yaml (G3c-2, D-61) |
 | `permissions` | config | Who may do what: seats, internal principals, capabilities and scopes, configs/permissions.yaml (G4a, D-90) |
+| `recipe` | config | Director interventions saved to be scheduled again, configs/recipes/ (G4b, D-102) |
 | `viewer_record` | viewer | One line of a run's viewer feed: `OBSERVER` (one observer's own records) or `EVALUATOR` (evaluator truth) (G4a, D-93) |
 | `model_catalog`, `inference`, `model_registry` | config | The pinned model files, the real-model settings and the local (git-ignored) list of model files on this machine (G3b, D-57) |
 
@@ -45,6 +46,7 @@ JSON Schema (draft 2020-12) files that define every message, record and config f
 - G3f/G3g (D-77, D-78, D-85, D-86, D-89): `inference` `focal.answer` takes FULL, SHORT or LEAN; optional `gpu_guard.hold` (ALL, DECISIONS) and top-level `salvage`; `decision_record` model calls gain optional `salvaged` (the field cut off, the actions used). All backward-compatible, versions unchanged.
 - G3h (D-110): `decision_record` model calls gain optional `activity_dropped` (the rule kind an answer's activity broke, the actions kept); `fallback.reason` gains `FN1_HELD`. Observer-local handles (D-111) never reach a contract: requests, packets and the journal keep the anonymous ids. All backward-compatible, versions unchanged.
 - G4a (D-90, D-93): new config contract `permissions` and the record contract `viewer_record` (audience `viewer`: never sent to an agent; its `OBSERVER` records may not use an evaluator lane, and its `sight` tracks are anonymous ids only). No message contract changed; the live viewer feed is files, not link messages.
+- G4b (D-97 to D-103): journal kind `INTERVENTION` (the request, `APPLIED` or `REFUSED` with a reason, and the existing `intervention` record); envelope types `director.request`, `director.result` and `director.intervention`; `run_manifest.interventions` (intervention-assisted, counts by type, recipes); `viewer_record` kinds `intervention` (observer audience, a run-level marker without a directive's text) and `intervention_detail` (evaluator: before and after); permissions capabilities `INFLUENCE` and `INSPECT_AGENT`; new config contract `recipe`. The `intervention` contract itself is unchanged. All backward-compatible (a run without interventions writes none of them), versions unchanged.
 - Gestures come from one shared vocabulary, `common.schema.json#/$defs/gesture`, used by `body`, `action_request` and `observation` (D-36). Expression channels likewise (`SPEECH`, `FACE`, `LIGHT`).
 
 ## Examples

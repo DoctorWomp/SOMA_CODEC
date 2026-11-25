@@ -102,6 +102,14 @@ func text_for() -> String:
 		var goals: Dictionary = rec["data"]["goals"]
 		for a in goals:
 			lines.append("  %s (%s): %s" % [a, goals[a]["persona_id"], str(goals[a]["private_goal"])])
+	var details := store.evaluator_records("", "intervention_detail")
+	if not details.is_empty():
+		lines.append("")
+		lines.append("Interventions (before → after):")
+		for rec in details:
+			var d: Dictionary = rec["data"]
+			lines.append("  %s at %.1f s: %s → %s" % [d["intervention_id"], int(rec["t_ms"]) / 1000.0,
+				_short(d.get("before")), _short(d.get("after"))])
 	if decision_id != "":
 		lines.append("")
 		lines.append("Decision %s — prompt as assembled:" % decision_id)
@@ -132,3 +140,10 @@ func _tracks() -> Dictionary:
 	for rec in store.evaluator_records(observer, "truth_tracks"):
 		out = rec["data"]["tracks"]
 	return out
+
+
+static func _short(v) -> String:
+	if v == null:
+		return "(nothing)"
+	var t := String(v)
+	return t if t.length() <= 240 else t.substr(0, 237) + "..."

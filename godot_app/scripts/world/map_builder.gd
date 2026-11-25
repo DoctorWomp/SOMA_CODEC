@@ -20,7 +20,18 @@ const ZONE_VOLUME_HEIGHT_M := 3.0
 const PROP_SIZES := {
 	"CHAIR": Vector3(0.5, 0.9, 0.5),
 	"PA_SPEAKER": Vector3(0.45, 1.9, 0.45),
+	# G4b (D-99): props the Director may place. A sign is a panel on a stand whose text faces its
+	# own forward (-z); a note is a sheet on the floor; a sound source a small speaker.
+	"SIGN": Vector3(0.7, 1.8, 0.12),
+	"NOTE": Vector3(0.3, 0.02, 0.22),
+	"BARRIER": Vector3(1.6, 1.0, 0.15),
+	"CONE": Vector3(0.4, 0.7, 0.4),
+	"CRATE": Vector3(0.7, 0.7, 0.7),
+	"SOUND_SOURCE": Vector3(0.45, 0.8, 0.45),
 }
+## Placed props that change where bodies can walk (D-99): their footprint is cut out of every
+## size's navigation mesh. A note on the floor is stepped over.
+const NAV_BLOCKING := ["SIGN", "BARRIER", "CONE", "CRATE", "SOUND_SOURCE", "CHAIR", "PA_SPEAKER"]
 
 
 ## Build the map under `root`. Returns a registry of what was built, keyed by the map's ids.
@@ -310,13 +321,70 @@ static func _build_prop(nav_source: Node3D, prop: Dictionary, map: Dictionary) -
 	cs.position.y = size.y / 2
 	body.add_child(cs)
 	body.set_meta("prop_type", prop_type)
+	body.set_meta("prop_id", String(prop["prop_id"]))
 	match prop_type:
 		"CHAIR":
 			_chair_visual(body)
 		"PA_SPEAKER":
 			_pa_speaker_visual(body)
+		"SIGN":
+			_sign_visual(body, String(prop.get("text", "")))
+		"NOTE":
+			_note_visual(body, String(prop.get("text", "")))
+		"BARRIER", "CONE", "CRATE":
+			body.add_child(MeshKit.mesh_instance(MeshKit.box_mesh(size), Palette.material("prop_mid" if prop_type != "CRATE" else "chair"),
+				"Shape", Vector3(0, size.y / 2, 0)))
+			if prop_type == "BARRIER":
+				body.add_child(MeshKit.mesh_instance(MeshKit.box_mesh(Vector3(size.x + 0.01, 0.12, size.z + 0.01)), Palette.material("prop_dark"),
+					"Band", Vector3(0, size.y * 0.75, 0)))
+		"SOUND_SOURCE":
+			_pa_speaker_visual(body)
 	nav_source.add_child(body)
 	return body
+
+
+## G4b (D-99): a prop the Director placed. Same body and visuals as a map prop; the caller keeps it
+## out of NavSource (navigation is rebaked from the map plus each blocking prop's footprint).
+static func build_placed_prop(parent: Node3D, prop: Dictionary, map: Dictionary) -> StaticBody3D:
+	var body := _build_prop(parent, prop, map) as StaticBody3D
+	if body != null and String(prop["prop_type"]) == "NOTE":
+		body.collision_layer = 0          # a sheet of paper: seen, never bumped into
+	return body
+
+
+## Footprint of a prop (x/z corners, its yaw), for placement checks and navigation obstructions.
+static func prop_footprint(prop_type: String, center: Vector2, yaw: float, margin := 0.0) -> PackedVector2Array:
+	var size: Vector3 = PROP_SIZES[prop_type]
+	var hx := size.x / 2 + margin
+	var hz := size.z / 2 + margin
+	var out := PackedVector2Array()
+	for c in [Vector2(-hx, -hz), Vector2(hx, -hz), Vector2(hx, hz), Vector2(-hx, hz)]:
+		out.append(center + (c as Vector2).rotated(-yaw))
+	return out
+
+
+## A sign: a stand with a panel whose text faces -z (the prop's forward), readable from the front.
+static func _sign_visual(body: Node3D, text: String) -> void:
+	body.add_child(MeshKit.mesh_instance(MeshKit.box_mesh(Vector3(0.05, 1.0, 0.05)), Palette.material("prop_dark"), "Pole", Vector3(0, 0.5, 0)))
+	body.add_child(MeshKit.mesh_instance(MeshKit.box_mesh(Vector3(0.7, 0.8, 0.04)), Palette.material("wall"), "Panel", Vector3(0, 1.4, 0)))
+	var l := MeshKit.label(text, 40, false)
+	l.position = Vector3(0, 1.4, -0.03)
+	l.rotation.y = PI          # Label3D faces +z; the sign's front is -z
+	l.width = 300.0
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.modulate = Palette.color("label")
+	body.add_child(l)
+
+
+static func _note_visual(body: Node3D, text: String) -> void:
+	body.add_child(MeshKit.mesh_instance(MeshKit.box_mesh(Vector3(0.3, 0.01, 0.22)), Palette.material("wall"), "Sheet", Vector3(0, 0.005, 0)))
+	var l := MeshKit.label(text, 16, false)
+	l.position = Vector3(0, 0.02, 0)
+	l.rotation.x = -PI / 2
+	l.width = 260.0
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.modulate = Palette.color("label")
+	body.add_child(l)
 
 
 ## A chair facing -z (its own forward), seat at 0.45 m.

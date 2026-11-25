@@ -34,8 +34,8 @@ OBSERVER_FILE = "observer_feed.jsonl"
 EVALUATOR_FILE = "evaluator_truth.jsonl"
 TRUTH_TRACKS_FILE = "truth_tracks.json"
 OBSERVER_LANES = ("meta", "sight", "hearing", "tracks", "handles", "pulse", "decision", "action", "result",
-                  "delivery", "beacon")
-EVALUATOR_LANES = ("truth_tracks", "truth_labels", "truth_goals", "prompt", "answer")
+                  "delivery", "beacon", "intervention")
+EVALUATOR_LANES = ("truth_tracks", "truth_labels", "truth_goals", "prompt", "answer", "intervention_detail")
 # HORIZON layers: shown in the viewer, empty until G5 builds them (no layer is faked).
 HORIZON_LAYERS = ("L0", "L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8")
 
@@ -230,6 +230,19 @@ class FeedBuilder:
         self._add("EVALUATOR", agent, "prompt", t_ms, {"decision_id": entry["decision_id"], "prompt": entry["prompt"],
                                                         "handles": dict(sorted(handles.items()))})
 
+    def intervention(self, record: dict[str, Any]) -> None:
+        """G4b (D-103): a Director intervention, run-level (observer null): its kind, operation,
+        operator and target as a timeline marker for every seat that views layers; its before and
+        after (directive text, prop states) for the Evaluator only."""
+        args = {k: v for k, v in record["args"].items() if k != "value"}
+        self._add("OBSERVER", None, "intervention", int(record["sim_time_ms"]), {
+            "intervention_id": record["intervention_id"], "intervention_type": record["intervention_type"],
+            "operation": record["operation"], "operator": record["operator"], "target_id": record["target_id"],
+            "pre_scheduled": record["pre_scheduled"], "args": args})
+        self._add("EVALUATOR", None, "intervention_detail", int(record["sim_time_ms"]), {
+            "intervention_id": record["intervention_id"], "args": record["args"], "before": record["before"],
+            "after": record["after"]})
+
     def pulse(self, agent_id: str, event: dict[str, Any]) -> None:
         data = {k: v for k, v in event.items() if k not in ("agent_id",)}
         self._add("OBSERVER", agent_id, "pulse", int(event.get("at_ms", 0)), data)
@@ -314,6 +327,10 @@ def feed_from_logs(run_dir: Path, builder: FeedBuilder) -> None:
             builder.sent(env["payload"], env["tick_id"])
         elif env["type"] == "world.action_result":
             builder.result(env["payload"])
+        elif env["type"] == "director.intervention":              # G4b: applied by Godot (world-side)
+            builder.intervention(env["payload"])
+        elif env["type"] == "director.result" and env["payload"]["status"] == "APPLIED":   # applied here (agent-side)
+            builder.intervention(env["payload"]["intervention"])
     records = _lines(side / "decision_records.jsonl")
     for record in records:
         builder.decision(record)

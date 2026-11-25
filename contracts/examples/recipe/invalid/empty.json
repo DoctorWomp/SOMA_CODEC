@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "recipe_id": "director_tour",
+  "about": "One of each intervention kind in SB-04 (determinism and replay check).",
+  "scenario": "SB04_POLITE_BID",
+  "interventions": []
+}

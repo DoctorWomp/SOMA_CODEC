@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "message_id": "py_000120",
+  "type": "director.result",
+  "tick_id": 180,
+  "sim_time_ms": 3000,
+  "source": "range_service",
+  "payload": {
+    "request_id": "req_0001",
+    "status": "REFUSED",
+    "reason": "NOT_EDITABLE",
+    "intervention": {
+      "schema_version": "1.0",
+      "intervention_id": "dir_0001",
+      "tick_id": 180,
+      "sim_time_ms": 3000,
+      "operator": "director",
+      "intervention_type": "DIRECTIVE_EDIT",
+      "operation": "EDIT_DIRECTIVE",
+      "target_id": "robot_r",
+      "args": {
+        "field": "directive"
+      },
+      "before": "Help visitors navigate the venue and answer relevant questions.",
+      "after": "Help visitors find places in the venue.",
+      "pre_scheduled": false,
+      "trial_tainted": true
+    },
+    "editable": null
+  }
+}

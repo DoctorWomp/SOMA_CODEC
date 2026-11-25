@@ -6,87 +6,380 @@
   "x-audience": "viewer",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "audience", "observer", "lane", "t_ms", "data"],
+  "required": [
+    "schema_version",
+    "audience",
+    "observer",
+    "lane",
+    "t_ms",
+    "data"
+  ],
   "properties": {
-    "schema_version": {"$ref": "common.schema.json#/$defs/schema_version"},
-    "audience": {"enum": ["OBSERVER", "EVALUATOR"]},
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "audience": {
+      "enum": [
+        "OBSERVER",
+        "EVALUATOR"
+      ]
+    },
     "observer": {
       "description": "The avatar whose view or record this is (every per-observer panel is labelled with it, D-62); null for run-level records.",
-      "anyOf": [{"$ref": "common.schema.json#/$defs/id"}, {"type": "null"}]
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
-    "lane": {"enum": ["meta", "sight", "hearing", "tracks", "handles", "pulse", "decision", "action", "result",
-                      "delivery", "beacon", "truth_tracks", "truth_labels", "truth_goals", "prompt", "answer"]},
-    "t_ms": {"$ref": "common.schema.json#/$defs/time_ms"},
-    "data": {"type": "object", "x-closed-by": "lane"}
+    "lane": {
+      "enum": [
+        "meta",
+        "sight",
+        "hearing",
+        "tracks",
+        "handles",
+        "pulse",
+        "decision",
+        "action",
+        "result",
+        "delivery",
+        "beacon",
+        "truth_tracks",
+        "truth_labels",
+        "truth_goals",
+        "prompt",
+        "answer",
+        "intervention",
+        "intervention_detail"
+      ]
+    },
+    "t_ms": {
+      "$ref": "common.schema.json#/$defs/time_ms"
+    },
+    "data": {
+      "type": "object",
+      "x-closed-by": "lane"
+    }
   },
   "allOf": [
     {
-      "if": {"properties": {"audience": {"const": "OBSERVER"}}},
-      "then": {"properties": {"lane": {"enum": ["meta", "sight", "hearing", "tracks", "handles", "pulse", "decision",
-                                                "action", "result", "delivery", "beacon"]}}}
+      "if": {
+        "properties": {
+          "audience": {
+            "const": "OBSERVER"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "lane": {
+            "enum": [
+              "meta",
+              "sight",
+              "hearing",
+              "tracks",
+              "handles",
+              "pulse",
+              "decision",
+              "action",
+              "result",
+              "delivery",
+              "beacon",
+              "intervention"
+            ]
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"audience": {"const": "EVALUATOR"}}},
-      "then": {"properties": {"lane": {"enum": ["truth_tracks", "truth_labels", "truth_goals", "prompt", "answer"]}}}
+      "if": {
+        "properties": {
+          "audience": {
+            "const": "EVALUATOR"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "lane": {
+            "enum": [
+              "truth_tracks",
+              "truth_labels",
+              "truth_goals",
+              "prompt",
+              "answer",
+              "intervention_detail"
+            ]
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"lane": {"const": "sight"}}},
-      "then": {"properties": {"observer": {"$ref": "common.schema.json#/$defs/id"},
-                              "data": {"$ref": "#/$defs/sight"}}}
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "sight"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "observer": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "data": {
+            "$ref": "#/$defs/sight"
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"lane": {"const": "decision"}}},
-      "then": {"properties": {"observer": {"$ref": "common.schema.json#/$defs/id"},
-                              "data": {"$ref": "#/$defs/decision"}}}
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "decision"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "observer": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "data": {
+            "$ref": "#/$defs/decision"
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"lane": {"const": "result"}}},
-      "then": {"properties": {"data": {"type": "object", "required": ["request_id", "accepted", "reason_code"]}}}
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "result"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "accepted",
+              "reason_code"
+            ]
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"lane": {"const": "action"}}},
-      "then": {"properties": {"data": {"type": "object", "required": ["request_id", "action", "args"]}}}
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "action"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "request_id",
+              "action",
+              "args"
+            ]
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"lane": {"const": "delivery"}}},
-      "then": {"properties": {"data": {"type": "object", "required": ["event", "action_request_id", "reason"]}}}
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "delivery"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "event",
+              "action_request_id",
+              "reason"
+            ]
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"lane": {"const": "meta"}}},
-      "then": {"properties": {"observer": {"type": "null"},
-                              "data": {"type": "object", "required": ["scenario_id", "observers", "capability_cards",
-                                                                     "horizon_layers"]}}}
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "meta"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "observer": {
+            "type": "null"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "scenario_id",
+              "observers",
+              "capability_cards",
+              "horizon_layers"
+            ]
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"lane": {"const": "truth_tracks"}}},
-      "then": {"properties": {"data": {"type": "object", "required": ["tracks"]}}}
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "truth_tracks"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "tracks"
+            ]
+          }
+        }
+      }
     },
     {
-      "if": {"properties": {"lane": {"const": "prompt"}}},
-      "then": {"properties": {"data": {"type": "object", "required": ["decision_id", "prompt"]}}}
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "prompt"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "decision_id",
+              "prompt"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "intervention"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "observer": {
+            "type": "null"
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "intervention_id",
+              "intervention_type",
+              "operation",
+              "operator",
+              "target_id",
+              "pre_scheduled"
+            ],
+            "properties": {
+              "args": {
+                "description": "The operation's arguments without a directive's text (before/after are evaluator-only).",
+                "not": {
+                  "required": [
+                    "value"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
     "sight": {
       "type": "object",
-      "required": ["pose", "items"],
+      "required": [
+        "pose",
+        "items"
+      ],
       "properties": {
         "pose": {
           "type": "object",
-          "required": ["x", "z", "yaw"],
+          "required": [
+            "x",
+            "z",
+            "yaw"
+          ],
           "properties": {
-            "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"},
-            "yaw": {"type": "number"}, "head_yaw": {"type": "number"}, "head_pitch": {"type": "number"}
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "z": {
+              "type": "number"
+            },
+            "yaw": {
+              "type": "number"
+            },
+            "head_yaw": {
+              "type": "number"
+            },
+            "head_pitch": {
+              "type": "number"
+            }
           }
         },
         "items": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["track", "validity"],
+            "required": [
+              "track",
+              "validity"
+            ],
             "properties": {
-              "track": {"anyOf": [{"type": "string", "pattern": "^anon_[a-z0-9]{10}$"}, {"type": "null"}]},
-              "validity": {"$ref": "common.schema.json#/$defs/validity"}
+              "track": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^anon_[a-z0-9]{10}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "validity": {
+                "$ref": "common.schema.json#/$defs/validity"
+              }
             }
           }
         }
@@ -94,16 +387,44 @@
     },
     "decision": {
       "type": "object",
-      "required": ["decision_id", "tier", "policy", "triggers", "calls", "context", "action_request_ids"],
+      "required": [
+        "decision_id",
+        "tier",
+        "policy",
+        "triggers",
+        "calls",
+        "context",
+        "action_request_ids"
+      ],
       "properties": {
         "reason_summary": {
           "description": "Only when the answer had one (FULL; LEAN has none, D-85), and only for an agent whose prompt holds no private goal (D-51).",
           "type": "object",
           "additionalProperties": false,
-          "required": ["text", "label"],
-          "properties": {"text": {"type": "string", "maxLength": 300}, "label": {"const": "the model's own words"}}
+          "required": [
+            "text",
+            "label"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "label": {
+              "const": "the model's own words"
+            }
+          }
         },
-        "calls": {"type": "array", "items": {"type": "object", "required": ["call_id", "outcome"]}}
+        "calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "call_id",
+              "outcome"
+            ]
+          }
+        }
       }
     }
   }

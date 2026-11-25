@@ -46,7 +46,8 @@
         "LINK_STATUS",
         "SCENARIO_EVENT",
         "EXPRESSION_SHOWN",
-        "RUN_ENDED"
+        "RUN_ENDED",
+        "INTERVENTION"
       ]
     },
     "actor_id": {
@@ -295,6 +296,22 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/expression_shown"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "INTERVENTION"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/intervention_journal"
           }
         }
       }
@@ -754,6 +771,120 @@
           }
         }
       }
+    },
+    "intervention_journal": {
+      "description": "A Director intervention (G4b, D-97): applied or refused, with the request and the intervention record. Watching is never journaled (D-92); changing the world is.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason",
+        "request",
+        "intervention"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "APPLIED",
+            "REFUSED"
+          ]
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "enum": [
+                "PERMISSION_DENIED",
+                "NOT_BUILT",
+                "UNKNOWN_OPERATION",
+                "TYPE_MISMATCH",
+                "UNKNOWN_TARGET",
+                "NOT_EDITABLE",
+                "INVALID_VALUE",
+                "OFF_MAP",
+                "INSIDE_WALL",
+                "ON_AVATAR",
+                "BLOCKS_ROUTE",
+                "UNKNOWN_PROP",
+                "NOT_FOUND",
+                "EVENT_REFUSED",
+                "NO_AGENT_LINK"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "request": {
+          "$ref": "envelope.schema.json#/$defs/director_request"
+        },
+        "intervention": {
+          "oneOf": [
+            {
+              "$ref": "intervention.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "APPLIED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "null"
+              },
+              "intervention": {
+                "$ref": "intervention.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "REFUSED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "enum": [
+                  "PERMISSION_DENIED",
+                  "NOT_BUILT",
+                  "UNKNOWN_OPERATION",
+                  "TYPE_MISMATCH",
+                  "UNKNOWN_TARGET",
+                  "NOT_EDITABLE",
+                  "INVALID_VALUE",
+                  "OFF_MAP",
+                  "INSIDE_WALL",
+                  "ON_AVATAR",
+                  "BLOCKS_ROUTE",
+                  "UNKNOWN_PROP",
+                  "NOT_FOUND",
+                  "EVENT_REFUSED",
+                  "NO_AGENT_LINK"
+                ]
+              },
+              "intervention": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

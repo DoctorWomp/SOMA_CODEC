@@ -136,6 +136,7 @@ class RunOptions:
     viewer: str = "auto"               # G4a (D-93): off, closed, open; auto = closed when watched, else off
     seat: str = "SPECTATOR"            # G4a (D-90): the client's seat (SPECTATOR, DIRECTOR, EVALUATOR)
     observer: str | None = None        # G4a: the avatar the viewer opens on (default: the first LLM agent)
+    recipe: str | None = None          # G4b (D-102): a recipe's interventions scheduled on the tape
 
 
 @dataclass
@@ -177,6 +178,12 @@ def check_options(opts: RunOptions, cs: ConfigSet) -> dict[str, Any]:
         raise RunError("--viewer must be off, closed or open")
     if opts.seat not in ("SPECTATOR", "DIRECTOR", "EVALUATOR"):
         raise RunError("--seat must be spectator, director or evaluator (a participant seat comes with G4c)")
+    if opts.recipe is not None:
+        recipe = cs.items["recipes"].get(opts.recipe)
+        if recipe is None:
+            raise RunError(f"unknown recipe {opts.recipe!r}; see configs/recipes/")
+        if recipe.get("scenario") and recipe["scenario"] != opts.scenario_id:
+            raise RunError(f"recipe {opts.recipe!r} was made for {recipe['scenario']}, not {opts.scenario_id}")
     if opts.observer is not None and opts.observer not in scenario["cast"]:
         raise RunError(f"--observer: {opts.observer!r} is not in the cast of {opts.scenario_id}")
     if opts.render_preset not in RENDER_PRESETS:
@@ -220,6 +227,8 @@ def godot_command(opts: RunOptions, scenario: dict[str, Any], run_dir: Path, por
         cmd.append(f"--presence-amplitude={opts.presence_value:g}")
     # G4a: which avatar each track was, written at run end (evaluator only, never the journal), and
     # the seat's operator log (D-92). The viewer reads the live feed from viewer/ (D-93).
+    if opts.recipe:
+        cmd.append(f"--recipe={opts.recipe}")
     cmd += [f"--truth-tracks={(run_dir / 'viewer' / 'truth_tracks.json').as_posix()}",
             f"--operator-log={(run_dir / 'operator.jsonl').as_posix()}", f"--seat={opts.seat.lower()}"]
     viewer = viewer_mode(opts)
@@ -439,6 +448,18 @@ def promotion_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+def intervention_summary(journal: list[dict[str, Any]], recipe: str | None) -> dict[str, Any]:
+    """G4b (D-97): the run's Director interventions from its journal (the record of what changed)."""
+    entries = [e["payload"] for e in journal if e["kind"] == "INTERVENTION"]
+    applied = [e for e in entries if e["status"] == "APPLIED"]
+    by_type: dict[str, int] = {}
+    for e in applied:
+        by_type[e["request"]["intervention_type"]] = by_type.get(e["request"]["intervention_type"], 0) + 1
+    return {"intervention_assisted": bool(applied), "applied": len(applied),
+            "refused": len(entries) - len(applied), "scheduled": sum(1 for e in entries if e["request"]["pre_scheduled"]),
+            "by_type": dict(sorted(by_type.items())), "recipes": [recipe] if recipe else []}
+
+
 def _start_live_feed(opts: RunOptions, cs: ConfigSet, scenario: dict[str, Any], seed: int, run_id: str,
                      run_dir: Path, models: RunModels) -> Any:
     """G4a (D-93): the live viewer feed of a watched run, with the run-level records first."""
@@ -621,16 +642,23 @@ async def run_scenario(opts: RunOptions) -> RunResult:
     if not any(e["kind"] == "RUN_ENDED" for e in journal):
         taint.append("OTHER")
         details["taint_detail"] = "the run did not end normally"
+    interventions = intervention_summary(journal, opts.recipe)
+    if any(not e["payload"]["request"]["pre_scheduled"] for e in journal
+           if e["kind"] == "INTERVENTION" and e["payload"]["status"] == "APPLIED"):
+        taint.append("MID_RUN_INTERVENTION")     # a live, unscheduled intervention (D-97); a recipe's is planned
     run_manifest = manifest(opts, cs, scenario, seed, run_id, sorted(set(taint)), details,
                             model_hash=setup.model.sha256 if setup is not None else None,
                             npc_spec=models.npc_spec if models.npc is not None else None,
                             npc_hash=npc_setup.model.sha256 if npc_setup is not None and models.option == "C"
                             else (setup.model.sha256 if setup is not None and models.npc is not None else None))
+    if interventions["applied"] or interventions["refused"] or opts.recipe:
+        run_manifest["interventions"] = interventions
     found = contracts.problems("run_manifest", run_manifest)
     if found:
         raise RunError(f"run manifest does not match its contract: {found[0]}")
     (run_dir / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     summary["viewer"] = _finish_viewer(opts, cs, run_dir, live_feed is not None)
+    summary["interventions"] = interventions
     summary["journal_sha256"] = digest
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return RunResult(run_dir, code, digest, summary, errors)

@@ -120,6 +120,18 @@ func send_pa(sender: Avatar, text: String) -> Dictionary:
 	return _ok(event_id)
 
 
+## G4b (D-101): an announcement the Director plays through the venue's PA. The operator has no
+## body; everyone in coverage hears it from the PA speaker, like any announcement.
+func send_pa_from(operator_id: String, text: String) -> Dictionary:
+	if pa_source() == null:
+		return {"ok": false, "reason_code": "TARGET_UNKNOWN", "event_id": ""}
+	var event_id := world.next_event_id()
+	_pa_queue.append({"event_id": event_id, "text": text, "sender_id": operator_id})
+	_pending.append({"comm": _comm("PA", operator_id, null, text, event_id), "event_id": event_id,
+		"until_tick": world.clock.tick, "seen": {}})
+	return _ok(event_id)
+
+
 ## Where announcements come from: the map's PA speaker, or null if the map has none.
 func pa_source():
 	for prop in world.registry["props"].values():
@@ -270,7 +282,7 @@ func _finish(p: Dictionary) -> void:
 	world.journal_write("COMMS_EVENT", comm["sender_id"], comm)
 
 
-func _comm(channel: String, sender: Avatar, addressee_id, text: String, event_id: String) -> Dictionary:
+func _comm(channel: String, sender, addressee_id, text: String, event_id: String) -> Dictionary:
 	_comms_counter += 1
 	var modality := {"GESTURE": "SIMULATED_GESTURE", "LOCAL": "SIMULATED_TEXT_SPEECH", "GROUP": "DEVICE_MESSAGE",
 		"PA": "PA_ANNOUNCEMENT"}
@@ -279,7 +291,7 @@ func _comm(channel: String, sender: Avatar, addressee_id, text: String, event_id
 		"schema_version": "1.0",
 		"comms_id": "comms_%06d" % _comms_counter,
 		"channel": channel,
-		"sender_id": sender.avatar_id,
+		"sender_id": (sender as Avatar).avatar_id if sender is Avatar else String(sender),
 		"addressee_id": addressee_id,
 		"text": text,
 		"emitted_at_tick": world.clock.tick,

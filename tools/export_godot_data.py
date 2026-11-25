@@ -30,7 +30,7 @@ GODOT_DATA_DIR = REPO / "godot_app" / "data"
 
 # Config folders Godot reads. Personas, presets and directives stay on the Python side: Godot
 # never needs a persona (private goals included) or a directive.
-EXPORTED_KINDS = ("maps", "bodies", "expressions", "scenarios", "permissions")
+EXPORTED_KINDS = ("maps", "bodies", "expressions", "scenarios", "permissions", "recipes")
 
 # Scenarios are exported as a world-only view (G3a, D-48): what the host needs to build and run
 # the world. Evaluator-only labels, measures and personas never reach Godot.

@@ -30,7 +30,8 @@ const RETRY_MIN_MS := 500
 const RETRY_MAX_MS := 8000
 const CONNECT_TIMEOUT_MS := 3000   # give up on a connection that never opens (Windows never reports a refused local port)
 const ENVELOPE_TYPES := ["world.observation", "horizon.delta_feature", "horizon.hypothesis", "agent.action_request",
-	"world.action_result", "comms.event", "director.intervention", "link.hello", "link.heartbeat", "link.step"]
+	"world.action_result", "comms.event", "director.intervention", "link.hello", "link.heartbeat", "link.step",
+	"director.request", "director.result"]
 const STEP_TIMEOUT_MS := 15000
 
 var world: RangeWorld
@@ -174,6 +175,13 @@ func _on_sampled(tick: int, packets: Dictionary) -> void:
 		world.hold("step")
 
 
+## G4b: a Director message to the sidecar (director.request, or director.intervention to report an
+## applied world-side intervention). Only while connected; the Director refuses otherwise.
+func send_director(kind: String, payload: Dictionary) -> void:
+	if status == "CONNECTED":
+		_enqueue(_envelope(kind, payload))
+
+
 func _set_ready(value: bool) -> void:
 	if sidecar_ready != value:
 		sidecar_ready = value
@@ -224,6 +232,9 @@ func _on_message(raw: PackedByteArray) -> void:
 			# whose controller it runs (D-91); the action gate then checks the request as before.
 			var result := world.dispatcher.agent_request(env["payload"], agents)
 			_enqueue(_envelope("world.action_result", result))
+		"director.result":
+			# G4b (D-97, D-98): the sidecar's answer to an agent-side intervention or inspection we sent.
+			world.director.on_result(env["payload"])
 		"link.hello":
 			_set_ready(true)
 		"link.step":

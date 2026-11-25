@@ -56,6 +56,11 @@ var _hold_reasons := {}
 ## on the main thread (async iterations are off, D-47), so this is the same tick on every run.
 var navigation_ready_tick := -1
 var _avatar_root: Node3D
+var _nav_base_source: NavigationMeshSourceGeometryData3D   # map geometry and link footprints (G4b rebakes)
+var _nav_specs: Dictionary = {}                             # size key -> [radius, height]
+## G4b (D-99): the World Director's placed props, and the Director's interventions (D-97).
+var editor: WorldEditor
+var director: Director
 var _nav_ready := false
 var _event_counter := 0
 var _spoken: Array = []           # speech events not yet delivered to listeners
@@ -102,6 +107,12 @@ func build(map_id: String, body_ids: Array) -> bool:
 	dispatcher = WorldDispatcher.new()
 	add_child(dispatcher)
 	dispatcher.setup(self)
+	editor = WorldEditor.new()
+	add_child(editor)
+	editor.setup(self)
+	director = Director.new()
+	add_child(director)
+	director.setup(self)
 	add_child(PoseStep.new(self))
 	add_child(TickGate.new(self))
 	return true
@@ -337,7 +348,7 @@ func _build_navigation() -> void:
 		radii[size_key(0.25)] = 0.25
 		heights[size_key(0.25)] = 1.7
 
-	# The source geometry is the same for every size: parse it once.
+	# The source geometry is the same for every size: parse it once (kept for rebakes, G4b D-99).
 	var template := _navmesh(0.25, 1.7)
 	var source := NavigationMeshSourceGeometryData3D.new()
 	NavigationServer3D.parse_source_geometry_data(template, source, registry["nav_source"])
@@ -346,10 +357,13 @@ func _build_navigation() -> void:
 		for p in link["footprint"]:
 			outline.append(Vector3(p.x, 0.0, p.y))
 		source.add_projected_obstruction(outline, -0.1, NAV_OBSTRUCTION_HEIGHT_M, false)
+	_nav_base_source = source
+	_nav_specs = {}
 
 	var keys := radii.keys()
 	keys.sort()
 	for key in keys:
+		_nav_specs[key] = [float(radii[key]), float(heights[key])]
 		var nm := _navmesh(float(radii[key]), float(heights[key]))
 		NavigationServer3D.bake_from_source_geometry_data(nm, source)
 		var map := NavigationServer3D.map_create()
@@ -382,6 +396,96 @@ func _build_navigation() -> void:
 			link.set_navigation_map(map)
 			links[link_id] = link
 		nav_sizes[key] = {"radius": float(radii[key]), "map": map, "region": region, "links": links}
+
+
+## G4b (D-99): navigation meshes for every body size from the map plus `obstructions` (x/z
+## footprints of placed props), baked on the main thread. {size key: NavigationMesh}.
+func bake_with_obstructions(obstructions: Array) -> Dictionary:
+	var source := NavigationMeshSourceGeometryData3D.new()
+	source.merge(_nav_base_source)
+	for footprint in obstructions:
+		var outline := PackedVector3Array()
+		for p in footprint:
+			outline.append(Vector3(p.x, 0.0, p.y))
+		source.add_projected_obstruction(outline, -0.1, NAV_OBSTRUCTION_HEIGHT_M, false)
+	var out := {}
+	var keys := _nav_specs.keys()
+	keys.sort()
+	for key in keys:
+		var nm := _navmesh(float(_nav_specs[key][0]), float(_nav_specs[key][1]))
+		NavigationServer3D.bake_from_source_geometry_data(nm, source)
+		out[key] = nm
+	return out
+
+
+## Use new navigation meshes now, in this tick (synchronous map updates, D-47).
+func apply_navmeshes(meshes: Dictionary) -> void:
+	for key in meshes:
+		var info: Dictionary = nav_sizes[key]
+		(info["region"] as NavigationRegion3D).navigation_mesh = meshes[key]
+		NavigationServer3D.map_force_update(info["map"])
+
+
+## Could each avatar still reach every spawn point and every other avatar it can reach now, with
+## `meshes` instead of the current navigation? Tested on scratch maps, so the world is untouched.
+## Returns "" or a description of the first route that would be blocked.
+func routes_blocked(meshes: Dictionary) -> String:
+	var scratch := {}
+	for key in meshes:
+		var map := NavigationServer3D.map_create()
+		NavigationServer3D.map_set_up(map, Vector3.UP)
+		NavigationServer3D.map_set_cell_size(map, NAV_CELL_SIZE)
+		NavigationServer3D.map_set_cell_height(map, NAV_CELL_HEIGHT)
+		NavigationServer3D.map_set_use_async_iterations(map, false)
+		NavigationServer3D.map_set_active(map, true)
+		var region := NavigationServer3D.region_create()
+		NavigationServer3D.region_set_map(region, map)
+		NavigationServer3D.region_set_navigation_layers(region, Layers.NAV_FLOOR)
+		NavigationServer3D.region_set_navigation_mesh(region, meshes[key])
+		var rids := [region]
+		for link_id in registry["links"]:
+			var info: Dictionary = registry["links"][link_id]
+			var link := NavigationServer3D.link_create()
+			NavigationServer3D.link_set_map(link, map)
+			NavigationServer3D.link_set_bidirectional(link, true)
+			NavigationServer3D.link_set_start_position(link, info["from"])
+			NavigationServer3D.link_set_end_position(link, info["to"])
+			NavigationServer3D.link_set_navigation_layers(link, int(Layers.NAV_CAPABILITY[info["required_capability"]]))
+			rids.append(link)
+		NavigationServer3D.map_force_update(map)
+		scratch[key] = {"map": map, "rids": rids}
+	var blocked := ""
+	var goals: Array = []
+	for sp in registry["spawns"].values():
+		goals.append(sp["position"])
+	for a in avatar_list():
+		goals.append((a as Avatar).global_position)
+	for a in avatar_list():
+		var av := a as Avatar
+		var key := size_key(Bodies.nav_radius(av.body))
+		if not scratch.has(key) or blocked != "":
+			continue
+		for goal in goals:
+			var to: Vector3 = goal
+			if to.distance_to(av.global_position) < 0.5:
+				continue
+			if _reaches(nav_map_for(av.body), av.global_position, to, av.body) \
+					and not _reaches(scratch[key]["map"], av.global_position, to, av.body):
+				blocked = "%s could no longer reach (%.1f, %.1f)" % [av.avatar_id, to.x, to.z]
+				break
+	for key in scratch:
+		for rid in scratch[key]["rids"]:
+			NavigationServer3D.free_rid(rid)
+		NavigationServer3D.free_rid(scratch[key]["map"])
+	return blocked
+
+
+func _reaches(map: RID, from: Vector3, to: Vector3, body: Dictionary) -> bool:
+	var path := NavigationServer3D.map_get_path(map, from, to, true, Layers.nav_mask_for(body))
+	if path.is_empty():
+		return false
+	var end: Vector3 = path[path.size() - 1]
+	return Vector2(end.x - to.x, end.z - to.z).length() <= 0.75 and absf(end.y - to.y) <= 0.3
 
 
 func _navmesh(radius: float, agent_height: float) -> NavigationMesh:

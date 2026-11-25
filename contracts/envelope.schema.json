@@ -33,7 +33,9 @@
         "director.intervention",
         "link.hello",
         "link.heartbeat",
-        "link.step"
+        "link.step",
+        "director.request",
+        "director.result"
       ]
     },
     "tick_id": {
@@ -216,6 +218,38 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "director.request"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/director_request"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "director.result"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/director_result"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -288,6 +322,300 @@
           ]
         }
       }
+    },
+    "director_request": {
+      "description": "G4b (D-97): an intervention the Director asked for, or an inspection (INSPECT_AGENT). Godot sends agent-side ones to the sidecar; recipes carry the same shape.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "operator",
+        "intervention_type",
+        "operation",
+        "target_id",
+        "args",
+        "pre_scheduled"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "operator": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "intervention_type": {
+          "oneOf": [
+            {
+              "enum": [
+                "DIRECTIVE_EDIT",
+                "WORLD_CHANGE",
+                "EVENT_TRIGGER",
+                "ENVIRONMENTAL_INFLUENCE",
+                "SOCIAL_INFLUENCE"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation": {
+          "enum": [
+            "EDIT_DIRECTIVE",
+            "PLACE_PROP",
+            "MOVE_PROP",
+            "REMOVE_PROP",
+            "TRIGGER_EVENT",
+            "PA_ANNOUNCEMENT",
+            "NPC_SAY",
+            "INSPECT_AGENT"
+          ]
+        },
+        "target_id": {
+          "$ref": "common.schema.json#/$defs/nullable_id"
+        },
+        "args": {
+          "description": "Flat operation arguments, as in contracts/intervention: snake_case keys, scalar values. Which keys each operation takes is checked by range_service/director.py and director.gd (x-closed-by operation).",
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,47}$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "x-closed-by": "operation"
+        },
+        "pre_scheduled": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "description": "Only an inspection has no intervention type.",
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "INSPECT_AGENT"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "intervention_type": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "intervention_type": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "director_result": {
+      "description": "G4b (D-97, D-98): the sidecar's answer to a director.request: the applied intervention with before/after, a refusal with its reason, or an inspection of the agent's editable parts (a Director/Evaluator view; never sent to any agent).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "status",
+        "reason",
+        "intervention",
+        "editable"
+      ],
+      "properties": {
+        "request_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "status": {
+          "enum": [
+            "APPLIED",
+            "REFUSED",
+            "INSPECTED"
+          ]
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "enum": [
+                "PERMISSION_DENIED",
+                "NOT_BUILT",
+                "UNKNOWN_OPERATION",
+                "TYPE_MISMATCH",
+                "UNKNOWN_TARGET",
+                "NOT_EDITABLE",
+                "INVALID_VALUE",
+                "OFF_MAP",
+                "INSIDE_WALL",
+                "ON_AVATAR",
+                "BLOCKS_ROUTE",
+                "UNKNOWN_PROP",
+                "NOT_FOUND",
+                "EVENT_REFUSED",
+                "NO_AGENT_LINK"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "intervention": {
+          "oneOf": [
+            {
+              "$ref": "intervention.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "editable": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "directive",
+                "goal",
+                "sliders",
+                "locked"
+              ],
+              "properties": {
+                "directive": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "goal": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "sliders": {
+                  "type": "object",
+                  "maxProperties": 16,
+                  "propertyNames": {
+                    "pattern": "^[a-z][a-z_]{1,31}$"
+                  },
+                  "additionalProperties": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "x-closed-by": "persona style names (checked against the agent's persona)"
+                },
+                "locked": {
+                  "description": "What the Director can see but never edit (Blueprint §10.2).",
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 80
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "APPLIED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "intervention": {
+                "$ref": "intervention.schema.json"
+              },
+              "reason": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "REFUSED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "intervention": {
+                "type": "null"
+              },
+              "reason": {
+                "enum": [
+                  "PERMISSION_DENIED",
+                  "NOT_BUILT",
+                  "UNKNOWN_OPERATION",
+                  "TYPE_MISMATCH",
+                  "UNKNOWN_TARGET",
+                  "NOT_EDITABLE",
+                  "INVALID_VALUE",
+                  "OFF_MAP",
+                  "INSIDE_WALL",
+                  "ON_AVATAR",
+                  "BLOCKS_ROUTE",
+                  "UNKNOWN_PROP",
+                  "NOT_FOUND",
+                  "EVENT_REFUSED",
+                  "NO_AGENT_LINK"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "INSPECTED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "editable": {
+                "not": {
+                  "type": "null"
+                }
+              },
+              "intervention": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

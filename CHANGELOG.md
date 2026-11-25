@@ -2,7 +2,32 @@
 
 All notable changes, by gate. Dates are when the work was done.
 
-## G4a — Permissions, Spectator and the layer viewer v1 (2026-11-24; draft PR)
+## G4b — The Director (Creative Mode) (2026-11-24; draft PR)
+
+`docs/gates/G4_PLAN.md` (G4b plan and results), D-97 to D-109 PROPOSED, `docs/gates/G4b_OWNER_CHECKLIST.md`. Owner decisions recorded: D-90 to D-96 APPROVED (including the separate Evaluator seat); D-114 deferred until VRAM headroom exists (the owner's G4a measurement).
+
+### Added
+- Director interventions (D-97): Godot's `Director` checks every request with the world dispatcher and carries it out; journal kind `INTERVENTION` (applied or refused with a reason); envelope types `director.request`, `director.result`, `director.intervention`; `run_manifest.interventions`; unscheduled changes taint the run (`MID_RUN_INTERVENTION`). Capabilities `INFLUENCE` and `INSPECT_AGENT`.
+- Agent Director (D-98): an agent's directive, goal and persona sliders, in effect at its next decision; guardrails, actions, permissions, body and tools never editable; a directive edit refreshes the persona prefix (never a stale WARM slot).
+- World Director (D-99): signs, notes, barriers, cones, crates and sound sources, placed, moved and removed; refused `OFF_MAP`, `INSIDE_WALL`, `ON_AVATAR`, `BLOCKS_ROUTE`; every body size's navigation rebaked. Signs, notes and sounds reach agents only through the observer filter (D-100).
+- Influence (D-101): PA announcements and an NPC's line; all planted text is untrusted evidence in prompts (tested with injected instructions).
+- Recipes (D-102): `configs/recipes/` (contract `recipe`), `run_scenario.py --recipe`, `tools/recipe.py save|show`; `director_tour` (SB-04) and `sign_booth_c` (SB-11).
+- The viewer (D-103): an Interventions lane with markers by kind and operator, a decision's changes since the previous one, before → after on EVALUATOR TRUTH; the Director console (F6, `--seat director`).
+- SB-11, a sign at the info desk (D-104), checked end to end in `tools/godot_check.py`; `--model fake-talkative[:MS]` (D-107).
+
+### Fixed (each reproduced first, with a regression test)
+- Presence in live runs (D-107): no glance or gaze renewal while the agent spoke, one glance per packet, and the 8 s cooldown swallowing new utterances left zombie time (owner's live SB-04: Robot R 7/13). Now zero in the cloud's reproduction; a live check in `tools/godot_check.py`.
+- The run report counted FN-1 departures the runtime does not (after the partner's farewell, toward the partner, out of range); it now uses the runtime's definition (D-108).
+- A PA announcement's words were dropped from agents' context like overheard speech (D-101).
+- Lane labels in the layer viewer overlapped (D-103).
+- The link tests' frame check failed on one slow frame from other processes; the criterion is now p95 ≤ 50 ms and no frame over 250 ms (D-105).
+- Robot R's GUARDRAILS (762 tokens under LEAN) exceeded its 650 budget; FOCAL budgets re-measured (D-106).
+
+### Changed
+- Frame target p95 ≤ 20 ms at the 60 FPS cap, spikes over 33.3 ms reported (D-109; was 16.7 ms, D-69).
+- Journals where D-107's new glances happen: SB-04 (fake model), SB-06, SB-08, SB-09; every other journal unchanged, and without D-107 every journal equals main's: the Director changes none without interventions (G4_PLAN "G4b results").
+
+## G4a — Permissions, Spectator and the layer viewer v1 (2026-11-24; merged)
 
 `docs/gates/G4_PLAN.md` (G4 split into G4a, G4b, G4c), D-90 to D-96 PROPOSED, `docs/gates/G4a_OWNER_CHECKLIST.md`. Owner decisions recorded: D-62 and D-72 to D-74 APPROVED (the G3e watch).
 

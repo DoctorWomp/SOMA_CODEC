@@ -17,7 +17,7 @@ EXPECTED = {
     "memory_item", "run_manifest", "journal_entry", "decision_record",
     # configs
     "scenario", "persona", "body", "map", "preset", "expression", "directive",
-    "model_catalog", "inference", "model_registry", "pulse", "permissions",
+    "model_catalog", "inference", "model_registry", "pulse", "permissions", "recipe",
     # viewer records (G4a)
     "viewer_record",
     # shared definitions

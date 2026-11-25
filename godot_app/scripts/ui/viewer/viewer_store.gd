@@ -125,7 +125,7 @@ func ingest(rec: Dictionary) -> bool:
 		return true
 	if not lanes.has(observer):
 		lanes[observer] = {}
-		if not observers.has(observer):
+		if observer != "" and not observers.has(observer):   # "": run-level records (interventions, G4b)
 			observers.append(observer)
 	var per_lane: Dictionary = lanes[observer]
 	if not per_lane.has(lane):

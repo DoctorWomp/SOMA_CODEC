@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "message_id": "py_000120",
+  "type": "director.result",
+  "tick_id": 180,
+  "sim_time_ms": 3000,
+  "source": "range_service",
+  "payload": {
+    "request_id": "req_0002",
+    "status": "INSPECTED",
+    "reason": null,
+    "intervention": null,
+    "editable": {
+      "directive": "Help visitors navigate the venue.",
+      "goal": "Answer visitors' questions in the sandbox.",
+      "sliders": {
+        "patience": 70
+      },
+      "locked": [
+        "guardrails",
+        "allowed actions"
+      ]
+    }
+  }
+}
