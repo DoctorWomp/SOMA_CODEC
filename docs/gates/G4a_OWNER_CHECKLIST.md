@@ -44,7 +44,7 @@ uv run python tools/run_scenario.py SB04_POLITE_BID --mode live --model llama --
 After the run, replay it and scrub:
 
 ```powershell
-uv run python tools/view_run.py runs\<the run folder>
+uv run python tools/view_run.py latest
 ```
 
 - [ ] `,` `.` step through the run (Shift: 10 s); `[` `]` switch to visitor_y's view: its tracks are its own ids, never merged with Robot R's.
@@ -52,7 +52,7 @@ uv run python tools/view_run.py runs\<the run folder>
 ## 3. The Evaluator seat
 
 ```powershell
-uv run python tools/view_run.py runs\<the same run folder> --seat evaluator
+uv run python tools/view_run.py latest --seat evaluator
 ```
 
 - [ ] A separate amber panel titled **EVALUATOR TRUTH** shows which avatar each of the observer's tracks was, the scenario labels, every private goal, and the selected decision's prompt and raw answer (select a pin to see it). The Spectator run of §2 never showed it.

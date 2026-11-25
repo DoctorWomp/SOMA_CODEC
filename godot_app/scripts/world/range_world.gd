@@ -207,8 +207,9 @@ func end_run() -> String:
 		return ""
 	var states := []
 	for a in avatar_list():
-		states.append({"avatar_id": a.avatar_id, "x": snappedf(a.global_position.x, 0.0001),
-			"y": snappedf(a.global_position.y, 0.0001), "z": snappedf(a.global_position.z, 0.0001),
+		var p := world_transform(a).origin   # also when the scene is being torn down (owner's PC, 2026-11-25)
+		states.append({"avatar_id": a.avatar_id, "x": snappedf(p.x, 0.0001),
+			"y": snappedf(p.y, 0.0001), "z": snappedf(p.z, 0.0001),
 			"yaw_rad": snappedf(wrapf(a.rotation.y, -PI, PI), 0.0001), "links_used": Array(a.links_used)})
 	var ended := {"ticks_run": clock.tick, "avatars": states}
 	if held_samples > 0:
@@ -217,6 +218,19 @@ func end_run() -> String:
 	var digest := journal.close()
 	journal = null
 	return digest
+
+
+## A node's transform in world space, also while the scene is being torn down: a scene reload ends
+## the run from _exit_tree, after the avatars have left the tree, where global_transform fails.
+static func world_transform(n: Node3D) -> Transform3D:
+	if n.is_inside_tree():
+		return n.global_transform
+	var t := n.transform
+	var p := n.get_parent()
+	while p is Node3D:
+		t = (p as Node3D).transform * t
+		p = p.get_parent()
+	return t
 
 
 func journal_write(kind: String, actor_id, payload: Dictionary) -> void:

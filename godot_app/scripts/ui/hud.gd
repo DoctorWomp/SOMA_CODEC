@@ -10,6 +10,8 @@ var demo: DemoRoutes
 var link: LinkClient
 var label: Label
 var _panel: PanelContainer
+var _notice := ""
+var _notice_until_ms := 0
 
 
 func _init() -> void:
@@ -40,6 +42,15 @@ func _ready() -> void:
 	label.add_theme_font_size_override("font_size", UiStyle.fs(15))
 	_panel.add_child(label)
 	add_child(_panel)
+
+
+## A scenario run started by tools/run_scenario.py (it quits when done) is being recorded.
+func recorded_run() -> bool:
+	return is_recorded_run(get_tree().current_scene, world)
+
+
+static func is_recorded_run(scene: Node, w: RangeWorld) -> bool:
+	return scene != null and scene.get("quit_when_done") == true and w != null and w.run_active
 
 
 func _process(_delta: float) -> void:
@@ -74,7 +85,9 @@ func status_text() -> String:
 		lines.append("  senses (F2 shows them): " + senses_line(world, a))
 	lines.append("")
 	lines.append("C camera (free, orbit, follow, POV) · [ ] select avatar · right mouse look/orbit · wheel zoom")
-	lines.append("W A S D move · Q E down/up · Shift fast · Space pause · R restart · H hide")
+	lines.append("W A S D move · Q E down/up · Shift fast · Space pause · R restart (demo only) · H hide")
+	if _notice != "" and Time.get_ticks_msec() < _notice_until_ms:
+		lines.append(_notice)
 	lines.append("F2 sensor view · F3 layer viewer · F4 EVALUATOR TRUTH (Evaluator seat) · F6 Director console (Director seat)")
 	return "\n".join(lines)
 
@@ -128,6 +141,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if world == null or world.dispatcher == null or world.dispatcher.seat_request("PAUSE")["code"] == "OK":
 			get_tree().paused = not get_tree().paused
 	elif event.is_action_pressed("demo_restart"):
+		if recorded_run():
+			# One stray R (typed while the Director console was not focused, owner's PC 2026-11-25)
+			# reloaded a recorded scenario run mid-way: the journal and the viewer feed then mixed two runs.
+			_notice = "R restart is off during a recorded scenario run; close the window to stop it"
+			_notice_until_ms = Time.get_ticks_msec() + 6000
+			return
 		get_tree().paused = false
 		get_tree().reload_current_scene()
 	elif event.is_action_pressed("hud_toggle"):
