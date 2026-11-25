@@ -29,7 +29,7 @@ from tools.godot_check import PROJECT_DIR, find_godot  # noqa: E402
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="tools/view_run.py", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("run", type=Path, help="a run folder (runs/<run>)")
+    parser.add_argument("run", help="a run folder (as printed after 'Run folder:'), or 'latest' for the newest one")
     parser.add_argument("--seat", default="spectator", choices=["spectator", "director", "evaluator"])
     parser.add_argument("--observer", default="", help="the avatar to open on (default: the first observer)")
     parser.add_argument("--rebuild", action="store_true", help="rebuild the feed from the run's logs first")
@@ -40,7 +40,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--decision", type=int, default=-1, help="with --screenshot: select this decision first")
     args = parser.parse_args(argv)
 
-    run = args.run.resolve()
+    from range_service.eval.run_paths import RunPathError, resolve_run   # noqa: PLC0415
+    try:
+        run = resolve_run(args.run)
+    except RunPathError as exc:
+        print(f"FAIL  {exc}")
+        return 2
+    print(f"Run folder: {run}")
     viewer_dir = run / "viewer"
     if args.rebuild or not (viewer_dir / feed.OBSERVER_FILE).is_file():
         try:

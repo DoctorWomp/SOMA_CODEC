@@ -69,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_save = sub.add_parser("save")
-    p_save.add_argument("run", type=Path)
+    p_save.add_argument("run", help="a run folder (as printed after 'Run folder:'), or 'latest' for the newest one")
     p_save.add_argument("--id", required=True, help="recipe id: lowercase letters, digits, _")
     p_save.add_argument("--about", default=None)
     p_save.add_argument("--out", type=Path, default=None)
@@ -77,10 +77,22 @@ def main(argv: list[str] | None = None) -> int:
     p_show.add_argument("id")
     args = parser.parse_args(argv)
     if args.cmd == "show":
-        data = yaml.safe_load((CONFIGS_DIR / "recipes" / f"{args.id}.yaml").read_text(encoding="utf-8"))
+        path = CONFIGS_DIR / "recipes" / f"{args.id}.yaml"
+        if not path.is_file():
+            known = ", ".join(sorted(q.stem for q in (CONFIGS_DIR / "recipes").glob("*.yaml"))) or "none"
+            print(f"FAIL  no recipe '{args.id}' in configs/recipes/ (known: {known}); save one with: "
+                  "uv run python tools/recipe.py save latest --id NAME")
+            return 2
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
         for it in data["interventions"]:
             print(f"  tick {it['at_tick']:>5}  {it['intervention_type']:<24} {it['operation']:<16} {it['target_id'] or ''} {it['args']}")
         return 0
+    from range_service.eval.run_paths import RunPathError, resolve_run   # noqa: PLC0415
+    try:
+        args.run = resolve_run(args.run)
+    except RunPathError as exc:
+        print(f"FAIL  {exc}")
+        return 2
     recipe = recipe_from_run(args.run, args.id, args.about)
     out = args.out or (CONFIGS_DIR / "recipes" / f"{args.id}.yaml")
     header = (f"# Saved by tools/recipe.py from {args.run.name}: the run's applied Director interventions (G4b, D-102).\n"

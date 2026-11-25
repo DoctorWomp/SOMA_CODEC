@@ -35,6 +35,8 @@ uv run python tools/run_scenario.py SB04_POLITE_BID --mode live --model llama --
 
 The status panel says `Seat: DIRECTOR`. The purple **DIRECTOR** console is at the bottom left (F6 shows or hides it; click its input line to type). **Ctrl + left click** on the floor sets the point where props go (a small teal disc marks it). Type `help` for the commands. Try, in order, while the run plays:
 
+> **Where to type:** the `text` blocks below (`inspect`, `directive`, `place`, …) go in the purple DIRECTOR console **inside the Godot window**, not in PowerShell. Only the `powershell` blocks go in PowerShell. Runs are 90 s long, so have the commands ready.
+
 1. **Inspect and edit Robot R's directive** (T07):
    ```text
    inspect robot_r
@@ -74,7 +76,7 @@ The status panel says `Seat: DIRECTOR`. The purple **DIRECTOR** console is at th
 After the run:
 
 ```powershell
-uv run python tools/view_run.py runs\<the run folder> --seat evaluator
+uv run python tools/view_run.py latest --seat evaluator
 ```
 
 - [ ] The layer viewer has an **Interventions (Director)** lane with one marker per intervention, a letter for its kind (D, W, E, I, S) and who did it (`director`). Lane labels never overlap.
@@ -84,7 +86,7 @@ uv run python tools/view_run.py runs\<the run folder> --seat evaluator
 ## 3. Save it as a recipe and replay it
 
 ```powershell
-uv run python tools/recipe.py save runs\<the run folder> --id my_tour
+uv run python tools/recipe.py save latest --id my_tour
 ```
 
 ```powershell
