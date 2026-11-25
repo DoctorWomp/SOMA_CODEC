@@ -84,6 +84,9 @@ const TESTS := [
 	"test_signs_notes_and_sounds_through_the_observer_filter",
 	"test_director_pa_and_npc_say",
 	"test_director_console",
+	"test_run_ended_when_the_scene_is_torn_down",
+	"test_director_inspect_refuses_an_unknown_avatar",
+	"test_restart_key_is_off_during_a_recorded_run",
 ]
 
 ## Where tests write journals and packets for tools/godot_check.py to validate in Python.
@@ -3355,3 +3358,70 @@ func test_director_console() -> String:
 	if not panel.run("fly away").begins_with("unknown command"):
 		return "an unknown command should say so"
 	return ""
+
+
+# ---------- owner's G4b checklist (2026-11-25) ----------
+
+## Reloading the scene mid-run (the R hotkey) ends the run from RangeWorld._exit_tree, after the
+## avatars have left the tree: global_position then gave Transform3D() with an engine error per
+## read (9 on the owner's PC), and RUN_ENDED recorded every avatar at (0, 0, 0).
+func test_run_ended_when_the_scene_is_torn_down() -> String:
+	var w := await _world(["legged_humanoid"])
+	await _place(w, [["r1", "legged_humanoid", 15.0, 15.5, 0.0]])
+	var path := artifacts_dir.path_join("torn_down.jsonl")
+	if not w.start_run(7, path, 10):
+		return "could not start a journaled run at %s" % path
+	for i in 10:
+		await get_tree().physics_frame
+	remove_child(w)                                     # as a scene reload does: _exit_tree ends the run
+	_node = w
+	var ended := {}
+	for line in FileAccess.get_file_as_string(path).split("\n", false):
+		var e: Dictionary = JSON.parse_string(line)
+		if e["kind"] == "RUN_ENDED":
+			ended = e["payload"]
+	if ended.is_empty():
+		return "no RUN_ENDED after the world left the tree"
+	var a: Dictionary = ended["avatars"][0]
+	if absf(float(a["x"]) - 15.0) > 0.5 or absf(float(a["z"]) - 15.5) > 0.5:
+		return "RUN_ENDED put r1 at (%s, %s), not near (15.0, 15.5)" % [a["x"], a["z"]]
+	return ""
+
+
+## The console sent `inspect robot_rdirective robot_r Stay at your post...` (two commands typed on
+## one line) to the sidecar unchecked; the sidecar rejected the envelope and the run FAILed. An
+## unknown avatar is refused in Godot, with a message, and nothing is sent.
+func test_director_inspect_refuses_an_unknown_avatar() -> String:
+	var w := await _world(["legged_humanoid"])
+	await _place(w, [["robot_r", "legged_humanoid", 15.0, 15.5, 0.0]])
+	if not w.dispatcher.set_seat("DIRECTOR"):
+		return "could not take the Director seat"
+	var r: Dictionary = w.director.from_seat(null, "INSPECT_AGENT", "robot_rdirective robot_r Stay at your post.", {})
+	if String(r.get("status")) != "REFUSED" or String(r.get("reason")) != "UNKNOWN_TARGET":
+		return "inspecting an unknown avatar should be REFUSED UNKNOWN_TARGET, got %s" % [r]
+	if not w.director._waiting.is_empty():
+		return "nothing may be sent to the sidecar for an unknown avatar"
+	return ""
+
+
+## R reloads the scene: fine in the free demo, but in a recorded scenario run (run_scenario.py,
+## which quits when done) one stray R mixed two runs in one journal and viewer feed (owner's PC,
+## 2026-11-25). It is refused there, with a notice.
+func test_restart_key_is_off_during_a_recorded_run() -> String:
+	var w := await _world(["legged_humanoid"])
+	var scenario_main: Node = load("res://scripts/main.gd").new()
+	scenario_main.quit_when_done = true
+	var demo_main: Node = load("res://scripts/main.gd").new()
+	var result := ""
+	if Hud.is_recorded_run(scenario_main, w):
+		result = "no run is active yet: restart must be allowed"
+	elif not w.start_run(3, artifacts_dir.path_join("restart_key.jsonl"), 10):
+		result = "could not start a journaled run"
+	elif not Hud.is_recorded_run(scenario_main, w):
+		result = "a recorded scenario run must refuse R restart"
+	elif Hud.is_recorded_run(demo_main, w):
+		result = "the free demo (not quit-when-done) keeps R restart"
+	w.end_run()
+	scenario_main.free()
+	demo_main.free()
+	return result

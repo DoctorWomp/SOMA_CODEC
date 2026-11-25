@@ -85,6 +85,10 @@ func request(principal: String, operator: String, itype, operation: String, targ
 	if inspect:
 		req["intervention_type"] = null
 	if inspect:
+		# Checked here like every other request: an unknown name (two commands typed on one line,
+		# owner's PC 2026-11-25) used to reach the sidecar, which refused the envelope and the run FAILed.
+		if target.is_empty() or not world.avatars.has(target):
+			return {"status": "REFUSED", "reason": "UNKNOWN_TARGET", "journaled": false}
 		return _to_sidecar(req)
 	var problem := problems(req)
 	if problem != "":
