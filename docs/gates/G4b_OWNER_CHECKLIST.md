@@ -79,6 +79,12 @@ After the run:
 uv run python tools/view_run.py latest --seat evaluator
 ```
 
+To read what happened in order (who said what, each Director change, every decision that timed out or was held, with what the robot wanted):
+
+```powershell
+uv run python tools/transcript.py latest
+```
+
 - [ ] The layer viewer has an **Interventions (Director)** lane with one marker per intervention, a letter for its kind (D, W, E, I, S) and who did it (`director`). Lane labels never overlap.
 - [ ] The **EVALUATOR TRUTH** panel (F4) lists every intervention with its before → after (the old and new directive text).
 - [ ] The run printed `interventions: N applied, M refused, 0 scheduled ... (intervention-assisted)`, and `run_manifest.json` says `"tainted": true` with `MID_RUN_INTERVENTION` (unscheduled changes make it a different run).
