@@ -123,6 +123,22 @@ def test_bakeoff_tables_compare_headless_with_rendered_and_pulse_on_with_off():
     assert len(ab) == 6 and "2000 / 3000 | 2100 / 2900" in ab[-1]
 
 
+def test_render_tax_compares_rows_of_the_same_conditions_and_the_newest_one():
+    """Owner's PC, 2026-11-27: results.json held a G3f headless row (full answers) before the LEAN
+    rows; the render-tax table paired the new LEAN rendered row with that old one."""
+    f = lambda v: "–" if v is None else str(v)   # noqa: E731
+    old = _row("LIVE", 2730, 4007, 14.4)
+    lean_old = dict(_row("LIVE", 2500, 3900, 13.0), conditions={"answer": "LEAN"})
+    lean = dict(_row("LIVE", 2765, 3944, 14.0), conditions={"answer": "LEAN"})
+    rendered = dict(_row("LIVE_RENDERED", 3165, 4001, 11.3, render="1920x1080 v0"), conditions={"answer": "LEAN"})
+    tax = bk.render_tax_lines([old, lean_old, lean, rendered], f)
+    assert "2765 / 3165" in tax[-1] and "2730" not in tax[-1]
+    assert bk.render_tax_lines([old, rendered], f) == []              # no headless row of the same conditions
+    off = dict(_row("LIVE", 2100, 2900, 10.0, pulse=False), conditions={"answer": "LEAN"})
+    ab = bk.pulse_ab_lines([old, lean, off], f)
+    assert "2765 / 3944 | 2100 / 2900" in ab[-1]
+
+
 def test_a_relative_run_folder_reaches_godot_as_an_absolute_path(tmp_path, monkeypatch):
     """Owner's PC, 2026-11-24: `run_scenario.py ... --out runs\\g4a_cost_off` failed with "Godot wrote
     no journal". Godot runs with --path godot_app, so a relative --journal= landed in
