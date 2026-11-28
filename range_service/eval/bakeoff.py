@@ -668,12 +668,20 @@ def diagnosis_lines(rows: list[dict]) -> list[str]:
     return out
 
 
+def _latest_like(live: list[dict], r: dict, mode: str, pulse: bool) -> dict | None:
+    """The newest row in ``mode`` with r's models, pulse and conditions (answer format, GPU guard, ...).
+    results.json accumulates every bake-off; matching on the model label alone paired LEAN rendered
+    runs with a pre-LEAN headless row from G3f (owner's PC, 2026-11-27)."""
+    return next((x for x in reversed(live) if x["mode"] == mode and x["label"] == r["label"]
+                 and x.get("npc_label") == r.get("npc_label") and x.get("pulse", True) == pulse
+                 and (x.get("conditions") or {}) == (r.get("conditions") or {})), None)
+
+
 def render_tax_lines(live: list[dict], f) -> list[str]:
     """ART_DIRECTION §7: the same scenario headless (LIVE) and rendered (LIVE_RENDERED)."""
     out = []
     for r in [x for x in live if x["mode"] == "LIVE_RENDERED"]:
-        base = next((x for x in live if x["mode"] == "LIVE" and x["label"] == r["label"]
-                     and x.get("npc_label") == r.get("npc_label") and x.get("pulse", True) == r.get("pulse", True)), None)
+        base = _latest_like(live, r, "LIVE", pulse=r.get("pulse", True))
         if base is None:
             continue
 
@@ -684,7 +692,7 @@ def render_tax_lines(live: list[dict], f) -> list[str]:
                    "| Robot R model | NPC model | Render | Robot R p50 ms headless / rendered (change) | "
                    "Robot R p95 ms headless / rendered (change) | NPC calls/min headless / rendered (change) |",
                    "|---|---|---|---|---|---|"]
-        out.append(f"| {r['label']} | {r.get('npc_label', '–')} | {r.get('render')} | "
+        out.append(f"| {r['label']}{cond_text(r)} | {r.get('npc_label', '–')} | {r.get('render')} | "
                    f"{f(base['p50_ms'])} / {f(r['p50_ms'])} ({change(base['p50_ms'], r['p50_ms'])}) | "
                    f"{f(base['p95_ms'])} / {f(r['p95_ms'])} ({change(base['p95_ms'], r['p95_ms'])}) | "
                    f"{f(base.get('npc_calls_per_min'))} / {f(r.get('npc_calls_per_min'))} "
@@ -696,8 +704,7 @@ def pulse_ab_lines(live: list[dict], f) -> list[str]:
     """Pulse on vs off for the same model, NPC model and mode (G3d, --no-pulse)."""
     out = []
     for off in [x for x in live if x.get("pulse") is False]:
-        on = next((x for x in live if x.get("pulse", True) and x["label"] == off["label"] and x["mode"] == off["mode"]
-                   and x.get("npc_label") == off.get("npc_label")), None)
+        on = _latest_like(live, off, off["mode"], pulse=True)
         if on is None:
             continue
         if not out:
